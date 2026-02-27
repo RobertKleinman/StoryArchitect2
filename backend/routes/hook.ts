@@ -87,9 +87,9 @@ hookRoutes.post("/lock", async (req, res) => {
 });
 
 hookRoutes.get("/:projectId", async (req, res) => {
-  getModelOverride(req.header("X-Model-Override"));
+  const modelOverride = getModelOverride(req.header("X-Model-Override"));
   try {
-    const session = await hookService.getSession(req.params.projectId);
+    const session = await hookService.getSession(req.params.projectId, modelOverride);
     if (!session) {
       return res.status(404).json({ error: true, code: "NOT_FOUND", message: "Session not found" });
     }
@@ -100,9 +100,9 @@ hookRoutes.get("/:projectId", async (req, res) => {
 });
 
 hookRoutes.delete("/:projectId", async (req, res) => {
-  getModelOverride(req.header("X-Model-Override"));
+  const modelOverride = getModelOverride(req.header("X-Model-Override"));
   try {
-    await hookService.resetSession(req.params.projectId);
+    await hookService.resetSession(req.params.projectId, modelOverride);
     return res.json({ deleted: true });
   } catch (err) {
     return handleError(res, err);

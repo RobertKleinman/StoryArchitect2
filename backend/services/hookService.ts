@@ -363,11 +363,11 @@ export class HookService {
     return hookPack;
   }
 
-  async getSession(projectId: string): Promise<HookSessionState | null> {
+  async getSession(projectId: string, _modelOverride?: string): Promise<HookSessionState | null> {
     return this.store.get(projectId);
   }
 
-  async resetSession(projectId: string): Promise<void> {
+  async resetSession(projectId: string, _modelOverride?: string): Promise<void> {
     await this.store.delete(projectId);
   }
 

@@ -16,7 +16,8 @@
     "dotenv": "^17.2.2",
     "express": "^5.1.0",
     "react": "^19.1.1",
-    "react-dom": "^19.1.1"
+    "react-dom": "^19.1.1",
+    "@anthropic-ai/sdk": "^0.57.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
