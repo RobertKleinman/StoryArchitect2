@@ -1,0 +1,156 @@
+:root {
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  color: #1f2937;
+  background: #f3f4f6;
+}
+
+* { box-sizing: border-box; }
+
+body { margin: 0; }
+
+.workshop-shell {
+  min-height: 100vh;
+  padding: 2rem 1rem;
+}
+
+.workshop-card {
+  max-width: 860px;
+  margin: 0 auto;
+  background: #fff;
+  border-radius: 14px;
+  border: 1px solid #e5e7eb;
+  padding: 1.2rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.hypothesis-banner {
+  border: 2px solid #cbd5e1;
+  border-radius: 12px;
+  padding: 0.9rem;
+  background: #f8fafc;
+  animation: fadeIn 260ms ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.hypothesis-title {
+  margin: 0 0 0.35rem;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.lead { margin-top: 0; }
+.seed-row,
+.free-text-row,
+.actions-row {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+input,
+textarea,
+button {
+  font: inherit;
+}
+
+input,
+textarea {
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 0.6rem 0.7rem;
+}
+
+textarea {
+  min-height: 84px;
+  resize: vertical;
+}
+
+button {
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  padding: 0.55rem 0.8rem;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.primary {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+
+.secondary {
+  background: #eef2ff;
+  border-color: #c7d2fe;
+}
+
+.full { width: 100%; margin-top: 1rem; }
+
+.question-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: baseline;
+}
+
+.question-header span {
+  font-size: 0.9rem;
+  color: #6b7280;
+}
+
+.options-stack {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.hook-output-card {
+  border: 1px solid #d1d5db;
+  border-radius: 12px;
+  padding: 1rem;
+}
+
+.hook-output-card h3,
+.hook-output-card h4 {
+  margin: 0.2rem 0;
+}
+
+.hook-output-card p,
+.hook-output-card ul {
+  margin-top: 0.35rem;
+}
+
+.link-btn {
+  border: none;
+  background: transparent;
+  color: #1d4ed8;
+  padding-left: 0;
+}
+
+.source-group ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.judge-warning,
+.error-banner {
+  border-radius: 10px;
+  padding: 0.8rem;
+  border: 1px solid #f59e0b;
+  background: #fffbeb;
+}
+
+.error-banner {
+  border-color: #ef4444;
+  background: #fef2f2;
+}
