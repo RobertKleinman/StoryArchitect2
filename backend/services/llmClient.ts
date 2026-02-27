@@ -1,7 +1,7 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { HookRole, ModelConfig } from "../../shared/modelConfig";
 
 const STRUCTURED_OUTPUTS_BETA = "structured-outputs-2025-11-13";
+const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 
 export interface CallOptions {
   temperature?: number;
@@ -11,12 +11,19 @@ export interface CallOptions {
   jsonSchema?: Record<string, unknown>;
 }
 
+interface AnthropicTextBlock {
+  type: "text";
+  text: string;
+}
+
+interface AnthropicResponse {
+  content?: AnthropicTextBlock[];
+}
+
 export class LLMClient {
-  private client: Anthropic;
   private config: ModelConfig;
 
   constructor(config: ModelConfig) {
-    this.client = new Anthropic();
     this.config = config;
   }
 
@@ -45,49 +52,25 @@ export class LLMClient {
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
-        const params: Record<string, unknown> = {
-          model,
-          max_tokens: options?.maxTokens ?? 1024,
-          temperature: options?.temperature ?? 0.7,
-          system: systemPrompt,
-          messages: [{ role: "user", content: userPrompt }],
-        };
-
-        // Structured outputs: constrained JSON decoding via beta header
-        const extraHeaders: Record<string, string> = {};
-        if (options?.jsonSchema) {
-          extraHeaders["anthropic-beta"] = STRUCTURED_OUTPUTS_BETA;
-          (params as any).output_format = {
-            type: "json_schema",
-            schema: options.jsonSchema,
-          };
-        }
-
-        const response = await this.client.messages.create(
-          params as any,
-          extraHeaders["anthropic-beta"]
-            ? { headers: extraHeaders }
-            : undefined
-        );
+        const response = await this.createMessage(model, systemPrompt, userPrompt, options);
 
         // Join ALL text blocks (Claude can return multiple content blocks)
-        const text = response.content
-          .filter((block): block is Anthropic.TextBlock => block.type === "text")
+        const text = (response.content ?? [])
+          .filter((block): block is AnthropicTextBlock => block.type === "text")
           .map((block) => block.text)
           .join("");
 
         // Structured outputs = already valid JSON; otherwise strip fences
         return options?.jsonSchema ? text : stripJsonFences(text);
-
-      } catch (err: any) {
-        const status = err?.status ?? err?.error?.status;
-        const retryable = [429, 500, 529].includes(status);
+      } catch (err: unknown) {
+        const status = getErrorStatus(err);
+        const retryable = typeof status === "number" && [429, 500, 529].includes(status);
 
         if (!retryable || attempt === maxAttempts) {
           throw err;
         }
 
-        const retryAfter = err?.headers?.["retry-after"];
+        const retryAfter = getRetryAfter(err);
         const waitMs = retryAfter
           ? parseInt(retryAfter, 10) * 1000
           : Math.min(1000 * Math.pow(2, attempt - 1), 8000);
@@ -101,10 +84,85 @@ export class LLMClient {
 
     throw new Error(`LLM [${role}] failed after max retries`);
   }
+
+  private async createMessage(
+    model: string,
+    systemPrompt: string,
+    userPrompt: string,
+    options?: CallOptions
+  ): Promise<AnthropicResponse> {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      throw new Error("Missing ANTHROPIC_API_KEY environment variable");
+    }
+
+    const payload: Record<string, unknown> = {
+      model,
+      max_tokens: options?.maxTokens ?? 1024,
+      temperature: options?.temperature ?? 0.7,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userPrompt }],
+    };
+
+    if (options?.jsonSchema) {
+      payload.output_format = {
+        type: "json_schema",
+        schema: options.jsonSchema,
+      };
+    }
+
+    const headers: HeadersInit = {
+      "content-type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    };
+
+    if (options?.jsonSchema) {
+      headers["anthropic-beta"] = STRUCTURED_OUTPUTS_BETA;
+    }
+
+    const res = await fetch(ANTHROPIC_API_URL, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      const retryAfter = res.headers.get("retry-after") ?? undefined;
+      throw { status: res.status, headers: { "retry-after": retryAfter } };
+    }
+
+    return (await res.json()) as AnthropicResponse;
+  }
 }
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getErrorStatus(err: unknown): number | undefined {
+  if (typeof err !== "object" || !err) {
+    return undefined;
+  }
+  const withStatus = err as { status?: unknown; error?: { status?: unknown } };
+  const top = withStatus.status;
+  if (typeof top === "number") {
+    return top;
+  }
+  const nested = withStatus.error?.status;
+  if (typeof nested === "number") {
+    return nested;
+  }
+  return undefined;
+}
+
+function getRetryAfter(err: unknown): string | undefined {
+  if (typeof err !== "object" || !err) {
+    return undefined;
+  }
+  const withHeaders = err as { headers?: { [key: string]: unknown } };
+  const retryAfter = withHeaders.headers?.["retry-after"];
+  return typeof retryAfter === "string" ? retryAfter : undefined;
 }
 
 /** Strip ```json fences — only needed when NOT using structured outputs */

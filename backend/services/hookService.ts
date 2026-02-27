@@ -71,6 +71,10 @@ export class HookService {
         status: "clarifying",
       };
     } else {
+      if (!session) {
+        throw new HookServiceError("NOT_FOUND", "Session not found");
+      }
+
       if (session.status === "revealed" || session.status === "locked") {
         throw new HookServiceError("INVALID_INPUT", "Session already progressed; reset session first");
       }
@@ -93,6 +97,10 @@ export class HookService {
       }
 
       previousTurn.userSelection = userSelection;
+    }
+
+    if (!session) {
+      throw new HookServiceError("NOT_FOUND", "Session not found");
     }
 
     const prompt = this.buildClarifierPrompt(session);
