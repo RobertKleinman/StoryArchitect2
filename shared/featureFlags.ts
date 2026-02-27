@@ -6,4 +6,6 @@ export const DEFAULT_FEATURE_FLAGS = {
   HOOK_MODULE_ENABLED: true,
 } as const;
 
-export type FeatureFlags = typeof DEFAULT_FEATURE_FLAGS;
+export interface FeatureFlags {
+  HOOK_MODULE_ENABLED: boolean;
+}
