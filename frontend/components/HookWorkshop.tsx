@@ -94,7 +94,7 @@ export function HookWorkshop() {
       setState((prev) => ({
         ...prev,
         loading: true,
-        loadingMessage: "Clarifying your concept…",
+        loadingMessage: "Thinking...",
         error: null,
       }));
 
@@ -134,7 +134,7 @@ export function HookWorkshop() {
       setState((prev) => ({
         ...prev,
         loading: true,
-        loadingMessage: "Refining your hook DNA…",
+        loadingMessage: "Thinking...",
         error: null,
       }));
 
@@ -199,7 +199,7 @@ export function HookWorkshop() {
         ...prev,
         phase: "generating",
         loading: true,
-        loadingMessage: "Building a fresh hook tournament…",
+        loadingMessage: "Building 3 hook candidates and judging them...",
         error: null,
       }));
 
@@ -339,39 +339,37 @@ export function HookWorkshop() {
                 🎲 Surprise me
               </button>
 
-              {state.allowFreeText && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setState((prev) => ({ ...prev, showFreeTextInput: !prev.showFreeTextInput }))}
-                  >
-                    ✏️ None of these
-                  </button>
-                  {state.showFreeTextInput && (
-                    <div className="free-text-row">
-                      <input
-                        value={state.freeTextValue}
-                        onChange={(event) =>
-                          setState((prev) => ({ ...prev, freeTextValue: event.target.value }))
-                        }
-                        placeholder="Type your direction"
-                      />
-                      <button
-                        type="button"
-                        onClick={() =>
-                          void answerClarifier({
-                            type: "free_text",
-                            label: state.freeTextValue.trim(),
-                          })
-                        }
-                        disabled={!state.freeTextValue.trim()}
-                      >
-                        Submit
-                      </button>
-                    </div>
-                  )}
-                </>
-              )}
+              <>
+                <button
+                  type="button"
+                  onClick={() => setState((prev) => ({ ...prev, showFreeTextInput: !prev.showFreeTextInput }))}
+                >
+                  ✏️ None of these
+                </button>
+                {state.showFreeTextInput && (
+                  <div className="free-text-row">
+                    <input
+                      value={state.freeTextValue}
+                      onChange={(event) =>
+                        setState((prev) => ({ ...prev, freeTextValue: event.target.value }))
+                      }
+                      placeholder="Type your direction"
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void answerClarifier({
+                          type: "free_text",
+                          label: state.freeTextValue.trim(),
+                        })
+                      }
+                      disabled={!state.freeTextValue.trim()}
+                    >
+                      Submit
+                    </button>
+                  </div>
+                )}
+              </>
             </div>
 
             <button

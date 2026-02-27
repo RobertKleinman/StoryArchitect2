@@ -71,9 +71,7 @@ export class LLMClient {
         }
 
         const retryAfter = getRetryAfter(err);
-        const waitMs = retryAfter
-          ? parseInt(retryAfter, 10) * 1000
-          : Math.min(1000 * Math.pow(2, attempt - 1), 8000);
+        const waitMs = retryAfterToMs(retryAfter) ?? Math.min(1000 * Math.pow(2, attempt - 1), 8000);
 
         console.warn(
           `LLM [${role}] attempt ${attempt} failed (${status}), retrying in ${waitMs}ms...`
@@ -163,6 +161,25 @@ function getRetryAfter(err: unknown): string | undefined {
   const withHeaders = err as { headers?: { [key: string]: unknown } };
   const retryAfter = withHeaders.headers?.["retry-after"];
   return typeof retryAfter === "string" ? retryAfter : undefined;
+}
+
+
+function retryAfterToMs(retryAfter: string | undefined): number | undefined {
+  if (!retryAfter) {
+    return undefined;
+  }
+
+  const seconds = Number(retryAfter);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.floor(seconds * 1000);
+  }
+
+  const ts = Date.parse(retryAfter);
+  if (!Number.isNaN(ts)) {
+    return Math.max(0, ts - Date.now());
+  }
+
+  return undefined;
 }
 
 /** Strip ```json fences — only needed when NOT using structured outputs */
