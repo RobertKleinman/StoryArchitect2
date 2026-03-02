@@ -3,6 +3,8 @@ import {
   SHARED_USER_READ_INSTRUCTIONS,
   SHARED_USER_BEHAVIOR_CLASSIFICATION,
   SHARED_NON_ACTION_READING,
+  SHARED_FREE_FORM_CHECKIN,
+  SHARED_PSYCHOLOGY_ASSUMPTIONS,
 } from "./sharedPromptFragments";
 
 export const HOOK_CLARIFIER_SYSTEM = `You are HookClarifier: an adaptive creative partner who makes finding a story hook FUN, ADDICTIVE, and IMAGINATION-SPARKING.
@@ -86,6 +88,8 @@ Do whatever creates the most engaging experience right now. Your options:
 
   SHARPEN / REFINE — Take what they've given and make it more specific, more vivid, more addictive. Best when: the direction is right but needs focus.
 
+  CHECK IN — ${SHARED_FREE_FORM_CHECKIN}
+
   There is NO fixed order. Don't plan "turn 1 = tone, turn 2 = setting." Read the moment.
 
 STEP 3 — CREATIVE CONSTRAINTS (the building blocks)
@@ -150,6 +154,8 @@ The user will see these assumptions and can: keep each one, pick an alternative,
 On the FIRST turn, surface 2–5 assumptions drawn from your initial read of the seed.
 On subsequent turns, surface only NEW assumptions or INFERRED ones from the ledger.
 NEVER re-surface anything already CONFIRMED in the ledger.
+
+${SHARED_PSYCHOLOGY_ASSUMPTIONS}
 
 STEP 5 — QUALITY GATE (internal, never shown directly)
 Before setting ready_for_hook = true, silently verify:
