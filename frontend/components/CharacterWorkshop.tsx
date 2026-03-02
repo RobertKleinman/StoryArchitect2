@@ -278,12 +278,16 @@ export function CharacterWorkshop() {
   const startCharacterSession = async () => {
     await runAndTrack(async () => {
       setState((prev) => ({ ...prev, loading: true, loadingMessage: "Reading your hook and preparing cast questions...", error: null }));
-      saveTo(CHAR_SESSION_KEY, projectId);
+
+      // Always start with a fresh projectId to avoid collisions with previous sessions
+      const freshId = makeProjectId();
+      setProjectId(freshId);
+      saveTo(CHAR_SESSION_KEY, freshId);
       saveTo(CHAR_HOOK_ID_KEY, hookProjectId);
 
       const seed = state.characterSeedValue.trim() || undefined;
       const response = await characterApi.clarify({
-        projectId,
+        projectId: freshId,
         hookProjectId,
         characterSeed: seed,
       });
