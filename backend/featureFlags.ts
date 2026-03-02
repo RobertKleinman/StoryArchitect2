@@ -6,4 +6,8 @@ export const FEATURE_FLAGS: FeatureFlags = {
     process.env.HOOK_MODULE_ENABLED !== undefined
       ? process.env.HOOK_MODULE_ENABLED !== "false"
       : DEFAULT_FEATURE_FLAGS.HOOK_MODULE_ENABLED,
+  CHARACTER_MODULE_ENABLED:
+    process.env.CHARACTER_MODULE_ENABLED !== undefined
+      ? process.env.CHARACTER_MODULE_ENABLED !== "false"
+      : DEFAULT_FEATURE_FLAGS.CHARACTER_MODULE_ENABLED,
 };

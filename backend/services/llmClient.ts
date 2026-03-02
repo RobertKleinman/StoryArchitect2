@@ -123,11 +123,19 @@ export class LLMClient {
       method: "POST",
       headers,
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(300_000), // 5 min timeout (structured outputs can be slow on first schema compile)
     });
 
     if (!res.ok) {
       const retryAfter = res.headers.get("retry-after") ?? undefined;
-      throw { status: res.status, headers: { "retry-after": retryAfter } };
+      let errorBody = "";
+      try {
+        errorBody = await res.text();
+      } catch {
+        // ignore body read failure
+      }
+      console.error(`Anthropic API error [${res.status}]:`, errorBody);
+      throw { status: res.status, headers: { "retry-after": retryAfter }, body: errorBody };
     }
 
     return (await res.json()) as AnthropicResponse;

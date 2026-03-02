@@ -20,12 +20,30 @@ export const HOOK_CLARIFIER_SCHEMA = {
         required: ["id", "label"],
         additionalProperties: false,
       },
-      minItems: 2,
-      maxItems: 5,
     },
     allow_free_text: { type: "boolean" },
     ready_for_hook: { type: "boolean" },
+    readiness_pct: { type: "number" },
+    readiness_note: { type: "string" },
     missing_signal: { type: "string" },
+    conflict_flag: { type: "string" },
+    assumptions: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          category: { type: "string" },
+          assumption: { type: "string" },
+          alternatives: {
+            type: "array",
+            items: { type: "string" },
+          },
+        },
+        required: ["id", "category", "assumption", "alternatives"],
+        additionalProperties: false,
+      },
+    },
     state_update: {
       type: "object",
       properties: {
@@ -41,10 +59,11 @@ export const HOOK_CLARIFIER_SCHEMA = {
       },
       additionalProperties: false,
     },
+    user_read: { type: "string" },
   },
   required: [
     "hypothesis_line", "question", "options",
-    "allow_free_text", "ready_for_hook", "missing_signal", "state_update"
+    "allow_free_text", "ready_for_hook", "readiness_pct", "readiness_note", "missing_signal", "conflict_flag", "assumptions", "state_update", "user_read"
   ],
   additionalProperties: false,
 } as const;
@@ -52,6 +71,8 @@ export const HOOK_CLARIFIER_SCHEMA = {
 export const HOOK_BUILDER_SCHEMA = {
   type: "object",
   properties: {
+    hook_sentence: { type: "string" },
+    emotional_promise: { type: "string" },
     premise: { type: "string" },
     opening_image: { type: "string" },
     page_1_splash_prompt: { type: "string" },
@@ -59,8 +80,6 @@ export const HOOK_BUILDER_SCHEMA = {
     why_addictive: {
       type: "array",
       items: { type: "string" },
-      minItems: 3,
-      maxItems: 3,
     },
     collision_sources: {
       type: "array",
@@ -73,13 +92,11 @@ export const HOOK_BUILDER_SCHEMA = {
         required: ["source", "element_extracted"],
         additionalProperties: false,
       },
-      minItems: 3,
-      maxItems: 5,
     },
   },
   required: [
-    "premise", "opening_image", "page_1_splash_prompt",
-    "page_turn_trigger", "why_addictive", "collision_sources"
+    "hook_sentence", "emotional_promise", "premise", "opening_image",
+    "page_1_splash_prompt", "page_turn_trigger", "why_addictive", "collision_sources"
   ],
   additionalProperties: false,
 } as const;
