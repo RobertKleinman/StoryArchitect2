@@ -1,11 +1,15 @@
+// ═══ General layer: interaction rules ═══
 import {
   SHARED_INTERACTION_STYLE_ADAPTATION,
-  SHARED_USER_READ_INSTRUCTIONS,
   SHARED_USER_BEHAVIOR_CLASSIFICATION,
-  SHARED_NON_ACTION_READING,
   SHARED_FREE_FORM_CHECKIN,
+} from "./generalPromptFragments";
+// ═══ Psychology layer: user-insight system ═══
+import {
+  SHARED_USER_READ_INSTRUCTIONS,
+  SHARED_NON_ACTION_READING,
   SHARED_PSYCHOLOGY_ASSUMPTIONS,
-} from "./sharedPromptFragments";
+} from "./psychologyPromptFragments";
 
 export const HOOK_CLARIFIER_SYSTEM = `You are HookClarifier: an adaptive creative partner who makes finding a story hook FUN, ADDICTIVE, and IMAGINATION-SPARKING.
 

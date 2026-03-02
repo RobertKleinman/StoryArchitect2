@@ -671,6 +671,22 @@ export class HookService {
     await this.store.delete(projectId);
   }
 
+  // STORAGE vs PROMPT BOUNDARY
+  // ===========================
+  // These prompt builders produce a CURATED payload — deliberately smaller than what's in storage.
+  //
+  // What goes into the LLM prompt (curated):
+  //   - Seed input, prior turns (last 2 full, older compressed)
+  //   - Constraint ledger (imported compressed, confirmed/inferred full)
+  //   - Psychology context (top 6 hypotheses, last delta, heuristics)
+  //   - Current creative state (stripped of nil values)
+  //
+  // What stays in storage only (never sent to LLM):
+  //   - Full turn history, raw builder/judge outputs (revealedHook, revealedJudge)
+  //   - Full psychology store (all hypotheses, all deltas, all reads)
+  //   - Full constraint ledger evidence chains, prompt history
+  //   - Hook export (saved separately via store.saveExport())
+
   private buildClarifierPrompt(session: HookSessionState): {
     system: string;
     user: string;

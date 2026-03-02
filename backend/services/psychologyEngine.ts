@@ -71,6 +71,20 @@ export function recordHypotheses(
  * If a similar one exists, update its evidence and potentially bump confidence.
  * Otherwise, create a new entry.
  */
+/**
+ * Hard confidence cap based on turn number.
+ * The LLM is instructed to follow these rules in the prompt,
+ * but we enforce them here as a safety net.
+ */
+function capConfidenceByTurn(
+  confidence: "low" | "medium" | "high",
+  turnNumber: number
+): "low" | "medium" | "high" {
+  if (turnNumber <= 1) return "low";                         // Turn 1: always low
+  if (turnNumber <= 3 && confidence === "high") return "medium"; // Turn 2-3: medium max
+  return confidence;                                          // Turn 4+: trust the LLM
+}
+
 function mergeHypothesis(
   ledger: UserPsychologyLedger,
   turnNumber: number,
@@ -83,6 +97,9 @@ function mergeHypothesis(
 ): void {
   const store = ledger.hypothesisStore;
 
+  // Enforce confidence cap by turn number
+  const cappedConfidence = capConfidenceByTurn(incoming.confidence, turnNumber);
+
   // Simple similarity check: look for overlapping keywords
   const existing = findSimilarHypothesis(store, incoming.hypothesis);
 
@@ -91,14 +108,15 @@ function mergeHypothesis(
     existing.evidence = `${existing.evidence}; ${incoming.evidence}`;
     existing.lastUpdated = turnNumber;
 
-    // Bump confidence if LLM says it's higher now
+    // Bump confidence if incoming (after cap) is higher
     const confidenceRank = { low: 0, medium: 1, high: 2 };
-    if (confidenceRank[incoming.confidence] > confidenceRank[existing.confidence]) {
-      existing.confidence = incoming.confidence;
+    if (confidenceRank[cappedConfidence] > confidenceRank[existing.confidence]) {
+      existing.confidence = cappedConfidence;
     }
     // If the LLM surfaced it again with same or higher confidence, that's confirmation
-    if (existing.confidence === "low" && incoming.confidence === "low") {
-      // Seen twice at low → upgrade to medium
+    // But still respect the turn cap
+    if (existing.confidence === "low" && cappedConfidence === "low" && turnNumber >= 2) {
+      // Seen twice at low, and we're past turn 1 → upgrade to medium
       existing.confidence = "medium";
     }
   } else {
@@ -111,22 +129,23 @@ function mergeHypothesis(
       id: generateHypothesisId(),
       hypothesis: incoming.hypothesis,
       evidence: incoming.evidence,
-      confidence: incoming.confidence,
+      confidence: cappedConfidence,
       scope,
       firstSeen: turnNumber,
       lastUpdated: turnNumber,
     });
   }
 
-  // Cap store at 20 hypotheses — drop oldest low-confidence ones first
-  if (store.length > 20) {
+  // Cap store at 10 hypotheses — fewer but deeper
+  // Drop oldest low-confidence ones first
+  if (store.length > 10) {
     store.sort((a, b) => {
       const confRank = { low: 0, medium: 1, high: 2 };
       const confDiff = confRank[a.confidence] - confRank[b.confidence];
       if (confDiff !== 0) return confDiff; // low confidence first (to be dropped)
       return a.lastUpdated - b.lastUpdated; // older first
     });
-    ledger.hypothesisStore = store.slice(store.length - 20);
+    ledger.hypothesisStore = store.slice(store.length - 10);
   }
 }
 
@@ -248,8 +267,23 @@ export function updateHeuristics(
 // ─── Formatting for prompts ───
 
 /**
- * Format the full psychology ledger for injection into a prompt.
- * Includes: heuristics summary, hypothesis store, and recent assumption deltas.
+ * STORAGE vs PROMPT BOUNDARY
+ * ===========================
+ * The psychology ledger stores EVERYTHING (full hypothesis history, all deltas, all reads).
+ * This formatter produces a CURATED view for the LLM prompt — deliberately smaller than storage.
+ *
+ * What goes into the prompt (curated):
+ *   - Interaction heuristics summary (always)
+ *   - Top 6 active hypotheses by confidence (not all 10 in store)
+ *   - Disconfirmed hypotheses (brief, so LLM doesn't repeat them)
+ *   - Last turn's assumption delta only (not all 5 stored)
+ *   - Last turn's overall_read synthesis
+ *
+ * What stays in storage only (never sent to LLM):
+ *   - Full hypothesis store (all 10, including ones not shown in prompt)
+ *   - All assumption deltas (last 5 turns)
+ *   - All per-turn reads (last 10)
+ *   - Full evidence chains on hypotheses (prompt gets truncated version)
  */
 export function formatPsychologyLedgerForPrompt(
   ledger: UserPsychologyLedger | undefined
@@ -280,32 +314,45 @@ export function formatPsychologyLedgerForPrompt(
     }
   }
 
-  // ── Hypothesis store ──
-  const activeHypotheses = ledger.hypothesisStore.filter((h) => !h.disconfirmedBy);
+  // ── Hypothesis store (PROMPT VIEW: top 6 by confidence, not full store) ──
+  const activeHypotheses = ledger.hypothesisStore.filter((hyp) => !hyp.disconfirmedBy);
   if (activeHypotheses.length > 0) {
+    // Sort: high first, then medium, then low. Within same confidence, most recently updated first.
+    const sorted = [...activeHypotheses].sort((a, b) => {
+      const confRank = { high: 2, medium: 1, low: 0 };
+      const confDiff = confRank[b.confidence] - confRank[a.confidence];
+      if (confDiff !== 0) return confDiff;
+      return b.lastUpdated - a.lastUpdated;
+    });
+    // Cap at 6 for the prompt — keeps context tight
+    const promptHypotheses = sorted.slice(0, 6);
+
     lines.push("");
     lines.push("YOUR PRIOR HYPOTHESES ABOUT THIS USER:");
-    // Group by confidence: high first, then medium, then low
-    for (const conf of ["high", "medium", "low"] as const) {
-      const group = activeHypotheses.filter((h) => h.confidence === conf);
-      for (const h of group) {
-        lines.push(`  [${h.id}] (${h.confidence}) "${h.hypothesis}" — evidence: ${h.evidence} [scope: ${h.scope}]`);
-      }
+    for (const hyp of promptHypotheses) {
+      // Truncate evidence to last ~80 chars if it's gotten long from accumulation
+      const evidence = hyp.evidence.length > 80
+        ? "..." + hyp.evidence.slice(-77)
+        : hyp.evidence;
+      lines.push(`  [${hyp.id}] (${hyp.confidence}) "${hyp.hypothesis}" — evidence: ${evidence} [scope: ${hyp.scope}]`);
+    }
+    if (activeHypotheses.length > 6) {
+      lines.push(`  (${activeHypotheses.length - 6} more in storage, not shown — focus on these)`);
     }
     lines.push("  → Update these: confirm, refine, or disconfirm based on this turn's behavior.");
   }
 
   // ── Disconfirmed hypotheses (brief, so LLM doesn't repeat them) ──
-  const disconfirmed = ledger.hypothesisStore.filter((h) => h.disconfirmedBy);
+  const disconfirmed = ledger.hypothesisStore.filter((hyp) => hyp.disconfirmedBy);
   if (disconfirmed.length > 0) {
     lines.push("");
     lines.push("DISCONFIRMED (do not repeat these):");
-    for (const h of disconfirmed) {
-      lines.push(`  [${h.id}] "${h.hypothesis}" — disconfirmed: ${h.disconfirmedBy}`);
+    for (const hyp of disconfirmed) {
+      lines.push(`  [${hyp.id}] "${hyp.hypothesis}" — disconfirmed: ${hyp.disconfirmedBy}`);
     }
   }
 
-  // ── Recent assumption deltas ──
+  // ── Last turn's assumption delta only (storage keeps 5, prompt gets 1) ──
   const lastDelta = ledger.assumptionDeltas.length > 0
     ? ledger.assumptionDeltas[ledger.assumptionDeltas.length - 1]
     : null;

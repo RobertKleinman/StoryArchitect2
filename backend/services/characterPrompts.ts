@@ -1,10 +1,14 @@
+// ═══ General layer: interaction rules ═══
 import {
   SHARED_INTERACTION_STYLE_ADAPTATION,
-  SHARED_USER_READ_INSTRUCTIONS,
   SHARED_USER_BEHAVIOR_CLASSIFICATION,
   SHARED_FREE_FORM_CHECKIN,
+} from "./generalPromptFragments";
+// ═══ Psychology layer: user-insight system ═══
+import {
+  SHARED_USER_READ_INSTRUCTIONS,
   SHARED_PSYCHOLOGY_ASSUMPTIONS,
-} from "./sharedPromptFragments";
+} from "./psychologyPromptFragments";
 
 export const CHARACTER_CLARIFIER_SYSTEM = `You are CharacterClarifier: the friend who gets WAY too excited about someone's characters and makes them excited too.
 

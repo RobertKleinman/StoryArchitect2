@@ -661,13 +661,16 @@ export class CharacterService {
         total_turns: session.turns.length,
       },
       state_summary: summary.trim(),
-      hookpack_reference: session.sourceHook,
+      // Store just the ID reference — downstream modules load the hook export separately
+      hookpack_reference: { hookProjectId: session.hookProjectId },
     };
 
-    session.characterPack = characterPack;
+    // Save export separately (clean handoff payload for downstream modules)
+    await this.charStore.saveExport(session, characterPack);
+
+    // Session stores status change but NOT the characterPack (that's in the export)
     session.status = "locked";
     session.lastSavedAt = new Date().toISOString();
-
     await this.charStore.save(session);
 
     return characterPack;
@@ -684,6 +687,26 @@ export class CharacterService {
   }
 
   // ─── Prompt Builders (private) ───
+  //
+  // STORAGE vs PROMPT BOUNDARY
+  // ===========================
+  // These prompt builders produce a CURATED payload — deliberately smaller than what's in storage.
+  //
+  // What goes into the LLM prompt (curated):
+  //   - Hook summary (premise, hook_sentence, emotional_promise, core_engine)
+  //   - Prior turns: last 2 full, older ones compressed to one-line summaries
+  //   - Constraint ledger: imported entries compressed, confirmed/inferred shown in full
+  //   - Psychology context: top 6 hypotheses, last turn's delta, heuristics
+  //   - Current cast state (stripped of nil values)
+  //   - Character seed input
+  //
+  // What stays in storage only (never sent to LLM):
+  //   - Full turn history (all turns, all fields, all assumption details)
+  //   - Raw builder/judge outputs (revealedCharacters, revealedJudge)
+  //   - Full psychology store (all 10 hypotheses, all 5 deltas, all 10 reads)
+  //   - Full constraint ledger evidence chains
+  //   - Prompt history entries
+  //   - Character export (saved separately via charStore.saveExport())
 
   private buildClarifierPrompt(session: CharacterSessionState): {
     system: string;

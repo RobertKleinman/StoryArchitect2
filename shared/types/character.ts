@@ -222,7 +222,8 @@ export interface CharacterPack {
     total_turns: number;
   };
   state_summary: string;
-  hookpack_reference: import("./hook").HookPack;
+  /** Reference to the hook module's export — load separately by ID, not embedded */
+  hookpack_reference: { hookProjectId: string };
 }
 
 // ─── Prompt Preview & History (reuse pattern) ───
@@ -264,7 +265,7 @@ export interface CharacterSessionState {
   constraintLedger: CharacterLedgerEntry[];
   revealedCharacters?: CharacterBuilderOutput;
   revealedJudge?: CharacterJudgeOutput;
-  characterPack?: CharacterPack;
+  /** characterPack is no longer stored on session — it's saved as an export via charStore.saveExport() */
   status: "clarifying" | "generating" | "revealed" | "locked";
   lastSavedAt?: string;
   promptHistory?: CharacterPromptHistoryEntry[];
