@@ -59,7 +59,28 @@ export const HOOK_CLARIFIER_SCHEMA = {
       },
       additionalProperties: false,
     },
-    user_read: { type: "string" },
+    user_read: {
+      type: "object",
+      properties: {
+        hypotheses: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              hypothesis: { type: "string" },
+              evidence: { type: "string" },
+              confidence: { type: "string", enum: ["low", "medium", "high"] },
+              scope: { type: "string", enum: ["this_story", "this_genre", "global"] },
+            },
+            required: ["hypothesis", "evidence", "confidence", "scope"],
+            additionalProperties: false,
+          },
+        },
+        overall_read: { type: "string" },
+      },
+      required: ["hypotheses", "overall_read"],
+      additionalProperties: false,
+    },
   },
   required: [
     "hypothesis_line", "question", "options",

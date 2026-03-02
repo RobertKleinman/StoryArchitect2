@@ -56,8 +56,16 @@ export interface HookClarifierResponse {
   conflict_flag: string;
   assumptions: HookAssumption[];
   state_update: HookStateUpdate;
-  /** LLM's read on the user this turn — what excites them, engagement shifts, narrative preferences */
-  user_read: string;
+  /** Structured hypotheses about the user + brief synthesis */
+  user_read: {
+    hypotheses: {
+      hypothesis: string;
+      evidence: string;
+      confidence: "low" | "medium" | "high";
+      scope: "this_story" | "this_genre" | "global";
+    }[];
+    overall_read: string;
+  };
 }
 
 // ─── HookBuilder ───

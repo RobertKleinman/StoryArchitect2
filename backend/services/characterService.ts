@@ -39,7 +39,8 @@ import {
 } from "./characterSchemas";
 import {
   createEmptyLedger,
-  recordUserRead,
+  recordHypotheses,
+  recordAssumptionDelta,
   updateHeuristics,
   formatPsychologyLedgerForPrompt,
 } from "./psychologyEngine";
@@ -206,6 +207,29 @@ export class CharacterService {
       // Process assumption responses into ledger (deterministic, no LLM)
       if (!session.constraintLedger) session.constraintLedger = [];
       this.processAssumptionResponses(session, assumptionResponses ?? [], session.turns.length);
+
+      // ─── Non-choice tracking: log offered vs responded assumption IDs ───
+      if (session.psychologyLedger) {
+        // Collect offered IDs from all characters_surfaced assumptions in previous turn
+        const offeredIds: string[] = [];
+        for (const ch of previousTurn.clarifierResponse.characters_surfaced ?? []) {
+          for (const a of ch.assumptions ?? []) {
+            offeredIds.push(a.id);
+          }
+        }
+        const respondedIds = (assumptionResponses ?? []).map((r) => r.assumptionId);
+        const actions: Record<string, "keep" | "alternative" | "freeform" | "not_ready"> = {};
+        for (const r of assumptionResponses ?? []) {
+          actions[r.assumptionId] = r.action;
+        }
+        recordAssumptionDelta(
+          session.psychologyLedger,
+          session.turns.length,
+          offeredIds,
+          respondedIds,
+          actions
+        );
+      }
     }
 
     if (!session) {
@@ -319,9 +343,17 @@ export class CharacterService {
     if (!session.constraintLedger) session.constraintLedger = [];
     this.processStateUpdatesIntoLedger(session, clarifier.state_updates ?? {}, session.turns.length + 1);
 
-    // ─── Psychology Ledger: record LLM's user_read + update heuristics ───
+    // ─── Psychology Ledger: record LLM's structured hypotheses + update heuristics ───
     if (!session.psychologyLedger) session.psychologyLedger = createEmptyLedger();
-    recordUserRead(session.psychologyLedger, session.turns.length + 1, "character", clarifier.user_read ?? "");
+    if (clarifier.user_read && typeof clarifier.user_read === "object") {
+      recordHypotheses(
+        session.psychologyLedger,
+        session.turns.length + 1,
+        "character",
+        clarifier.user_read.hypotheses ?? [],
+        clarifier.user_read.overall_read ?? ""
+      );
+    }
     this.updatePsychologyHeuristics(session);
 
     // Update active focus

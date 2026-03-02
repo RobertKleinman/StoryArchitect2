@@ -28,17 +28,41 @@ export const SHARED_INTERACTION_STYLE_ADAPTATION = `ADAPT TO INTERACTION STYLE (
 // ─────────────────────────────────────────────────────────────────
 // FRAGMENT: USER READ OUTPUT INSTRUCTIONS
 // Used in: hook clarifier (output format #12), character clarifier (output format #14)
-// Purpose: Tells the LLM what to write in the user_read field
+// Purpose: Tells the LLM what to output in the structured user_read field
 // NOTE: Each module may wrap this with module-specific framing.
 //       The CORE instruction is shared; the context sentence before it is module-specific.
 // ─────────────────────────────────────────────────────────────────
-export const SHARED_USER_READ_INSTRUCTIONS = `Your read on THIS USER in 2-3 sentences max. Self-assess confidence: "Strong signal: ..." vs "Early read: ..." This is about the PERSON, not the story content. Their creative fingerprint.
+export const SHARED_USER_READ_INSTRUCTIONS = `Output as STRUCTURED JSON (not a freeform string):
 
-REQUIREMENTS FOR EACH READ:
-- Must contain at least ONE observation you have NOT made in a previous user_read. If you find yourself repeating "fast-moving director" or "they click to confirm," you've already said that — dig deeper.
-- Track CHANGES in behavior: did they start typing more? Did their energy shift? Did they defer something they'd normally decide fast? Note what changed and what might have caused it.
-- Go beyond surface: "clicks a lot" is obvious. WHY do they click what they click? What patterns in their CHOICES (not just their method) reveal preferences, fears, emotional gravitational pulls?
-- Note what your previous adaptation attempts DID to their engagement — did richer chips make them more decisive? Did a provocative question land or fall flat?`;
+  user_read: {
+    hypotheses: [  // 1-3 hypotheses about this USER (not the story)
+      {
+        hypothesis: "short observation, max ~15 words",
+        evidence: "what specific user action supports this, max ~25 words",
+        confidence: "low" | "medium" | "high",
+        scope: "this_story" | "this_genre" | "global"
+      }
+    ],
+    overall_read: "1-2 sentence synthesis of this user's creative fingerprint"
+  }
+
+CONFIDENCE LEVELS:
+  - "low": First impression, single data point. E.g. first turn, one choice.
+  - "medium": Pattern observed across 2+ turns or reinforced by multiple signals.
+  - "high": Repeatedly confirmed, consistent across different choice types.
+
+SCOPE:
+  - "this_story": Preference specific to this story's content (e.g. "wants the antagonist to be sympathetic")
+  - "this_genre": Preference that likely applies to similar stories (e.g. "drawn to power dynamics in dark romance")
+  - "global": Interaction style or deep preference (e.g. "control-seeker who prefers to shape rather than discover")
+
+RULES:
+  - Check YOUR PRIOR HYPOTHESES in the psychology section above. Do NOT repeat them. Instead: confirm (raise evidence), refine (make more specific), or disconfirm (note what contradicted it).
+  - Each hypothesis must be DIFFERENT from prior ones. If you noted "fast-moving director," dig deeper: what KIND of director? What drives their speed?
+  - Track CHANGES: did they start typing more? Did energy shift? Did they defer something unusual?
+  - Go beyond surface actions. "Clicks a lot" is obvious. WHY those clicks? What do their choice patterns reveal about preferences, fears, emotional pulls?
+  - If the user IGNORED certain assumptions last turn (shown in "ASSUMPTIONS IGNORED"), factor that in — it's a weak signal they don't care about those areas yet.
+  - The overall_read is your brief intuitive synthesis — the creative fingerprint.`;
 
 // ─────────────────────────────────────────────────────────────────
 // FRAGMENT: READ THE USER CLASSIFICATION
