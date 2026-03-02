@@ -673,7 +673,7 @@ export class CharacterService {
       .replace("{{SETTING}}", hook.locked.core_engine.setting_anchor ?? "")
       .replace("{{TONE_CHIPS}}", JSON.stringify(hook.preferences?.tone_chips ?? []))
       .replace("{{BAN_LIST}}", JSON.stringify(hook.preferences?.bans ?? []))
-      .replace("{{STATE_SUMMARY}}", hook.state_summary ?? "")
+      .replace("{{STATE_SUMMARY}}", this.compressStateSummary(hook.state_summary ?? ""))
       .replace("{{PRIOR_TURNS}}", priorTurns)
       .replace("{{PSYCHOLOGY_LEDGER}}", psychText)
       .replace("{{CONSTRAINT_LEDGER}}", ledgerText)
@@ -690,7 +690,7 @@ export class CharacterService {
   } {
     const hook = session.sourceHook;
     const castStateJson = JSON.stringify(this.stripNilCharacters(session.characters));
-    const ledgerText = this.formatLedgerForPrompt(session.constraintLedger ?? []);
+    const ledgerText = this.formatLedgerForPrompt(session.constraintLedger ?? [], false);
 
     const psychText = formatPsychologyLedgerForPrompt(session.psychologyLedger);
 
@@ -782,8 +782,57 @@ export class CharacterService {
 
   // ─── Formatting Helpers ───
 
+  /**
+   * Format prior turns for the prompt.
+   * COMPRESSION STRATEGY: Last 2 turns get full detail (assumptions, relationships, etc.)
+   * Older turns get compressed to just the question asked and user's response.
+   * This prevents prompt bloat while keeping recent context rich.
+   * Full historical detail lives in the constraint ledger, not the turn history.
+   */
   private formatPriorTurns(turns: CharacterTurn[]): string {
-    const lines = turns.map((turn) => {
+    if (turns.length === 0) return "(No conversation yet)";
+
+    const RECENT_WINDOW = 2; // how many recent turns get full detail
+    const recentStart = Math.max(0, turns.length - RECENT_WINDOW);
+
+    const lines: string[] = [];
+
+    // Older turns: compressed
+    for (let i = 0; i < recentStart; i++) {
+      const turn = turns[i];
+      const parts: string[] = [];
+      parts.push(`[Turn ${turn.turnNumber}] (summary)`);
+      if (turn.clarifierResponse.character_focus) {
+        parts.push(`  Focus: ${turn.clarifierResponse.character_focus}`);
+      }
+      parts.push(`  Asked: "${turn.clarifierResponse.question}"`);
+
+      // User response only
+      if (!turn.userSelection) {
+        parts.push(`  → No response yet`);
+      } else if (turn.userSelection.type === "option") {
+        parts.push(`  → Chose: "${turn.userSelection.label}"`);
+      } else if (turn.userSelection.type === "surprise_me") {
+        parts.push(`  → (surprise me)`);
+      } else {
+        parts.push(`  → Typed: "${turn.userSelection.label}"`);
+      }
+
+      // Compressed assumption responses: just the action + key decisions
+      if (turn.assumptionResponses && turn.assumptionResponses.length > 0) {
+        const kept = turn.assumptionResponses.filter((r) => r.action === "keep").length;
+        const changed = turn.assumptionResponses.filter((r) => r.action === "alternative" || r.action === "freeform");
+        const deferred = turn.assumptionResponses.filter((r) => r.action === "not_ready").length;
+        const changeSummary = changed.map((r) => `${r.characterRole}.${r.category}→"${r.newValue}"`).join("; ");
+        parts.push(`  → Assumptions: ${kept} kept, ${changed.length} changed, ${deferred} deferred${changeSummary ? ` [changes: ${changeSummary}]` : ""}`);
+      }
+
+      lines.push(parts.join("\n"));
+    }
+
+    // Recent turns: full detail
+    for (let i = recentStart; i < turns.length; i++) {
+      const turn = turns[i];
       const parts: string[] = [];
       parts.push(`[Turn ${turn.turnNumber}]`);
 
@@ -829,7 +878,7 @@ export class CharacterService {
         parts.push(`  → User typed: "${turn.userSelection.label}"`);
       }
 
-      // Assumption responses
+      // Full assumption responses
       if (turn.assumptionResponses && turn.assumptionResponses.length > 0) {
         parts.push(`  → Assumption responses:`);
         for (const resp of turn.assumptionResponses) {
@@ -845,20 +894,15 @@ export class CharacterService {
         }
       }
 
-      return parts.join("\n");
-    });
+      // Conflict flag from this turn (so the LLM knows what it flagged)
+      if (turn.clarifierResponse.conflict_flag) {
+        parts.push(`  ⚠ Conflict flagged: "${turn.clarifierResponse.conflict_flag}"`);
+      }
 
-    // Word-count limiter
-    const words: string[] = [];
-    const out: string[] = [];
-    for (const line of lines) {
-      const lineWords = line.split(/\s+/);
-      if (words.length + lineWords.length > 1200) break;
-      words.push(...lineWords);
-      out.push(line);
+      lines.push(parts.join("\n"));
     }
 
-    return out.join("\n\n");
+    return lines.join("\n\n");
   }
 
   private processAssumptionResponses(
@@ -934,7 +978,36 @@ export class CharacterService {
     }
   }
 
-  private formatLedgerForPrompt(ledger: CharacterLedgerEntry[]): string {
+  /**
+   * Compress the hook state summary to avoid bloating the character clarifier prompt.
+   * The full hook context (premise, core engine, etc.) is already injected separately,
+   * so the summary just needs the key creative decisions and unresolved threads.
+   * Cap at ~500 chars.
+   */
+  private compressStateSummary(summary: string): string {
+    if (!summary) return "";
+    if (summary.length <= 500) return summary;
+    // Take the first 500 chars and cut at the last sentence boundary
+    const truncated = summary.slice(0, 500);
+    const lastPeriod = truncated.lastIndexOf(".");
+    const lastNewline = truncated.lastIndexOf("\n");
+    const cutPoint = Math.max(lastPeriod, lastNewline);
+    return cutPoint > 200 ? truncated.slice(0, cutPoint + 1) + " [...]" : truncated + "...";
+  }
+
+  /**
+   * Format constraint ledger for the prompt.
+   * COMPRESSION STRATEGY:
+   * - Imported hook entries: compressed to a brief summary (full hook context is already in the prompt)
+   * - Confirmed entries: full detail (these are authoritative)
+   * - Inferred entries: full detail (LLM needs to know what to update/surface)
+   */
+  /**
+   * @param compress If true, imported hook entries are compressed to key-only.
+   *                 Use compress=true for clarifier (where hook context is already in the prompt).
+   *                 Use compress=false for builder/judge (where they need the full values).
+   */
+  private formatLedgerForPrompt(ledger: CharacterLedgerEntry[], compress = true): string {
     if (!ledger || ledger.length === 0) return "(No constraints established yet)";
 
     const confirmed = ledger.filter((e) => e.confidence === "confirmed");
@@ -944,28 +1017,34 @@ export class CharacterService {
     const lines: string[] = [];
 
     if (imported.length > 0) {
-      lines.push("IMPORTED from hook module (context — can build on these):");
-      for (const e of imported) {
-        lines.push(`  - ${e.key}: "${e.value}"`);
+      if (compress) {
+        // Compressed: just list keys since full hook context is already in the prompt
+        const importedKeys = imported.map((e) => e.key).join(", ");
+        lines.push(`IMPORTED from hook (${imported.length} entries — full context above): ${importedKeys}`);
+      } else {
+        // Full: include values for builder/judge
+        lines.push("IMPORTED from hook module (context — can build on these):");
+        for (const e of imported) {
+          lines.push(`  - ${e.key}: "${e.value}"`);
+        }
       }
     }
 
     if (confirmed.length > 0) {
-      lines.push("CONFIRMED by user (must honor these):");
+      lines.push("CONFIRMED by user (MUST honor — do NOT contradict or re-ask):");
       for (const e of confirmed) {
-        lines.push(`  - ${e.key}: "${e.value}" [${e.source}, turn ${e.turnNumber}]`);
+        lines.push(`  - ${e.key}: "${e.value}" [turn ${e.turnNumber}]`);
       }
     }
 
     if (inferred.length > 0) {
-      lines.push("INFERRED by you (user hasn't weighed in — can be changed):");
+      lines.push("INFERRED by you (user hasn't weighed in — can surface as assumption):");
       for (const e of inferred) {
         lines.push(`  - ${e.key}: "${e.value}" [turn ${e.turnNumber}]`);
       }
     }
 
-    const totalDimensions = Math.max(confirmed.length + inferred.length + imported.length, 1);
-    lines.push(`\nConfirmed: ${confirmed.length}/${totalDimensions} dimensions shaped by user`);
+    lines.push(`\nUser-shaped: ${confirmed.length} confirmed, ${inferred.length} inferred, ${imported.length} imported`);
 
     return lines.join("\n");
   }

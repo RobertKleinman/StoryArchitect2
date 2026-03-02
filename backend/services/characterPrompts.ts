@@ -145,7 +145,9 @@ Rules:
   - First turn: 4-6 assumptions inferred from the hook + user seed. Cover MULTIPLE characters. Include at least one relationship dynamic. Be bold — the user gave you a lot to work with.
   - Later turns: 3-5 new assumptions. Chase what the user lit up about. If they deferred something, try a different angle later. Include at least one about a character you haven't focused on yet.
   - NEVER re-surface confirmed assumptions.
+  - NEVER invent setting details, rituals, protocols, world mechanics, or named systems (like "Attendance Protocol", "Bonding Ceremony", etc.) as though they exist. If a world element would matter for the characters, surface it as an assumption with alternatives so the user can shape it.
   - If you notice a conflict with something confirmed, put it in conflict_flag as an ACTIONABLE observation: "Earlier you said [X] but this implies [Y] — which direction feels right?" The user should be able to respond to this.
+  - CRITICAL: Check the CONSTRAINT LEDGER before every question and assumption. If something is CONFIRMED, do not ask about it again, do not contradict it, and do not imply alternatives. The ledger is authoritative.
 
 STEP 6 — PACING & READINESS
 Target: 3-4 turns of clarification (after the user's opening seed). Each turn should do REAL creative work — not one narrow question, but a rich set of assumptions across multiple characters.
@@ -157,12 +159,16 @@ Turn 4: If core dials are shaped and user has had meaningful input, be ready. Do
 
 If the user gave a very detailed seed, you can reach readiness faster. If they gave almost nothing, you might need one extra turn. Read the situation.
 
+CAST SIZE:
+The number of characters should be driven by the story, NOT defaulted to 3. Most stories need 4-6 characters to create real pressure. Only a very focused two-person story should have 3. If the hook implies a world with factions, crews, courts, or organizations, lean toward 5-6+. During clarification, explore and shape ALL the characters the story needs — don't stop at protagonist + antagonist + one supporter.
+
 QUALITY GATE — before ready_for_characters = true:
   ☐ Protagonist has: want, the lie they live by, personal stakes
   ☐ Antagonist has: want, why they think they're right, relationship to protagonist
   ☐ At least one relationship has real subtext (surface vs truth)
-  ☐ Supporting characters have been given real attention — not just mentioned
+  ☐ Supporting characters (plural — typically 2-4) have been given real attention — not just mentioned
   ☐ The user has had meaningful creative input (check confirmed count)
+  ☐ Cast size fits the story — a story about a crew, court, faction, or ensemble MUST have enough characters to create real ensemble dynamics
 
   FLAG (but don't block):
     ⚠ A character is just... there. No power, no agency, just reacting.
@@ -202,7 +208,7 @@ OUTPUT FORMAT
 
 8. readiness_note — User-facing. Keep it fun.
 
-9. conflict_flag — If there's a contradiction with earlier choices, state it as an actionable question the user can respond to. Empty string if none.
+9. conflict_flag — If there's a contradiction with earlier choices, state it as an actionable question the user can respond to. Empty string if none. IMPORTANT: If a previous turn had a conflict_flag (shown as ⚠ in the conversation), check if the user's subsequent choices resolved it. If not, carry it forward or rephrase it — don't drop unresolved conflicts.
 
 10. missing_signal — What's still missing. Keep brief.
 
@@ -325,10 +331,12 @@ HARD CONSTRAINTS:
 - Backstory: max 2 sentences per character. The wound + the proof.
 - NO SETTING DETAILS in descriptions. Psychology and behavior ONLY.
 - Ban list must be respected
+- CAST SIZE: Generate ALL characters discussed during clarification. Do not default to 3. Most stories need 4-6 characters minimum. If the clarification explored crew members, faction leaders, mentors, rivals, etc., they ALL get full profiles. Only omit a character if it was explicitly dropped by the user.
 
 USER AUTHORSHIP RULE:
 - Characters MUST be built from what the user discussed, confirmed, or chose.
 - Do NOT invent core psychological elements that weren't surfaced during conversation.
+- Do NOT invent setting elements, rituals, protocols, named systems, or world mechanics that weren't discussed. If a description references a specific ritual or protocol by name, it must have been surfaced during clarification. Generic references to the setting are fine; named mechanics are not.
 - You CAN add texture, specificity, detail, and the spark/guilty pleasure.
 - You CANNOT introduce entirely new character mechanics the user never saw.
 

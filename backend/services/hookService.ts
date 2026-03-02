@@ -739,18 +739,59 @@ export class HookService {
     return trimmed;
   }
 
+  /**
+   * Format prior turns for the prompt.
+   * COMPRESSION STRATEGY: Last 2 turns get full detail (assumptions, etc.)
+   * Older turns get compressed to just question + user response.
+   * Full historical detail lives in the constraint ledger.
+   */
   private formatPriorTurns(turns: HookTurn[]): string {
-    const lines = turns.map((turn) => {
-      const parts: string[] = [];
+    if (turns.length === 0) return "(No conversation yet)";
 
-      // Include the engine's hypothesis for this turn
+    const RECENT_WINDOW = 2;
+    const recentStart = Math.max(0, turns.length - RECENT_WINDOW);
+
+    const lines: string[] = [];
+
+    // Older turns: compressed
+    for (let i = 0; i < recentStart; i++) {
+      const turn = turns[i];
+      const parts: string[] = [];
+      parts.push(`[Turn ${turn.turnNumber}] (summary)`);
+      parts.push(`  Asked: "${turn.clarifierResponse.question}"`);
+
+      if (!turn.userSelection) {
+        parts.push(`  → No response yet`);
+      } else if (turn.userSelection.type === "option") {
+        parts.push(`  → Chose: "${turn.userSelection.label}"`);
+      } else if (turn.userSelection.type === "surprise_me") {
+        parts.push(`  → (surprise me)`);
+      } else {
+        parts.push(`  → Typed: "${turn.userSelection.label}"`);
+      }
+
+      if (turn.assumptionResponses && turn.assumptionResponses.length > 0) {
+        const kept = turn.assumptionResponses.filter((r) => r.action === "keep").length;
+        const changed = turn.assumptionResponses.filter((r) => r.action === "alternative" || r.action === "freeform");
+        const deferred = turn.assumptionResponses.filter((r) => r.action === "not_ready").length;
+        const changeSummary = changed.map((r) => `${r.category}→"${r.newValue}"`).join("; ");
+        parts.push(`  → Assumptions: ${kept} kept, ${changed.length} changed, ${deferred} deferred${changeSummary ? ` [changes: ${changeSummary}]` : ""}`);
+      }
+
+      lines.push(parts.join("\n"));
+    }
+
+    // Recent turns: full detail
+    for (let i = recentStart; i < turns.length; i++) {
+      const turn = turns[i];
+      const parts: string[] = [];
       parts.push(`[Turn ${turn.turnNumber}]`);
+
       if (turn.clarifierResponse.hypothesis_line) {
         parts.push(`  Hypothesis: "${turn.clarifierResponse.hypothesis_line}"`);
       }
       parts.push(`  Asked: "${turn.clarifierResponse.question}"`);
 
-      // Include assumptions that were surfaced
       if (turn.clarifierResponse.assumptions?.length > 0) {
         const assumptionSummary = turn.clarifierResponse.assumptions
           .map((a) => `${a.id}(${a.category}): "${a.assumption}"`)
@@ -758,7 +799,6 @@ export class HookService {
         parts.push(`  Assumptions surfaced: ${assumptionSummary}`);
       }
 
-      // Include user's response
       if (!turn.userSelection) {
         parts.push(`  → User pending selection.`);
       } else if (turn.userSelection.type === "option") {
@@ -769,7 +809,6 @@ export class HookService {
         parts.push(`  → User typed: "${turn.userSelection.label}"`);
       }
 
-      // Include structured assumption responses (separate from the label — these are authoritative)
       if (turn.assumptionResponses && turn.assumptionResponses.length > 0) {
         parts.push(`  → Assumption responses:`);
         for (const resp of turn.assumptionResponses) {
@@ -785,21 +824,14 @@ export class HookService {
         }
       }
 
-      return parts.join("\n");
-    });
-
-    const words: string[] = [];
-    const out: string[] = [];
-    for (const line of lines) {
-      const lineWords = line.split(/\s+/);
-      if (words.length + lineWords.length > 800) {
-        break;
+      if (turn.clarifierResponse.conflict_flag) {
+        parts.push(`  ⚠ Conflict flagged: "${turn.clarifierResponse.conflict_flag}"`);
       }
-      words.push(...lineWords);
-      out.push(line);
+
+      lines.push(parts.join("\n"));
     }
 
-    return out.join("\n\n");
+    return lines.join("\n\n");
   }
 
   /**
