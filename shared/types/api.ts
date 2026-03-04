@@ -16,6 +16,15 @@ import {
   CharacterSessionState,
 } from "./character";
 
+import {
+  CharacterImageClarifierResponse,
+  CharacterImageBuilderOutput,
+  CharacterImageJudgeScores,
+  CharacterImagePack,
+  CharacterImageSessionState,
+  GeneratedCharacterImage,
+} from "./characterImage";
+
 /** Standard error shape for all endpoints */
 export interface ApiError {
   error: true;
@@ -94,3 +103,36 @@ export type CharacterLockResponse = CharacterPack;
 
 /** GET /api/character/:projectId */
 export type CharacterSessionResponse = CharacterSessionState;
+
+// ─── Character Image Module API ───
+
+/** POST /api/character-image/clarify */
+export interface CharacterImageClarifyResponse {
+  clarifier: CharacterImageClarifierResponse;
+  turnNumber: number;
+  totalTurns: number;
+}
+
+/** POST /api/character-image/generate */
+export interface CharacterImageGenerateResponse {
+  specs: CharacterImageBuilderOutput;
+  judge: {
+    passed: boolean;
+    hard_fail_reasons: string[];
+    scores: CharacterImageJudgeScores;
+    distinctiveness_notes: string;
+    one_fix_instruction: string;
+  } | null;
+}
+
+/** POST /api/character-image/generate-images */
+export interface CharacterImageGenerateImagesResponse {
+  images: Record<string, GeneratedCharacterImage>;
+  generationTimeMs: number;
+}
+
+/** POST /api/character-image/lock */
+export type CharacterImageLockResponse = CharacterImagePack;
+
+/** GET /api/character-image/:projectId */
+export type CharacterImageSessionResponse = CharacterImageSessionState;

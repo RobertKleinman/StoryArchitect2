@@ -1,6 +1,7 @@
 import { Router } from "express";
+import nodePath from "path";
 import { characterFeatureFlagGuard } from "../middleware/characterFeatureFlagGuard";
-import { characterService } from "../services/runtime";
+import { characterService, characterStore } from "../services/runtime";
 import { CharacterServiceError } from "../services/characterService";
 
 export const characterRoutes = Router();
@@ -109,6 +110,87 @@ characterRoutes.post("/lock", async (req, res) => {
   }
 });
 
+// ─── Export endpoints (MUST be before /:projectId) ───
+
+/** Get a character module export by project ID */
+characterRoutes.get("/export-session/:projectId", async (req, res) => {
+  try {
+    const exportData = await characterStore.getExport(req.params.projectId);
+    if (!exportData) {
+      // Maybe the session exists but hasn't been exported yet — check status
+      const session = await characterService.getSession(req.params.projectId);
+      if (!session) {
+        return res.status(404).json({ error: true, code: "NOT_FOUND", message: "Character session not found" });
+      }
+      return res.status(400).json({
+        error: true,
+        code: "INVALID_INPUT",
+        message: `Character session exists but is not locked (status: ${session.status}). Lock the characters first.`,
+      });
+    }
+    return res.json(exportData);
+  } catch (err) {
+    return handleError(res, err);
+  }
+});
+
+/** List all available character sessions (for the next module to discover) */
+characterRoutes.get("/list-sessions", async (_req, res) => {
+  try {
+    // Use characterStore to scan for sessions instead of raw fs
+    // We'll read known session IDs from localStorage keys sent by the frontend
+    // OR we do a simple directory listing via Node's native fs
+    const nodeFs = require("fs").promises;
+    const dataDir = "./data/characters";
+    const exportDir = nodePath.join(dataDir, "exports");
+
+    let sessionFiles: string[] = [];
+    try {
+      const allFiles: string[] = await nodeFs.readdir(dataDir);
+      sessionFiles = allFiles.filter((f: string) => f.endsWith(".json"));
+    } catch { /* empty dir */ }
+
+    const sessions: Array<{
+      projectId: string;
+      status: string;
+      turnCount: number;
+      castCount: number;
+      characterRoles: string[];
+      hasExport: boolean;
+      ensembleDynamic: string;
+    }> = [];
+
+    for (const file of sessionFiles) {
+      try {
+        const raw = await nodeFs.readFile(nodePath.join(dataDir, file), "utf-8");
+        const session = JSON.parse(raw);
+        const roles = Object.keys(session.characters ?? {});
+
+        // Check if export exists
+        let hasExport = false;
+        try {
+          await nodeFs.readFile(nodePath.join(exportDir, file), "utf-8");
+          hasExport = true;
+        } catch {}
+
+        sessions.push({
+          projectId: session.projectId,
+          status: session.status,
+          turnCount: session.turns?.length ?? 0,
+          castCount: roles.length,
+          characterRoles: roles,
+          hasExport,
+          ensembleDynamic: session.revealedCharacters?.ensemble_dynamic ?? "",
+        });
+      } catch { /* skip corrupt files */ }
+    }
+
+    return res.json({ sessions });
+  } catch (err) {
+    return handleError(res, err);
+  }
+});
+
 characterRoutes.get("/:projectId", async (req, res) => {
   try {
     const session = await characterService.getSession(req.params.projectId);
@@ -116,6 +198,18 @@ characterRoutes.get("/:projectId", async (req, res) => {
       return res.status(404).json({ error: true, code: "NOT_FOUND", message: "Character session not found" });
     }
     return res.json(session);
+  } catch (err) {
+    return handleError(res, err);
+  }
+});
+
+characterRoutes.get("/debug/psychology/:projectId", async (req, res) => {
+  try {
+    const session = await characterService.getSession(req.params.projectId);
+    if (!session?.psychologyLedger) {
+      return res.json({ psychologyLedger: null });
+    }
+    return res.json({ psychologyLedger: session.psychologyLedger });
   } catch (err) {
     return handleError(res, err);
   }

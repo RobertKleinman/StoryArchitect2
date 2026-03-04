@@ -1,4 +1,6 @@
 import { Router } from "express";
+import fs from "fs/promises";
+import nodePath from "path";
 import { featureFlagGuard } from "../middleware/featureFlagGuard";
 import { hookService, projectStore } from "../services/runtime";
 import { HookServiceError } from "../services/hookService";
@@ -142,6 +144,62 @@ hookRoutes.get("/export-prompts/:projectId", async (req, res) => {
   }
 });
 
+/** List all available hook sessions (for the next module to discover) */
+hookRoutes.get("/list-sessions", async (_req, res) => {
+  try {
+    const dataDir = "./data";
+    const exportDir = nodePath.join(dataDir, "exports");
+
+    let allFiles: string[] = [];
+    try {
+      allFiles = await fs.readdir(dataDir);
+    } catch { /* empty dir */ }
+    const sessionFiles = allFiles.filter((f: string) => f.endsWith(".json"));
+
+    const sessions: Array<{
+      projectId: string;
+      status: string;
+      turnCount: number;
+      seedInput: string;
+      hookSentence: string;
+      premise: string;
+      emotionalPromise: string;
+      hasExport: boolean;
+    }> = [];
+
+    for (const file of sessionFiles) {
+      try {
+        const raw = await fs.readFile(nodePath.join(dataDir, file), "utf-8");
+        const session = JSON.parse(raw);
+        // Only include actual hook sessions (they have seedInput and turns)
+        if (!session.projectId || !Array.isArray(session.turns)) continue;
+
+        let hasExport = false;
+        try {
+          await fs.readFile(nodePath.join(exportDir, file), "utf-8");
+          hasExport = true;
+        } catch {}
+
+        const rh = session.revealedHook;
+        sessions.push({
+          projectId: session.projectId,
+          status: session.status ?? "unknown",
+          turnCount: session.turns?.length ?? 0,
+          seedInput: session.seedInput ?? "",
+          hookSentence: rh?.hook_sentence ?? "",
+          premise: rh?.premise ?? "",
+          emotionalPromise: rh?.emotional_promise ?? "",
+          hasExport,
+        });
+      } catch { /* skip corrupt files */ }
+    }
+
+    return res.json({ sessions });
+  } catch (err) {
+    return handleError(res, err);
+  }
+});
+
 hookRoutes.get("/export-session/:projectId", async (req, res) => {
   try {
     // Try to get a previously saved export first
@@ -170,6 +228,18 @@ hookRoutes.get("/:projectId", async (req, res) => {
       return res.status(404).json({ error: true, code: "NOT_FOUND", message: "Session not found" });
     }
     return res.json(session);
+  } catch (err) {
+    return handleError(res, err);
+  }
+});
+
+hookRoutes.get("/debug/psychology/:projectId", async (req, res) => {
+  try {
+    const session = await hookService.getSession(req.params.projectId);
+    if (!session?.psychologyLedger) {
+      return res.json({ psychologyLedger: null });
+    }
+    return res.json({ psychologyLedger: session.psychologyLedger });
   } catch (err) {
     return handleError(res, err);
   }

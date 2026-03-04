@@ -9,6 +9,8 @@ declare module "fs/promises" {
     writeFile(path: string, data: string, encoding?: string): Promise<void>;
     rename(from: string, to: string): Promise<void>;
     unlink(path: string): Promise<void>;
+    readdir(path: string): Promise<string[]>;
+    stat(path: string): Promise<{ isFile(): boolean; isDirectory(): boolean }>;
   };
   export default fs;
 }

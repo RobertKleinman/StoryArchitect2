@@ -40,6 +40,7 @@ import {
   recordHypotheses,
   recordAssumptionDelta,
   updateHeuristics,
+  checkPersistence,
   formatPsychologyLedgerForPrompt,
 } from "./psychologyEngine";
 
@@ -210,6 +211,9 @@ export class HookService {
           respondedIds,
           actions
         );
+
+        // Track whether prior hypothesis-informed changes persisted
+        checkPersistence(session.psychologyLedger, session.turns.length, actions);
       }
     }
 
@@ -303,7 +307,8 @@ export class HookService {
         session.turns.length + 1,
         "hook",
         clarifier.user_read.hypotheses ?? [],
-        clarifier.user_read.overall_read ?? ""
+        clarifier.user_read.overall_read ?? "",
+        clarifier.user_read.satisfaction
       );
     }
     this.updatePsychologyHeuristics(session);
@@ -785,14 +790,15 @@ export class HookService {
 
   /**
    * Format prior turns for the prompt.
-   * COMPRESSION STRATEGY: Last 2 turns get full detail (assumptions, etc.)
-   * Older turns get compressed to just question + user response.
+   * COMPRESSION STRATEGY: Adaptive window — show 2 recent turns in full for short sessions,
+   * compress to 1 for longer ones. Older turns get compressed to question + response.
    * Full historical detail lives in the constraint ledger.
    */
   private formatPriorTurns(turns: HookTurn[]): string {
     if (turns.length === 0) return "(No conversation yet)";
 
-    const RECENT_WINDOW = 2;
+    // Adaptive: keep 2 full turns when session is short (≤3), compress to 1 when longer
+    const RECENT_WINDOW = turns.length <= 3 ? 2 : 1;
     const recentStart = Math.max(0, turns.length - RECENT_WINDOW);
 
     const lines: string[] = [];

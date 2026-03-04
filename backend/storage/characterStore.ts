@@ -1,6 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { CharacterPack, CharacterSessionState } from "../../shared/types/character";
+import { UserPsychologyLedger } from "../../shared/types/userPsychology";
 
 /**
  * Character module export — the clean handoff payload saved separately from the session.
@@ -18,6 +19,9 @@ export interface CharacterModuleExport {
 
   /** Full constraint ledger — every confirmed and inferred character decision */
   constraintLedger: CharacterSessionState["constraintLedger"];
+
+  /** Psychology ledger — accumulated user psychology data for downstream modules */
+  psychologyLedger?: UserPsychologyLedger;
 
   /** Stats summary */
   stats: {
@@ -85,6 +89,7 @@ export class CharacterStore {
       hookProjectId: session.hookProjectId,
       characterPack,
       constraintLedger: session.constraintLedger,
+      psychologyLedger: session.psychologyLedger,
       stats: {
         totalTurns: session.turns.length,
         totalLlmCalls: history.length,

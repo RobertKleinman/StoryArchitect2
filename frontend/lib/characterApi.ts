@@ -9,6 +9,7 @@ import type {
   CharacterClarifyResponse,
   CharacterGenerateResponse,
 } from "../../shared/types/api";
+import type { UserPsychologyLedger } from "../../shared/types/userPsychology";
 
 const BASE = "/api";
 
@@ -76,4 +77,22 @@ export const characterApi = {
   /** Check if a hook export exists for the given project ID. Returns the export data or throws. */
   checkHookExport: (hookProjectId: string) =>
     request<{ hookPack: any; seedInput: string; sessionStatus: string }>(`/hook/export-session/${hookProjectId}`),
+
+  /** List all available hook sessions (for session discovery in the connect phase) */
+  debugPsychology: (projectId: string) =>
+    request<{ psychologyLedger: UserPsychologyLedger | null }>(`/character/debug/psychology/${projectId}`),
+
+  listHookSessions: () =>
+    request<{
+      sessions: Array<{
+        projectId: string;
+        status: string;
+        turnCount: number;
+        seedInput: string;
+        hookSentence: string;
+        premise: string;
+        emotionalPromise: string;
+        hasExport: boolean;
+      }>;
+    }>("/hook/list-sessions"),
 };

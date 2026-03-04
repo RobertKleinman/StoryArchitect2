@@ -42,7 +42,9 @@ import {
   recordHypotheses,
   recordAssumptionDelta,
   updateHeuristics,
+  checkPersistence,
   formatPsychologyLedgerForPrompt,
+  snapshotBaselineForNewModule,
 } from "./psychologyEngine";
 
 export class CharacterServiceError extends Error {
@@ -151,6 +153,8 @@ export class CharacterService {
 
         // Import psychology ledger from hook module (or start fresh)
         const importedPsychLedger = sourceHook.psychologyLedger ?? createEmptyLedger();
+        // Snapshot hook's accumulated stats as baseline for this module
+        snapshotBaselineForNewModule(importedPsychLedger);
 
         session = {
           projectId,
@@ -229,6 +233,9 @@ export class CharacterService {
           respondedIds,
           actions
         );
+
+        // Track whether prior hypothesis-informed changes persisted
+        checkPersistence(session.psychologyLedger, session.turns.length, actions);
       }
     }
 
@@ -248,7 +255,7 @@ export class CharacterService {
     try {
       clarifierRaw = await this.llm.call("char_clarifier", systemPrompt, userPrompt, {
         temperature: 0.7,
-        maxTokens: 2000,
+        maxTokens: 3500,
         modelOverride,
         jsonSchema: CHARACTER_CLARIFIER_SCHEMA,
       });
@@ -279,7 +286,7 @@ export class CharacterService {
       try {
         const retryRaw = await this.llm.call("char_clarifier", systemPrompt, userPrompt, {
           temperature: 0.7,
-          maxTokens: 2000,
+          maxTokens: 3500,
           modelOverride,
           jsonSchema: CHARACTER_CLARIFIER_SCHEMA,
         });
@@ -351,7 +358,8 @@ export class CharacterService {
         session.turns.length + 1,
         "character",
         clarifier.user_read.hypotheses ?? [],
-        clarifier.user_read.overall_read ?? ""
+        clarifier.user_read.overall_read ?? "",
+        clarifier.user_read.satisfaction
       );
     }
     this.updatePsychologyHeuristics(session);
@@ -421,12 +429,22 @@ export class CharacterService {
     const builderSystem = promptOverrides?.builder?.system ?? builderPrompt.system;
     const builderUser = promptOverrides?.builder?.user ?? builderPrompt.user;
 
+    // Adaptive maxTokens based on cast size — each character profile is ~1,500-2,000 tokens
+    const uniqueRoles = new Set<string>();
+    for (const turn of session.turns) {
+      for (const ch of turn.clarifierResponse.characters_surfaced ?? []) {
+        uniqueRoles.add(ch.role);
+      }
+    }
+    const castSize = Math.max(uniqueRoles.size, 2); // at least 2
+    const builderMaxTokens = Math.min(4000 + castSize * 1500, 16000);
+
     // Single builder pass (no tournament for characters)
     let builderRaw: string;
     try {
       builderRaw = await this.llm.call("char_builder", builderSystem, builderUser, {
         temperature: 0.8,
-        maxTokens: 16000,
+        maxTokens: builderMaxTokens,
         modelOverride,
         jsonSchema: CHARACTER_BUILDER_SCHEMA,
       });
@@ -655,6 +673,13 @@ export class CharacterService {
         bans: session.sourceHook.preferences?.bans ?? [],
       },
       source_dna: cast.collision_sources,
+      weaknesses: session.revealedJudge?.weaknesses ?? (
+        session.revealedJudge?.weakest_character ? [{
+          role: session.revealedJudge.weakest_character,
+          weakness: session.revealedJudge.one_fix_instruction,
+          development_opportunity: `Develop ${session.revealedJudge.weakest_character} further in visual/narrative modules`,
+        }] : undefined
+      ),
       user_style: {
         control_preference: controlPreference,
         typed_vs_clicked: typedVsClicked,
@@ -839,15 +864,15 @@ export class CharacterService {
 
   /**
    * Format prior turns for the prompt.
-   * COMPRESSION STRATEGY: Last 2 turns get full detail (assumptions, relationships, etc.)
-   * Older turns get compressed to just the question asked and user's response.
-   * This prevents prompt bloat while keeping recent context rich.
+   * COMPRESSION STRATEGY: Adaptive window — show 2 recent turns in full for short sessions,
+   * compress to 1 for longer ones. Older turns get compressed to question + response.
    * Full historical detail lives in the constraint ledger, not the turn history.
    */
   private formatPriorTurns(turns: CharacterTurn[]): string {
     if (turns.length === 0) return "(No conversation yet)";
 
-    const RECENT_WINDOW = 2; // how many recent turns get full detail
+    // Adaptive: keep 2 full turns when session is short (≤3), compress to 1 when longer
+    const RECENT_WINDOW = turns.length <= 3 ? 2 : 1;
     const recentStart = Math.max(0, turns.length - RECENT_WINDOW);
 
     const lines: string[] = [];

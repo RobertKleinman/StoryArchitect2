@@ -5,7 +5,18 @@
  *
  * v2: Structured hypothesis store replaces freeform observation strings.
  *     Non-choice (assumption delta) tracking added.
+ * v3: Hypothesis categories, satisfaction signal, assumption persistence tracking.
  */
+
+// ─── Hypothesis categories ───
+
+export type HypothesisCategory =
+  | "content_preferences"      // explicit themes, kinks, genres, aesthetics
+  | "control_orientation"      // do they want to drive or be surprised?
+  | "power_dynamics"           // hierarchy, authority, submission patterns
+  | "tonal_risk"               // how far they push boundaries
+  | "narrative_ownership"      // how protective of their vision?
+  | "engagement_satisfaction"; // how they're feeling about the experience
 
 // ─── Structured hypothesis (replaces freeform observation) ───
 
@@ -20,6 +31,8 @@ export interface UserHypothesis {
   confidence: "low" | "medium" | "high";
   /** How broadly this applies */
   scope: "this_story" | "this_genre" | "global";
+  /** Which psychological dimension this hypothesis belongs to */
+  category: HypothesisCategory;
   /** Turn number when first surfaced */
   firstSeen: number;
   /** Turn number when last updated */
@@ -37,20 +50,27 @@ export interface StructuredUserRead {
     evidence: string;
     confidence: "low" | "medium" | "high";
     scope: "this_story" | "this_genre" | "global";
+    category?: HypothesisCategory;
   }[];
   overall_read: string;
+  satisfaction?: {
+    score: number;
+    trend: "rising" | "stable" | "declining";
+    note: string;
+  };
 }
 
 /** Stored record of each turn's LLM read */
 export interface UserPsychologyRead {
   turnNumber: number;
-  module: "hook" | "character";
+  module: "hook" | "character" | "character_image";
   /** Structured hypotheses from the LLM */
   hypotheses: {
     hypothesis: string;
     evidence: string;
     confidence: "low" | "medium" | "high";
     scope: string;
+    category?: HypothesisCategory;
   }[];
   /** Brief LLM synthesis — the overall vibe read */
   overall_read: string;
@@ -68,6 +88,12 @@ export interface AssumptionDelta {
   ignored: string[];
   /** What action the user took on each responded assumption */
   actions: Record<string, "keep" | "alternative" | "freeform" | "not_ready">;
+  /** Tracks whether prior hypothesis-informed changes persisted */
+  prior_changes?: Array<{
+    hypothesis_id: string;
+    change_applied: string;
+    still_relevant: boolean;
+  }>;
 }
 
 // ─── Service-side heuristics (computed from behavior, no LLM cost) ───
@@ -85,6 +111,37 @@ export interface UserInteractionHeuristics {
   totalInteractions: number;
   /** Trend: are responses getting longer (+1), shorter (-1), or stable (0)? */
   engagementTrend: number;
+  /** Computed satisfaction signal — how happy is the user with the experience? */
+  satisfaction?: {
+    score: number;           // 0-1
+    trend: "rising" | "stable" | "declining";
+    last_computed_turn: number;
+  };
+  /**
+   * Baseline stats snapshot from previous modules. Set once at module init,
+   * never updated during the module's lifetime. Current module's turn stats
+   * are ADDED to this baseline to compute derived fields.
+   */
+  _importedBaseline?: {
+    typedCount: number;
+    clickedCount: number;
+    totalAssumptions: number;
+    deferredAssumptions: number;
+    changedAssumptions: number;
+    responseLengths: number[];
+  };
+  /**
+   * Combined raw stats (baseline + current module). Updated every turn.
+   * The NEXT module reads this to set its _importedBaseline at init time.
+   */
+  _rawStats?: {
+    typedCount: number;
+    clickedCount: number;
+    totalAssumptions: number;
+    deferredAssumptions: number;
+    changedAssumptions: number;
+    responseLengths: number[];
+  };
 }
 
 // ─── The full ledger ───

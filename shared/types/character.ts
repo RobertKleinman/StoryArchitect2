@@ -81,6 +81,7 @@ export interface CharacterSurfaced {
 }
 
 export interface CharacterClarifierResponse {
+  psychology_strategy?: string;
   hypothesis_line: string;       // evolving cast dynamic, not just one character
   question: string;
   options: CharacterClarifierOption[];
@@ -103,6 +104,11 @@ export interface CharacterClarifierResponse {
       scope: "this_story" | "this_genre" | "global";
     }[];
     overall_read: string;
+    satisfaction?: {
+      score: number;
+      trend: "rising" | "stable" | "declining";
+      note: string;
+    };
   };
 }
 
@@ -189,6 +195,12 @@ export interface CharacterJudgeOutput {
   scores: CharacterJudgeScores;
   weakest_character: string;     // role id
   one_fix_instruction: string;
+  /** Per-character weaknesses for downstream modules to develop further */
+  weaknesses?: Array<{
+    role: string;
+    weakness: string;
+    development_opportunity: string;
+  }>;
 }
 
 // ─── Character Pack (module handoff) ───
@@ -216,6 +228,12 @@ export interface CharacterPack {
     bans: string[];
   };
   source_dna: CharacterCollisionSource[];
+  /** Weaknesses identified by the judge — downstream modules should develop these */
+  weaknesses?: Array<{
+    role: string;
+    weakness: string;
+    development_opportunity: string;
+  }>;
   user_style: {
     control_preference: "director" | "explorer" | "mixed";
     typed_vs_clicked: "mostly_typed" | "mostly_clicked" | "mixed";

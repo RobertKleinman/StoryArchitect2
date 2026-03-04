@@ -1,8 +1,9 @@
 import React, { useState } from "react";
 import { HookWorkshop } from "./HookWorkshop";
 import { CharacterWorkshop } from "./CharacterWorkshop";
+import { CharacterImageWorkshop } from "./CharacterImageWorkshop";
 
-type Module = "hook" | "character";
+type Module = "hook" | "character" | "character_image";
 
 export function App() {
   const [activeModule, setActiveModule] = useState<Module>("hook");
@@ -24,10 +25,18 @@ export function App() {
         >
           2. Characters
         </button>
+        <button
+          type="button"
+          className={`module-tab${activeModule === "character_image" ? " module-tab-active" : ""}`}
+          onClick={() => setActiveModule("character_image")}
+        >
+          3. Character Images
+        </button>
       </nav>
 
       {activeModule === "hook" && <HookWorkshop />}
       {activeModule === "character" && <CharacterWorkshop />}
+      {activeModule === "character_image" && <CharacterImageWorkshop />}
     </div>
   );
 }

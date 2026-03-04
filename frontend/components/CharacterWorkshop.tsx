@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { characterApi } from "../lib/characterApi";
+import { PsychologyOverlay } from "./PsychologyOverlay";
 import type {
   CharacterAssumptionResponse,
   CharacterBuilderOutput,
@@ -107,14 +108,52 @@ export function CharacterWorkshop() {
   });
   const [hookValidated, setHookValidated] = useState(false);
   const [hookPreview, setHookPreview] = useState<{ seedInput: string; premise: string } | null>(null);
+  const [showPsych, setShowPsych] = useState(false);
+  const fetchPsych = useMemo(() => () => characterApi.debugPsychology(projectId), [projectId]);
+
+  // Available hook sessions for the connect phase
+  interface HookSessionInfo {
+    projectId: string;
+    status: string;
+    turnCount: number;
+    seedInput: string;
+    hookSentence: string;
+    premise: string;
+    emotionalPromise: string;
+    hasExport: boolean;
+  }
+  const [availableHookSessions, setAvailableHookSessions] = useState<HookSessionInfo[]>([]);
+  const [hookSessionsLoading, setHookSessionsLoading] = useState(true);
+  const [hookSessionsError, setHookSessionsError] = useState<string | null>(null);
+  const [showManualInput, setShowManualInput] = useState(false);
 
   const [state, setState] = useState<CharacterWorkshopState>(initialState);
   const [lastAction, setLastAction] = useState<null | (() => Promise<void>)>(null);
   const [sourcesExpanded, setSourcesExpanded] = useState(false);
 
+  // Load hook sessions on mount
+  React.useEffect(() => {
+    setHookSessionsLoading(true);
+    setHookSessionsError(null);
+    characterApi.listHookSessions()
+      .then(({ sessions }) => {
+        setAvailableHookSessions(sessions);
+        // Auto-select if there's exactly one locked session and no input yet
+        const locked = sessions.filter(s => s.status === "locked");
+        if (locked.length === 1 && !hookIdInput) {
+          setHookIdInput(locked[0].projectId);
+        }
+      })
+      .catch((err) => {
+        setHookSessionsError(err.message ?? "Failed to load hook sessions");
+      })
+      .finally(() => setHookSessionsLoading(false));
+  }, []);
+
   // Crash recovery
   const [recoverySession, setRecoverySession] = useState<any>(null);
   const [recoveryChecked, setRecoveryChecked] = useState(false);
+  const [exportBanner, setExportBanner] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   React.useEffect(() => {
     const savedCharId = loadSaved(CHAR_SESSION_KEY);
@@ -447,13 +486,22 @@ export function CharacterWorkshop() {
   const lockCharacters = async () => {
     await runAndTrack(async () => {
       setState((prev) => ({ ...prev, loading: true, loadingMessage: "Locking your cast...", error: null }));
-      await characterApi.lock(projectId);
-      setState((prev) => ({
-        ...prev,
-        phase: "locked",
-        loading: false,
-        loadingMessage: "",
-      }));
+      try {
+        await characterApi.lock(projectId);
+        setState((prev) => ({
+          ...prev,
+          phase: "locked",
+          loading: false,
+          loadingMessage: "",
+        }));
+        setExportBanner({ type: "success", message: "Cast exported successfully!" });
+        setTimeout(() => setExportBanner(null), 4000);
+      } catch (err: any) {
+        setState((prev) => ({ ...prev, loading: false, loadingMessage: "" }));
+        setExportBanner({ type: "error", message: `Export failed: ${err?.message ?? "Unknown error"}` });
+        setTimeout(() => setExportBanner(null), 6000);
+        throw err;
+      }
     });
   };
 
@@ -503,6 +551,11 @@ export function CharacterWorkshop() {
 
   return (
     <main className="workshop-shell">
+      {exportBanner && (
+        <div className={`export-banner export-banner-${exportBanner.type}`}>
+          {exportBanner.message}
+        </div>
+      )}
       <section className="workshop-card">
         {state.phase !== "connect" && state.phase !== "start" && state.hypothesisLine && (
           <header className="hypothesis-banner" key={state.hypothesisLine}>
@@ -522,48 +575,97 @@ export function CharacterWorkshop() {
           </div>
         )}
 
-        {/* ─── Connect Phase: enter hook project ID ─── */}
+        {/* ─── Connect Phase: select hook session ─── */}
         {state.phase === "connect" && (
-          <section>
+          <section className="connect-phase">
             <p className="lead">Connect to your hook</p>
-            <p>Enter the project ID from the hook module to import your locked premise and start building characters.</p>
+            <p>Select a locked hook session to import your premise and start building characters.</p>
 
-            <div className="seed-row">
-              <input
-                value={hookIdInput}
-                onChange={(e) => setHookIdInput(e.target.value)}
-                placeholder="Paste hook project ID here..."
-                disabled={state.loading}
-                onKeyDown={(e: React.KeyboardEvent) => {
-                  if (e.key === "Enter" && hookIdInput.trim()) {
-                    void validateHookId();
-                  }
-                }}
-              />
+            {hookSessionsLoading && <p className="loading-text">Loading available hook sessions...</p>}
+
+            {hookSessionsError && (
+              <div className="error-banner">
+                <p>Could not load sessions: {hookSessionsError}</p>
+                <button type="button" onClick={() => setShowManualInput(true)}>Enter ID manually</button>
+              </div>
+            )}
+
+            {!hookSessionsLoading && !hookSessionsError && availableHookSessions.length > 0 && (
+              <div className="session-list">
+                {availableHookSessions.map(s => {
+                  const isUsable = s.status === "locked";
+                  const isSelected = hookIdInput === s.projectId;
+                  return (
+                    <div
+                      key={s.projectId}
+                      className={`session-card ${isSelected ? "session-card-selected" : ""} ${!isUsable ? "session-card-disabled" : ""}`}
+                      onClick={() => { if (isUsable) setHookIdInput(s.projectId); }}
+                    >
+                      <div className="session-card-header">
+                        <span className={`session-status ${isUsable ? "status-locked" : "status-" + s.status}`}>
+                          {isUsable ? "✓ Locked" : s.status}
+                        </span>
+                        <span className="session-cast-count">{s.turnCount} turns</span>
+                      </div>
+                      {s.seedInput && (
+                        <p className="session-card-seed">Seed: &ldquo;{s.seedInput.slice(0, 100)}{s.seedInput.length > 100 ? "..." : ""}&rdquo;</p>
+                      )}
+                      {s.hookSentence && (
+                        <p className="session-card-hook">{s.hookSentence.slice(0, 150)}{s.hookSentence.length > 150 ? "..." : ""}</p>
+                      )}
+                      {s.emotionalPromise && (
+                        <p className="session-card-dynamic">{s.emotionalPromise.slice(0, 120)}{s.emotionalPromise.length > 120 ? "..." : ""}</p>
+                      )}
+                      <div className="session-card-meta">
+                        {!isUsable && <span className="warn-text">Not locked yet — complete the Hook module first</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {!hookSessionsLoading && !hookSessionsError && availableHookSessions.length === 0 && (
+              <p className="empty-text">No hook sessions found. Complete the Hook module first.</p>
+            )}
+
+            {/* Manual ID input fallback */}
+            {(showManualInput || (!hookSessionsLoading && availableHookSessions.length === 0)) && (
+              <div className="manual-input-section">
+                <p style={{ fontSize: "0.85rem", color: "#6b7280", marginBottom: "0.4rem" }}>Or enter a hook project ID manually:</p>
+                <div className="seed-row">
+                  <input
+                    value={hookIdInput}
+                    onChange={(e) => setHookIdInput(e.target.value)}
+                    placeholder="Paste hook project ID here..."
+                    disabled={state.loading}
+                    onKeyDown={(e: React.KeyboardEvent) => {
+                      if (e.key === "Enter" && hookIdInput.trim()) {
+                        void validateHookId();
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {!showManualInput && availableHookSessions.length > 0 && (
+              <button type="button" className="link-btn" style={{ fontSize: "0.82rem", marginTop: "0.4rem" }}
+                onClick={() => setShowManualInput(true)}>
+                Enter ID manually instead
+              </button>
+            )}
+
+            <div className="action-row" style={{ marginTop: "1rem" }}>
               <button
                 type="button"
                 className="primary"
                 onClick={() => void validateHookId()}
                 disabled={state.loading || !hookIdInput.trim()}
               >
-                {state.loading ? "Checking..." : "Load hook"}
+                {state.loading ? "Checking..." : "Connect to Selected Hook"}
               </button>
             </div>
-
-            {loadSaved(HOOK_SESSION_KEY) && hookIdInput !== loadSaved(HOOK_SESSION_KEY) && (
-              <p className="hook-id-hint">
-                Detected from Hook module: <button
-                  type="button"
-                  className="link-btn"
-                  onClick={() => {
-                    const detected = loadSaved(HOOK_SESSION_KEY) ?? "";
-                    setHookIdInput(detected);
-                  }}
-                >
-                  {loadSaved(HOOK_SESSION_KEY)?.slice(0, 20)}...
-                </button>
-              </p>
-            )}
           </section>
         )}
 
@@ -673,7 +775,25 @@ export function CharacterWorkshop() {
             )}
 
             {state.conflictFlag && (
-              <div className="conflict-banner"><p>{state.conflictFlag}</p></div>
+              <div className="conflict-banner">
+                <p>⚠ {state.conflictFlag}</p>
+                <div className="conflict-actions">
+                  <button
+                    type="button"
+                    className="chip-sm"
+                    onClick={() => setState(s => ({ ...s, freeTextValue: `Regarding the conflict: I want to keep both as-is`, selectedOptionId: null, selectedOptionLabel: null }))}
+                  >
+                    Keep both
+                  </button>
+                  <button
+                    type="button"
+                    className="chip-sm"
+                    onClick={() => setState(s => ({ ...s, freeTextValue: `Regarding the conflict: `, selectedOptionId: null, selectedOptionLabel: null }))}
+                  >
+                    I'll resolve it...
+                  </button>
+                </div>
+              </div>
             )}
 
             <div className="question-header">
@@ -738,19 +858,35 @@ export function CharacterWorkshop() {
                             }))
                           }
                         >Keep it</button>
-                        {a.alternatives.map((alt, i) => (
-                          <button
-                            type="button"
-                            key={`${a.id}-alt-${i}`}
-                            className={`assumption-btn assumption-alt${resp?.action === "alternative" && resp.value === alt ? " assumption-btn-active" : ""}`}
-                            onClick={() =>
-                              setState((prev) => ({
-                                ...prev,
-                                assumptionResponses: { ...prev.assumptionResponses, [a.id]: { action: "alternative", value: alt } },
-                              }))
-                            }
-                          >{alt}</button>
-                        ))}
+                        {a.alternatives.map((alt, i) => {
+                          const isSelected = resp?.action === "alternative" && resp.value.split(" + ").includes(alt);
+                          return (
+                            <button
+                              type="button"
+                              key={`${a.id}-alt-${i}`}
+                              className={`assumption-btn assumption-alt${isSelected ? " assumption-btn-active" : ""}`}
+                              onClick={() =>
+                                setState((prev) => {
+                                  const prevResp = prev.assumptionResponses[a.id];
+                                  const prevAlts = (prevResp?.action === "alternative" && prevResp.value)
+                                    ? prevResp.value.split(" + ") : [];
+                                  let newAlts: string[];
+                                  if (prevAlts.includes(alt)) { newAlts = prevAlts.filter((v) => v !== alt); }
+                                  else { newAlts = [...prevAlts, alt]; }
+                                  return {
+                                    ...prev,
+                                    assumptionResponses: {
+                                      ...prev.assumptionResponses,
+                                      [a.id]: newAlts.length > 0
+                                        ? { action: "alternative" as const, value: newAlts.join(" + ") }
+                                        : { action: "keep" as const, value: a.assumption },
+                                    },
+                                  };
+                                })
+                              }
+                            >{alt}</button>
+                          );
+                        })}
                         <button
                           type="button"
                           className={`assumption-btn assumption-notready${resp?.action === "not_ready" ? " assumption-btn-active" : ""}`}
@@ -861,10 +997,27 @@ export function CharacterWorkshop() {
                 <div key={role} className="character-card">
                   <h4>{role.replace(/_/g, " ").toUpperCase()}</h4>
                   <p>{profile.description}</p>
-                  <div className="character-dials">
-                    <span className="dial-chip">Want: {profile.core_dials.want}</span>
-                    <span className="dial-chip">Misbelief: {profile.core_dials.misbelief}</span>
-                    <span className="dial-chip">Stakes: {profile.core_dials.stakes}</span>
+                  <div className="dials-section">
+                    <div className="dials-group">
+                      <span className="dials-group-label">Core</span>
+                      <div className="dials-row">
+                        <span className="dial-chip"><strong>Want:</strong> {profile.core_dials.want}</span>
+                        {profile.core_dials.want_urgency && <span className="dial-chip"><strong>Urgency:</strong> {profile.core_dials.want_urgency}</span>}
+                        <span className="dial-chip"><strong>Misbelief:</strong> {profile.core_dials.misbelief}</span>
+                        <span className="dial-chip"><strong>Stakes:</strong> {profile.core_dials.stakes}</span>
+                        {profile.core_dials.break_point && <span className="dial-chip"><strong>Break point:</strong> {profile.core_dials.break_point}</span>}
+                      </div>
+                    </div>
+                    {profile.secondary_dials && (
+                      <div className="dials-group">
+                        <span className="dials-group-label">Secondary</span>
+                        <div className="dials-row">
+                          {Object.entries(profile.secondary_dials).map(([key, val]) => (
+                            val ? <span key={key} className="dial-chip"><strong>{key.replace(/_/g, " ")}:</strong> {val as string}</span> : null
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                   {((profile as any).threshold_statement || (profile as any).competence_axis || (profile as any).cost_type) && (
                     <div className="character-dials" style={{ marginTop: "0.4rem" }}>
@@ -942,6 +1095,16 @@ export function CharacterWorkshop() {
           </section>
         )}
       </section>
+
+      <button type="button" className="psych-toggle" onClick={() => setShowPsych((v) => !v)}>
+        {showPsych ? "Hide" : "Show"} Psychology
+      </button>
+      <PsychologyOverlay
+        fetchPsychology={fetchPsych}
+        projectId={projectId}
+        visible={showPsych}
+        onClose={() => setShowPsych(false)}
+      />
     </main>
   );
 }

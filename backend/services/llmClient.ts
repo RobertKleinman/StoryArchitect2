@@ -18,6 +18,12 @@ interface AnthropicTextBlock {
 
 interface AnthropicResponse {
   content?: AnthropicTextBlock[];
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    cache_creation_input_tokens?: number;
+    cache_read_input_tokens?: number;
+  };
 }
 
 export class LLMClient {
@@ -53,6 +59,16 @@ export class LLMClient {
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         const response = await this.createMessage(model, systemPrompt, userPrompt, options);
+
+        // Log cache usage for monitoring prompt caching effectiveness
+        if (response.usage) {
+          const u = response.usage;
+          const cacheHit = u.cache_read_input_tokens ?? 0;
+          const cacheWrite = u.cache_creation_input_tokens ?? 0;
+          if (cacheHit > 0 || cacheWrite > 0) {
+            console.log(`LLM [${role}] cache: read=${cacheHit} created=${cacheWrite} input=${u.input_tokens ?? 0} output=${u.output_tokens ?? 0}`);
+          }
+        }
 
         // Join ALL text blocks (Claude can return multiple content blocks)
         const text = (response.content ?? [])
@@ -98,7 +114,16 @@ export class LLMClient {
       model,
       max_tokens: options?.maxTokens ?? 1024,
       temperature: options?.temperature ?? 0.7,
-      system: systemPrompt,
+      // Use array-of-blocks format with cache_control for prompt caching.
+      // System prompts are large (~6,500+ tokens) and constant across turns —
+      // caching saves ~80% input token cost and reduces TTFT after first turn.
+      system: [
+        {
+          type: "text",
+          text: systemPrompt,
+          cache_control: { type: "ephemeral" },
+        },
+      ],
       messages: [{ role: "user", content: userPrompt }],
     };
 

@@ -7,6 +7,7 @@
 export const HOOK_CLARIFIER_SCHEMA = {
   type: "object",
   properties: {
+    psychology_strategy: { type: "string" },
     hypothesis_line: { type: "string" },
     question: { type: "string" },
     options: {
@@ -71,19 +72,30 @@ export const HOOK_CLARIFIER_SCHEMA = {
               evidence: { type: "string" },
               confidence: { type: "string", enum: ["low", "medium", "high"] },
               scope: { type: "string", enum: ["this_story", "this_genre", "global"] },
+              category: { type: "string", enum: ["content_preferences", "control_orientation", "power_dynamics", "tonal_risk", "narrative_ownership", "engagement_satisfaction"] },
             },
-            required: ["hypothesis", "evidence", "confidence", "scope"],
+            required: ["hypothesis", "evidence", "confidence", "scope", "category"],
             additionalProperties: false,
           },
         },
         overall_read: { type: "string" },
+        satisfaction: {
+          type: "object",
+          properties: {
+            score: { type: "number" },
+            trend: { type: "string", enum: ["rising", "stable", "declining"] },
+            note: { type: "string" },
+          },
+          required: ["score", "trend", "note"],
+          additionalProperties: false,
+        },
       },
-      required: ["hypotheses", "overall_read"],
+      required: ["hypotheses", "overall_read", "satisfaction"],
       additionalProperties: false,
     },
   },
   required: [
-    "hypothesis_line", "question", "options",
+    "psychology_strategy", "hypothesis_line", "question", "options",
     "allow_free_text", "ready_for_hook", "readiness_pct", "readiness_note", "missing_signal", "conflict_flag", "assumptions", "state_update", "user_read"
   ],
   additionalProperties: false,

@@ -11,6 +11,7 @@ import type {
   GenerateResponse,
   PreviewPromptResponse,
 } from "../../shared/types/api";
+import type { UserPsychologyLedger } from "../../shared/types/userPsychology";
 
 const BASE = "/api";
 
@@ -81,6 +82,9 @@ export const hookApi = {
 
   reset: (projectId: string) =>
     request<{ deleted: true }>(`/hook/${projectId}`, { method: "DELETE" }),
+
+  debugPsychology: (projectId: string) =>
+    request<{ psychologyLedger: UserPsychologyLedger | null }>(`/hook/debug/psychology/${projectId}`),
 
   getModels: () => request<ModelConfig>("/models"),
 

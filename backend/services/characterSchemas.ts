@@ -18,6 +18,7 @@ const stateUpdateEntrySchema = {
 export const CHARACTER_CLARIFIER_SCHEMA = {
   type: "object",
   properties: {
+    psychology_strategy: { type: "string" },
     hypothesis_line: { type: "string" },
     question: { type: "string" },
     options: {
@@ -110,19 +111,30 @@ export const CHARACTER_CLARIFIER_SCHEMA = {
               evidence: { type: "string" },
               confidence: { type: "string", enum: ["low", "medium", "high"] },
               scope: { type: "string", enum: ["this_story", "this_genre", "global"] },
+              category: { type: "string", enum: ["content_preferences", "control_orientation", "power_dynamics", "tonal_risk", "narrative_ownership", "engagement_satisfaction"] },
             },
-            required: ["hypothesis", "evidence", "confidence", "scope"],
+            required: ["hypothesis", "evidence", "confidence", "scope", "category"],
             additionalProperties: false,
           },
         },
         overall_read: { type: "string" },
+        satisfaction: {
+          type: "object",
+          properties: {
+            score: { type: "number" },
+            trend: { type: "string", enum: ["rising", "stable", "declining"] },
+            note: { type: "string" },
+          },
+          required: ["score", "trend", "note"],
+          additionalProperties: false,
+        },
       },
-      required: ["hypotheses", "overall_read"],
+      required: ["hypotheses", "overall_read", "satisfaction"],
       additionalProperties: false,
     },
   },
   required: [
-    "hypothesis_line", "question", "options", "allow_free_text",
+    "psychology_strategy", "hypothesis_line", "question", "options", "allow_free_text",
     "character_focus", "ready_for_characters", "readiness_pct",
     "readiness_note", "missing_signal", "conflict_flag",
     "characters_surfaced", "relationship_updates", "state_updates", "user_read",
@@ -269,7 +281,20 @@ export const CHARACTER_JUDGE_SCHEMA = {
     },
     weakest_character: { type: "string" },
     one_fix_instruction: { type: "string" },
+    weaknesses: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          role: { type: "string" },
+          weakness: { type: "string" },
+          development_opportunity: { type: "string" },
+        },
+        required: ["role", "weakness", "development_opportunity"],
+        additionalProperties: false,
+      },
+    },
   },
-  required: ["pass", "hard_fail_reasons", "scores", "weakest_character", "one_fix_instruction"],
+  required: ["pass", "hard_fail_reasons", "scores", "weakest_character", "one_fix_instruction", "weaknesses"],
   additionalProperties: false,
 } as const;

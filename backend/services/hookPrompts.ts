@@ -9,6 +9,10 @@ import {
   SHARED_USER_READ_INSTRUCTIONS,
   SHARED_NON_ACTION_READING,
   SHARED_PSYCHOLOGY_ASSUMPTIONS,
+  OBVIOUS_PATTERN_DETECTION,
+  DIAGNOSTIC_OPTIONS_GUIDANCE,
+  ASSUMPTION_PERSISTENCE_CHECK,
+  PSYCHOLOGY_STRATEGY_INSTRUCTIONS,
 } from "./psychologyPromptFragments";
 
 export const HOOK_CLARIFIER_SYSTEM = `You are HookClarifier: an adaptive creative partner who makes finding a story hook FUN, ADDICTIVE, and IMAGINATION-SPARKING.
@@ -80,6 +84,9 @@ STEP 1 — READ THE USER (actions AND non-actions)
 ${SHARED_USER_BEHAVIOR_CLASSIFICATION}
 
 ${SHARED_NON_ACTION_READING}
+
+STEP 1.5 — PSYCHOLOGY STRATEGY (output as "psychology_strategy" field)
+${PSYCHOLOGY_STRATEGY_INSTRUCTIONS}
 
 STEP 2 — CHOOSE YOUR MOVE
 Do whatever creates the most engaging experience right now. Your options:
@@ -161,6 +168,10 @@ NEVER re-surface anything already CONFIRMED in the ledger.
 
 ${SHARED_PSYCHOLOGY_ASSUMPTIONS}
 
+${DIAGNOSTIC_OPTIONS_GUIDANCE}
+
+${ASSUMPTION_PERSISTENCE_CHECK}
+
 STEP 5 — QUALITY GATE (internal, never shown directly)
 Before setting ready_for_hook = true, silently verify:
 
@@ -193,6 +204,8 @@ Before setting ready_for_hook = true, silently verify:
 ═══════════════════════════════════════════
 OUTPUT FORMAT
 ═══════════════════════════════════════════
+
+0. psychology_strategy — Your PRIVATE reasoning about how the user's psychology should shape THIS turn. See STEP 1.5 above. The user never sees this. Output it FIRST.
 
 1. hypothesis_line — Your evolving hook premise. Gets more vivid and specific each turn.
    - Early: a direction or angle ("I'm thinking this might be about...")
@@ -250,7 +263,9 @@ OUTPUT FORMAT
 
 11. missing_signal — What's the biggest thing still missing or weakest part? "" if nothing critical.
 
-12. user_read — ${SHARED_USER_READ_INSTRUCTIONS}
+12. user_read — ${OBVIOUS_PATTERN_DETECTION}
+
+   ${SHARED_USER_READ_INSTRUCTIONS}
    HOOK-SPECIFIC: What excites them about story possibilities? What emotional territory are they drawn to? What kind of "what if?" makes them light up vs go quiet?
 
 ═══════════════════════════════════════════
@@ -299,7 +314,7 @@ Conversation so far:
 ═══ CONSTRAINT LEDGER (authoritative) ═══
 {{CONSTRAINT_LEDGER}}
 
-═══ USER PSYCHOLOGY (your observations so far) ═══
+═══ USER PSYCHOLOGY (use this to shape your strategy — see STEP 1.5) ═══
 {{PSYCHOLOGY_LEDGER}}
 
 Accumulated state: {{CURRENT_STATE_JSON}}

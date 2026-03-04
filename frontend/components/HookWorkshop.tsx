@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { hookApi } from "../lib/hookApi";
 import { PromptEditor } from "./PromptEditor";
+import { PsychologyOverlay } from "./PsychologyOverlay";
 import type {
   AssumptionResponse,
   HookAssumption,
@@ -117,6 +118,8 @@ export function HookWorkshop() {
   const [lastAction, setLastAction] = useState<null | (() => Promise<void>)>(null);
   const [sourcesExpanded, setSourcesExpanded] = useState(false);
   const [detailsExpanded, setDetailsExpanded] = useState(false);
+  const [showPsych, setShowPsych] = useState(false);
+  const fetchPsych = useMemo(() => () => hookApi.debugPsychology(projectId), [projectId]);
 
   // Prompt preview state
   const [promptPreview, setPromptPreview] = useState<{
@@ -709,7 +712,23 @@ export function HookWorkshop() {
 
             {state.conflictFlag && (
               <div className="conflict-banner">
-                <p>{state.conflictFlag}</p>
+                <p>⚠ {state.conflictFlag}</p>
+                <div className="conflict-actions">
+                  <button
+                    type="button"
+                    className="chip-sm"
+                    onClick={() => setState(s => ({ ...s, freeTextValue: `Regarding the conflict: I want to keep both as-is`, selectedOptionId: null, selectedOptionLabel: null }))}
+                  >
+                    Keep both
+                  </button>
+                  <button
+                    type="button"
+                    className="chip-sm"
+                    onClick={() => setState(s => ({ ...s, freeTextValue: `Regarding the conflict: `, selectedOptionId: null, selectedOptionLabel: null }))}
+                  >
+                    I'll resolve it...
+                  </button>
+                </div>
               </div>
             )}
 
@@ -781,24 +800,40 @@ export function HookWorkshop() {
                         >
                           Keep it
                         </button>
-                        {a.alternatives.map((alt, i) => (
-                          <button
-                            type="button"
-                            key={`${a.id}-alt-${i}`}
-                            className={`assumption-btn assumption-alt${resp?.action === "alternative" && resp.value === alt ? " assumption-btn-active" : ""}`}
-                            onClick={() =>
-                              setState((prev) => ({
-                                ...prev,
-                                assumptionResponses: {
-                                  ...prev.assumptionResponses,
-                                  [a.id]: { action: "alternative", value: alt },
-                                },
-                              }))
-                            }
-                          >
-                            {alt}
-                          </button>
-                        ))}
+                        {a.alternatives.map((alt, i) => {
+                          const isSelected = resp?.action === "alternative" && resp.value.split(" + ").includes(alt);
+                          return (
+                            <button
+                              type="button"
+                              key={`${a.id}-alt-${i}`}
+                              className={`assumption-btn assumption-alt${isSelected ? " assumption-btn-active" : ""}`}
+                              onClick={() =>
+                                setState((prev) => {
+                                  const prevResp = prev.assumptionResponses[a.id];
+                                  const prevAlts = (prevResp?.action === "alternative" && prevResp.value)
+                                    ? prevResp.value.split(" + ") : [];
+                                  let newAlts: string[];
+                                  if (prevAlts.includes(alt)) {
+                                    newAlts = prevAlts.filter((v) => v !== alt);
+                                  } else {
+                                    newAlts = [...prevAlts, alt];
+                                  }
+                                  return {
+                                    ...prev,
+                                    assumptionResponses: {
+                                      ...prev.assumptionResponses,
+                                      [a.id]: newAlts.length > 0
+                                        ? { action: "alternative", value: newAlts.join(" + ") }
+                                        : { action: "keep", value: a.assumption },
+                                    },
+                                  };
+                                })
+                              }
+                            >
+                              {alt}
+                            </button>
+                          );
+                        })}
                         <button
                           type="button"
                           className={`assumption-btn assumption-notready${resp?.action === "not_ready" ? " assumption-btn-active" : ""}`}
@@ -1089,6 +1124,16 @@ export function HookWorkshop() {
           </div>
         )}
       </section>
+
+      <button type="button" className="psych-toggle" onClick={() => setShowPsych((v) => !v)}>
+        {showPsych ? "Hide" : "Show"} Psychology
+      </button>
+      <PsychologyOverlay
+        fetchPsychology={fetchPsych}
+        projectId={projectId}
+        visible={showPsych}
+        onClose={() => setShowPsych(false)}
+      />
     </main>
   );
 }

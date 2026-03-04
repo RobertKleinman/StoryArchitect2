@@ -1,5 +1,6 @@
 export type HookRole = "clarifier" | "builder" | "judge" | "summary" | "polish"
-  | "char_clarifier" | "char_builder" | "char_judge" | "char_polish" | "char_summary";
+  | "char_clarifier" | "char_builder" | "char_judge" | "char_polish" | "char_summary"
+  | "img_clarifier" | "img_builder" | "img_judge" | "img_summary";
 
 export interface ModelConfig {
   clarifier: string;
@@ -12,6 +13,10 @@ export interface ModelConfig {
   char_judge: string;
   char_polish: string;
   char_summary: string;
+  img_clarifier: string;
+  img_builder: string;
+  img_judge: string;
+  img_summary: string;
 }
 
 export const DEFAULT_MODEL_CONFIG: ModelConfig = {
@@ -25,6 +30,10 @@ export const DEFAULT_MODEL_CONFIG: ModelConfig = {
   char_judge: "claude-sonnet-4-6",
   char_polish: "claude-sonnet-4-6",
   char_summary: "claude-sonnet-4-6",
+  img_clarifier: "claude-sonnet-4-6",
+  img_builder: "claude-sonnet-4-6",
+  img_judge: "claude-sonnet-4-6",
+  img_summary: "claude-sonnet-4-6",
 };
 
 export const SUPPORTED_MODELS = [
