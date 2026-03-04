@@ -160,7 +160,7 @@ function HeuristicsPanel({ heuristics }: { heuristics: UserInteractionHeuristics
     <div className="psych-heuristics">
       <div className="psych-stat-grid">
         <StatCard label="Type ratio" value={h.typeRatio.toFixed(2)} subtitle="typed / total" />
-        <StatCard label="Avg response" value={h.avgResponseLength.toFixed(0)} subtitle="chars" />
+        <StatCard label="Avg response" value={h.avgResponseLength.toFixed(0)} subtitle="words" />
         <StatCard label="Deferral rate" value={`${(h.deferralRate * 100).toFixed(0)}%`} subtitle="not ready / total" />
         <StatCard label="Change rate" value={`${(h.changeRate * 100).toFixed(0)}%`} subtitle="changed assumptions" />
         <StatCard label="Interactions" value={String(h.totalInteractions)} subtitle="total" />

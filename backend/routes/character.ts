@@ -1,4 +1,5 @@
 import { Router } from "express";
+import fs from "fs/promises";
 import nodePath from "path";
 import { characterFeatureFlagGuard } from "../middleware/characterFeatureFlagGuard";
 import { characterService, characterStore } from "../services/runtime";
@@ -140,13 +141,12 @@ characterRoutes.get("/list-sessions", async (_req, res) => {
     // Use characterStore to scan for sessions instead of raw fs
     // We'll read known session IDs from localStorage keys sent by the frontend
     // OR we do a simple directory listing via Node's native fs
-    const nodeFs = require("fs").promises;
     const dataDir = "./data/characters";
     const exportDir = nodePath.join(dataDir, "exports");
 
     let sessionFiles: string[] = [];
     try {
-      const allFiles: string[] = await nodeFs.readdir(dataDir);
+      const allFiles: string[] = await fs.readdir(dataDir);
       sessionFiles = allFiles.filter((f: string) => f.endsWith(".json"));
     } catch { /* empty dir */ }
 
@@ -162,14 +162,14 @@ characterRoutes.get("/list-sessions", async (_req, res) => {
 
     for (const file of sessionFiles) {
       try {
-        const raw = await nodeFs.readFile(nodePath.join(dataDir, file), "utf-8");
+        const raw = await fs.readFile(nodePath.join(dataDir, file), "utf-8");
         const session = JSON.parse(raw);
         const roles = Object.keys(session.characters ?? {});
 
         // Check if export exists
         let hasExport = false;
         try {
-          await nodeFs.readFile(nodePath.join(exportDir, file), "utf-8");
+          await fs.readFile(nodePath.join(exportDir, file), "utf-8");
           hasExport = true;
         } catch {}
 
@@ -191,18 +191,6 @@ characterRoutes.get("/list-sessions", async (_req, res) => {
   }
 });
 
-characterRoutes.get("/:projectId", async (req, res) => {
-  try {
-    const session = await characterService.getSession(req.params.projectId);
-    if (!session) {
-      return res.status(404).json({ error: true, code: "NOT_FOUND", message: "Character session not found" });
-    }
-    return res.json(session);
-  } catch (err) {
-    return handleError(res, err);
-  }
-});
-
 characterRoutes.get("/debug/psychology/:projectId", async (req, res) => {
   try {
     const session = await characterService.getSession(req.params.projectId);
@@ -210,6 +198,19 @@ characterRoutes.get("/debug/psychology/:projectId", async (req, res) => {
       return res.json({ psychologyLedger: null });
     }
     return res.json({ psychologyLedger: session.psychologyLedger });
+  } catch (err) {
+    return handleError(res, err);
+  }
+});
+
+// /:projectId MUST be after all /debug/* and other static GET routes
+characterRoutes.get("/:projectId", async (req, res) => {
+  try {
+    const session = await characterService.getSession(req.params.projectId);
+    if (!session) {
+      return res.status(404).json({ error: true, code: "NOT_FOUND", message: "Character session not found" });
+    }
+    return res.json(session);
   } catch (err) {
     return handleError(res, err);
   }

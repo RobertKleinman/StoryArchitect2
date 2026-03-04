@@ -81,7 +81,7 @@ export interface CharacterSurfaced {
 }
 
 export interface CharacterClarifierResponse {
-  psychology_strategy?: string;
+  psychology_strategy: string;
   hypothesis_line: string;       // evolving cast dynamic, not just one character
   question: string;
   options: CharacterClarifierOption[];
@@ -102,9 +102,10 @@ export interface CharacterClarifierResponse {
       evidence: string;
       confidence: "low" | "medium" | "high";
       scope: "this_story" | "this_genre" | "global";
+      category: "content_preferences" | "control_orientation" | "power_dynamics" | "tonal_risk" | "narrative_ownership" | "engagement_satisfaction";
     }[];
     overall_read: string;
-    satisfaction?: {
+    satisfaction: {
       score: number;
       trend: "rising" | "stable" | "declining";
       note: string;

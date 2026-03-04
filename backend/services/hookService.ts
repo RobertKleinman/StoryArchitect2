@@ -14,7 +14,6 @@ import {
   PromptHistoryEntry,
   PromptOverrides,
   PromptPreview,
-  TournamentProgress,
 } from "../../shared/types/hook";
 import { ProjectStore } from "../storage/projectStore";
 import { LLMClient } from "./llmClient";

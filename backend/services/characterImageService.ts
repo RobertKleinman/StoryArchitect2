@@ -836,7 +836,12 @@ export class CharacterImageService {
       if (!char) continue;
       for (const [field, value] of Object.entries(fieldEdits)) {
         if (value !== undefined && field in char.visual_anchors) {
-          (char.visual_anchors as any)[field] = value;
+          // color_palette is string[] — split comma-separated input
+          if (field === "color_palette" && typeof value === "string") {
+            (char.visual_anchors as any)[field] = value.split(",").map((s: string) => s.trim()).filter(Boolean);
+          } else {
+            (char.visual_anchors as any)[field] = value;
+          }
         }
       }
     }

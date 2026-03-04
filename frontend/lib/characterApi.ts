@@ -19,7 +19,15 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     ...options,
   });
 
-  const data = await res.json();
+  let data: any;
+  const ct = res.headers.get("content-type") ?? "";
+  if (ct.includes("application/json")) {
+    data = await res.json();
+  } else {
+    const text = await res.text();
+    data = { message: text || `Server error (${res.status})` };
+  }
+
   if (!res.ok || data.error) {
     throw new Error(data?.message ?? "Something went wrong");
   }

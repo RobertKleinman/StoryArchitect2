@@ -220,6 +220,19 @@ hookRoutes.get("/export-session/:projectId", async (req, res) => {
   }
 });
 
+hookRoutes.get("/debug/psychology/:projectId", async (req, res) => {
+  try {
+    const session = await hookService.getSession(req.params.projectId);
+    if (!session?.psychologyLedger) {
+      return res.json({ psychologyLedger: null });
+    }
+    return res.json({ psychologyLedger: session.psychologyLedger });
+  } catch (err) {
+    return handleError(res, err);
+  }
+});
+
+// /:projectId MUST be after all /debug/* and other static GET routes
 hookRoutes.get("/:projectId", async (req, res) => {
   const modelOverride = getModelOverride(req.header("X-Model-Override"));
   try {
@@ -228,18 +241,6 @@ hookRoutes.get("/:projectId", async (req, res) => {
       return res.status(404).json({ error: true, code: "NOT_FOUND", message: "Session not found" });
     }
     return res.json(session);
-  } catch (err) {
-    return handleError(res, err);
-  }
-});
-
-hookRoutes.get("/debug/psychology/:projectId", async (req, res) => {
-  try {
-    const session = await hookService.getSession(req.params.projectId);
-    if (!session?.psychologyLedger) {
-      return res.json({ psychologyLedger: null });
-    }
-    return res.json({ psychologyLedger: session.psychologyLedger });
   } catch (err) {
     return handleError(res, err);
   }

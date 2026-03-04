@@ -45,7 +45,7 @@ export interface HookStateUpdate {
 }
 
 export interface HookClarifierResponse {
-  psychology_strategy?: string;
+  psychology_strategy: string;
   hypothesis_line: string;
   question: string;
   options: HookClarifierOption[];
@@ -64,9 +64,10 @@ export interface HookClarifierResponse {
       evidence: string;
       confidence: "low" | "medium" | "high";
       scope: "this_story" | "this_genre" | "global";
+      category: "content_preferences" | "control_orientation" | "power_dynamics" | "tonal_risk" | "narrative_ownership" | "engagement_satisfaction";
     }[];
     overall_read: string;
-    satisfaction?: {
+    satisfaction: {
       score: number;
       trend: "rising" | "stable" | "declining";
       note: string;

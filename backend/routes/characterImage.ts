@@ -1,8 +1,11 @@
 import { Router } from "express";
+import { characterImageFeatureFlagGuard } from "../middleware/characterImageFeatureFlagGuard";
 import { characterImageService, animeGenClient } from "../services/runtime";
 import { CharacterImageServiceError } from "../services/characterImageService";
 
 export const characterImageRoutes = Router();
+
+characterImageRoutes.use(characterImageFeatureFlagGuard);
 
 function getModelOverride(header: string | string[] | undefined): string | undefined {
   if (Array.isArray(header)) return header[0];
@@ -211,18 +214,6 @@ characterImageRoutes.get("/anime-gen-presets", async (_req, res) => {
 
 // ─── Session endpoints (/:projectId MUST be last) ───
 
-characterImageRoutes.get("/:projectId", async (req, res) => {
-  try {
-    const session = await characterImageService.getSession(req.params.projectId);
-    if (!session) {
-      return res.status(404).json({ error: true, code: "NOT_FOUND", message: "Character image session not found" });
-    }
-    return res.json(session);
-  } catch (err) {
-    return handleError(res, err);
-  }
-});
-
 characterImageRoutes.post("/set-art-style", async (req, res) => {
   const { projectId, style, customNote } = req.body ?? {};
   if (!projectId || !style) {
@@ -243,6 +234,19 @@ characterImageRoutes.get("/debug/psychology/:projectId", async (req, res) => {
       return res.json({ psychologyLedger: null });
     }
     return res.json({ psychologyLedger: session.psychologyLedger });
+  } catch (err) {
+    return handleError(res, err);
+  }
+});
+
+// /:projectId MUST be after all /debug/* and other static GET routes
+characterImageRoutes.get("/:projectId", async (req, res) => {
+  try {
+    const session = await characterImageService.getSession(req.params.projectId);
+    if (!session) {
+      return res.status(404).json({ error: true, code: "NOT_FOUND", message: "Character image session not found" });
+    }
+    return res.json(session);
   } catch (err) {
     return handleError(res, err);
   }
