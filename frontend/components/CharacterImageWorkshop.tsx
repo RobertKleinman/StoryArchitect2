@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { characterImageApi } from "../lib/characterImageApi";
 import { PsychologyOverlay } from "./PsychologyOverlay";
+import { ModelSelector } from "./ModelSelector";
 import type {
   CharacterImageAssumptionResponse,
   CharacterImageBuilderOutput,
@@ -572,6 +573,8 @@ export function CharacterImageWorkshop() {
 
   return (
     <div className="workshop character-image-workshop">
+      <ModelSelector />
+
       <div className="workshop-header">
         <h2>Character Images</h2>
         {state.phase !== "connect" && state.phase !== "locked" && (

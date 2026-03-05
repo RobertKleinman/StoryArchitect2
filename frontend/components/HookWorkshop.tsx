@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { hookApi } from "../lib/hookApi";
 import { PromptEditor } from "./PromptEditor";
 import { PsychologyOverlay } from "./PsychologyOverlay";
+import { ModelSelector } from "./ModelSelector";
 import type {
   AssumptionResponse,
   HookAssumption,
@@ -631,6 +632,8 @@ export function HookWorkshop() {
   return (
     <main className="workshop-shell">
       <section className="workshop-card">
+        <ModelSelector />
+
         {state.phase !== "seed" && state.hypothesisLine && (
           <header className="hypothesis-banner" key={state.hypothesisLine}>
             <p className="hypothesis-title">

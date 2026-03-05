@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { characterApi } from "../lib/characterApi";
 import { PsychologyOverlay } from "./PsychologyOverlay";
+import { ModelSelector } from "./ModelSelector";
 import type {
   CharacterAssumptionResponse,
   CharacterBuilderOutput,
@@ -557,6 +558,8 @@ export function CharacterWorkshop() {
         </div>
       )}
       <section className="workshop-card">
+        <ModelSelector />
+
         {state.phase !== "connect" && state.phase !== "start" && state.hypothesisLine && (
           <header className="hypothesis-banner" key={state.hypothesisLine}>
             <p className="hypothesis-title">

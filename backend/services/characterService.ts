@@ -265,7 +265,10 @@ export class CharacterService {
       throw new CharacterServiceError("LLM_CALL_FAILED", `Character clarifier call failed${detail}`);
     }
 
-    let clarifier = this.parseAndValidate<CharacterClarifierResponse>(clarifierRaw, [
+    // Structured outputs guarantee valid JSON schema compliance, so parse failures
+    // indicate a non-retryable shape issue — no point re-calling with identical prompt.
+    // LLMClient.call() already retries transient transport errors (429/500/529).
+    const clarifier = this.parseAndValidate<CharacterClarifierResponse>(clarifierRaw, [
       "hypothesis_line",
       "question",
       "options",
@@ -282,27 +285,8 @@ export class CharacterService {
     ]);
 
     if (!clarifier) {
-      // Retry once
-      try {
-        const retryRaw = await this.llm.call("char_clarifier", systemPrompt, userPrompt, {
-          temperature: 0.7,
-          maxTokens: 3500,
-          modelOverride,
-          jsonSchema: CHARACTER_CLARIFIER_SCHEMA,
-        });
-        clarifier = this.parseAndValidate<CharacterClarifierResponse>(retryRaw, [
-          "hypothesis_line", "question", "options", "allow_free_text",
-          "character_focus", "ready_for_characters", "readiness_pct",
-          "readiness_note", "missing_signal", "conflict_flag",
-          "characters_surfaced", "relationship_updates", "state_updates",
-        ]);
-      } catch (err) {
-        console.error("CHAR CLARIFY RETRY ERROR:", err);
-      }
-
-      if (!clarifier) {
-        throw new CharacterServiceError("LLM_PARSE_ERROR", "Failed to parse character clarifier response");
-      }
+      console.error("CHAR CLARIFIER PARSE FAILED. Raw (first 500):", clarifierRaw.slice(0, 500));
+      throw new CharacterServiceError("LLM_PARSE_ERROR", "Failed to parse character clarifier response");
     }
 
     // Record prompt history

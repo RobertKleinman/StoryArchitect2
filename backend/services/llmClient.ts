@@ -1,7 +1,28 @@
-import { HookRole, ModelConfig } from "../../shared/modelConfig";
+import { HookRole, ModelConfig, detectProvider } from "../../shared/modelConfig";
+import type { LLMProvider as ILLMProvider, ProviderCallOptions } from "./providers/types";
+import { ProviderHttpError } from "./providers/types";
+import { AnthropicProvider } from "./providers/anthropicProvider";
+import { OpenAICompatibleProvider } from "./providers/openaiProvider";
+import { GeminiProvider } from "./providers/geminiProvider";
 
-const STRUCTURED_OUTPUTS_BETA = "structured-outputs-2025-11-13";
-const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
+// ── Provider registry (singletons) ─────────────────────────────────
+
+const providers: Record<string, ILLMProvider> = {
+  anthropic: new AnthropicProvider(),
+  openai: new OpenAICompatibleProvider({
+    name: "openai",
+    baseUrl: "https://api.openai.com/v1",
+    apiKeyEnvVar: "OPENAI_API_KEY",
+  }),
+  gemini: new GeminiProvider(),
+  grok: new OpenAICompatibleProvider({
+    name: "grok",
+    baseUrl: "https://api.x.ai/v1",
+    apiKeyEnvVar: "GROK_API_KEY",
+  }),
+};
+
+// ── Public types (unchanged from before) ────────────────────────────
 
 export interface CallOptions {
   temperature?: number;
@@ -11,20 +32,7 @@ export interface CallOptions {
   jsonSchema?: Record<string, unknown>;
 }
 
-interface AnthropicTextBlock {
-  type: "text";
-  text: string;
-}
-
-interface AnthropicResponse {
-  content?: AnthropicTextBlock[];
-  usage?: {
-    input_tokens?: number;
-    output_tokens?: number;
-    cache_creation_input_tokens?: number;
-    cache_read_input_tokens?: number;
-  };
-}
+// ── LLMClient ───────────────────────────────────────────────────────
 
 export class LLMClient {
   private config: ModelConfig;
@@ -43,54 +51,71 @@ export class LLMClient {
 
   /**
    * Call the LLM with:
-   * - Retry + exponential backoff for 429/500/529
+   * - Automatic provider detection from model string
+   * - Retry + exponential backoff for 429/500/529 (provider-agnostic)
    * - Optional structured outputs (guaranteed JSON schema compliance)
-   * - Multi-block response handling (joins all text blocks)
    */
   async call(
     role: HookRole,
     systemPrompt: string,
     userPrompt: string,
-    options?: CallOptions
+    options?: CallOptions,
   ): Promise<string> {
     const model = options?.modelOverride ?? this.config[role];
+    const providerName = detectProvider(model);
+    const provider = providers[providerName];
+    if (!provider) {
+      throw new Error(`No provider registered for "${providerName}" (model: ${model})`);
+    }
+
     const maxAttempts = 3;
+    const callStart = Date.now();
+
+    const providerOpts: ProviderCallOptions = {
+      temperature: options?.temperature,
+      maxTokens: options?.maxTokens,
+      jsonSchema: options?.jsonSchema,
+    };
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
-        const response = await this.createMessage(model, systemPrompt, userPrompt, options);
+        const attemptStart = Date.now();
+        const response = await provider.call(model, systemPrompt, userPrompt, providerOpts);
+        const attemptMs = Date.now() - attemptStart;
 
-        // Log cache usage for monitoring prompt caching effectiveness
-        if (response.usage) {
-          const u = response.usage;
-          const cacheHit = u.cache_read_input_tokens ?? 0;
-          const cacheWrite = u.cache_creation_input_tokens ?? 0;
-          if (cacheHit > 0 || cacheWrite > 0) {
-            console.log(`LLM [${role}] cache: read=${cacheHit} created=${cacheWrite} input=${u.input_tokens ?? 0} output=${u.output_tokens ?? 0}`);
-          }
-        }
-
-        // Join ALL text blocks (Claude can return multiple content blocks)
-        const text = (response.content ?? [])
-          .filter((block): block is AnthropicTextBlock => block.type === "text")
-          .map((block) => block.text)
-          .join("");
+        // Latency + token instrumentation
+        const u = response.usage;
+        const totalMs = Date.now() - callStart;
+        console.log(
+          `[perf] LLM ${role} | ${attemptMs}ms (total ${totalMs}ms, attempt ${attempt}) | ` +
+          `in=${u.inputTokens} out=${u.outputTokens} cache_read=${u.cacheReadTokens ?? 0} cache_write=${u.cacheWriteTokens ?? 0} | ` +
+          `provider=${providerName} model=${model}`,
+        );
 
         // Structured outputs = already valid JSON; otherwise strip fences
-        return options?.jsonSchema ? text : stripJsonFences(text);
+        return options?.jsonSchema ? response.text : stripJsonFences(response.text);
       } catch (err: unknown) {
-        const status = getErrorStatus(err);
-        const retryable = typeof status === "number" && [429, 500, 529].includes(status);
+        const isRetriable =
+          err instanceof ProviderHttpError && err.isRetriable;
 
-        if (!retryable || attempt === maxAttempts) {
+        if (!isRetriable || attempt === maxAttempts) {
+          const totalMs = Date.now() - callStart;
+          const status = err instanceof ProviderHttpError ? err.status : "unknown";
+          console.error(
+            `[perf] LLM ${role} FAILED after ${totalMs}ms (${attempt} attempts) | ` +
+            `status=${status} | provider=${providerName} model=${model}`,
+          );
           throw err;
         }
 
-        const retryAfter = getRetryAfter(err);
-        const waitMs = retryAfterToMs(retryAfter) ?? Math.min(1000 * Math.pow(2, attempt - 1), 8000);
+        const retryAfter =
+          err instanceof ProviderHttpError ? err.retryAfter : undefined;
+        const waitMs =
+          retryAfterToMs(retryAfter) ??
+          Math.min(1000 * Math.pow(2, attempt - 1), 8000);
 
         console.warn(
-          `LLM [${role}] attempt ${attempt} failed (${status}), retrying in ${waitMs}ms...`
+          `LLM [${role}] attempt ${attempt} failed (${(err as ProviderHttpError).status}), retrying in ${waitMs}ms...`,
         );
         await sleep(waitMs);
       }
@@ -98,109 +123,16 @@ export class LLMClient {
 
     throw new Error(`LLM [${role}] failed after max retries`);
   }
-
-  private async createMessage(
-    model: string,
-    systemPrompt: string,
-    userPrompt: string,
-    options?: CallOptions
-  ): Promise<AnthropicResponse> {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      throw new Error("Missing ANTHROPIC_API_KEY environment variable");
-    }
-
-    const payload: Record<string, unknown> = {
-      model,
-      max_tokens: options?.maxTokens ?? 1024,
-      temperature: options?.temperature ?? 0.7,
-      // Use array-of-blocks format with cache_control for prompt caching.
-      // System prompts are large (~6,500+ tokens) and constant across turns —
-      // caching saves ~80% input token cost and reduces TTFT after first turn.
-      system: [
-        {
-          type: "text",
-          text: systemPrompt,
-          cache_control: { type: "ephemeral" },
-        },
-      ],
-      messages: [{ role: "user", content: userPrompt }],
-    };
-
-    if (options?.jsonSchema) {
-      payload.output_format = {
-        type: "json_schema",
-        schema: options.jsonSchema,
-      };
-    }
-
-    const headers: HeadersInit = {
-      "content-type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-    };
-
-    if (options?.jsonSchema) {
-      headers["anthropic-beta"] = STRUCTURED_OUTPUTS_BETA;
-    }
-
-    const res = await fetch(ANTHROPIC_API_URL, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(300_000), // 5 min timeout (structured outputs can be slow on first schema compile)
-    });
-
-    if (!res.ok) {
-      const retryAfter = res.headers.get("retry-after") ?? undefined;
-      let errorBody = "";
-      try {
-        errorBody = await res.text();
-      } catch {
-        // ignore body read failure
-      }
-      console.error(`Anthropic API error [${res.status}]:`, errorBody);
-      throw { status: res.status, headers: { "retry-after": retryAfter }, body: errorBody };
-    }
-
-    return (await res.json()) as AnthropicResponse;
-  }
 }
+
+// ── Helpers ─────────────────────────────────────────────────────────
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function getErrorStatus(err: unknown): number | undefined {
-  if (typeof err !== "object" || !err) {
-    return undefined;
-  }
-  const withStatus = err as { status?: unknown; error?: { status?: unknown } };
-  const top = withStatus.status;
-  if (typeof top === "number") {
-    return top;
-  }
-  const nested = withStatus.error?.status;
-  if (typeof nested === "number") {
-    return nested;
-  }
-  return undefined;
-}
-
-function getRetryAfter(err: unknown): string | undefined {
-  if (typeof err !== "object" || !err) {
-    return undefined;
-  }
-  const withHeaders = err as { headers?: { [key: string]: unknown } };
-  const retryAfter = withHeaders.headers?.["retry-after"];
-  return typeof retryAfter === "string" ? retryAfter : undefined;
-}
-
-
 function retryAfterToMs(retryAfter: string | undefined): number | undefined {
-  if (!retryAfter) {
-    return undefined;
-  }
+  if (!retryAfter) return undefined;
 
   const seconds = Number(retryAfter);
   if (Number.isFinite(seconds) && seconds >= 0) {

@@ -542,50 +542,66 @@ export class CharacterImageService {
     const images: Record<string, GeneratedCharacterImage> = {};
     const roles = Object.keys(session.revealedSpecs.characters);
 
-    for (const role of roles) {
-      const spec = session.revealedSpecs.characters[role];
-      if (!spec) continue;
+    // Build all generation tasks upfront
+    const tasks = roles
+      .filter(role => session.revealedSpecs!.characters[role])
+      .map(role => ({
+        role,
+        spec: session.revealedSpecs!.characters[role],
+        seed: seed ?? Math.floor(Math.random() * 2147483647),
+      }));
 
-      const currentSeed = seed ?? Math.floor(Math.random() * 2147483647);
+    // Run image generation with bounded concurrency (pool of 2)
+    // Each role's request is independent; this cuts wall-clock by ~half for multi-character batches
+    const CONCURRENCY = 2;
+    for (let i = 0; i < tasks.length; i += CONCURRENCY) {
+      const batch = tasks.slice(i, i + CONCURRENCY);
+      const results = await Promise.allSettled(
+        batch.map(async (task) => {
+          const genStart = Date.now();
+          const result = await this.animeGen.generateImage({
+            prompt: task.spec.image_generation_prompt,
+            checkpoint,
+            lora: lora ?? undefined,
+            quality: quality ?? "balanced",
+            seed: task.seed,
+            width: 768,
+            height: 1024,
+          });
+          const genTime = Date.now() - genStart;
+          console.log(`[img-gen] ${task.role}: ${genTime}ms (seed=${task.seed})`);
+          return { role: task.role, result, seed: task.seed, genTime };
+        })
+      );
 
-      try {
-        const genStart = Date.now();
-        const result = await this.animeGen.generateImage({
-          prompt: spec.image_generation_prompt,
-          checkpoint,
-          lora: lora ?? undefined,
-          quality: quality ?? "balanced",
-          seed: currentSeed,
-          width: 768,
-          height: 1024,
-        });
-        const genTime = Date.now() - genStart;
-
-        images[role] = {
-          role,
-          checkpoint,
-          lora: lora ?? null,
-          quality: quality ?? "balanced",
-          seed: currentSeed,
-          image_base64: result.image,
-          enhanced_prompt: result.enhanced_prompt,
-          generation_time_ms: genTime,
-          approved: false,
-          reroll_count: 0,
-        };
-
-        console.log(`[img-gen] ${role}: ${genTime}ms (seed=${currentSeed})`);
-      } catch (err) {
-        console.error(`[img-gen] Failed to generate image for ${role}:`, err);
-        throw new CharacterImageServiceError(
-          "IMAGE_GEN_FAILED",
-          `Failed to generate image for ${role}: ${err instanceof Error ? err.message : "Unknown error"}`
-        );
+      for (const settled of results) {
+        if (settled.status === "fulfilled") {
+          const { role, result, seed: usedSeed, genTime } = settled.value;
+          images[role] = {
+            role,
+            checkpoint,
+            lora: lora ?? null,
+            quality: quality ?? "balanced",
+            seed: usedSeed,
+            image_base64: result.image,
+            enhanced_prompt: result.enhanced_prompt,
+            generation_time_ms: genTime,
+            approved: false,
+            reroll_count: 0,
+          };
+        } else {
+          const failedRole = batch[results.indexOf(settled)]?.role ?? "unknown";
+          console.error(`[img-gen] Failed to generate image for ${failedRole}:`, settled.reason);
+          throw new CharacterImageServiceError(
+            "IMAGE_GEN_FAILED",
+            `Failed to generate image for ${failedRole}: ${settled.reason instanceof Error ? settled.reason.message : "Unknown error"}`
+          );
+        }
       }
     }
 
     const totalTime = Date.now() - startTime;
-    console.log(`[img-gen] Total batch: ${totalTime}ms for ${roles.length} characters`);
+    console.log(`[img-gen] Total batch: ${totalTime}ms for ${roles.length} characters (concurrency=${CONCURRENCY})`);
 
     session.generatedImages = images;
     session.modelPreferences = { checkpoint, lora: lora ?? null, quality: quality ?? "balanced" };

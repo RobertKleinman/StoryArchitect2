@@ -1914,3 +1914,151 @@ button:disabled {
   outline: none;
   border-color: #89b4fa;
 }
+
+/* ─── LLM Model Selector (Multi-Provider) ─── */
+
+.model-selector {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+  overflow: hidden;
+  margin-bottom: 0.2rem;
+}
+
+.model-selector-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  color: #4b5563;
+  text-align: left;
+}
+
+.model-selector-toggle:hover {
+  background: #f1f5f9;
+}
+
+.model-selector-icon {
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+
+.model-selector-current strong {
+  color: #1e293b;
+}
+
+.model-selector-panel {
+  padding: 0.6rem 0.75rem 0.75rem;
+  border-top: 1px solid #e2e8f0;
+  animation: fadeIn 180ms ease;
+}
+
+.model-selector-hint {
+  margin: 0 0 0.6rem;
+  font-size: 0.78rem;
+  color: #9ca3af;
+  line-height: 1.4;
+}
+
+.model-selector-error {
+  margin: 0 0 0.5rem;
+  font-size: 0.82rem;
+  color: #dc2626;
+  font-weight: 500;
+}
+
+.model-selector-providers {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.model-provider-group {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.model-provider-label {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b7280;
+}
+
+.model-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.model-chip {
+  font-size: 0.78rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: 16px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition: all 140ms ease;
+  font-family: inherit;
+}
+
+.model-chip:hover:not(:disabled) {
+  border-color: #a5b4fc;
+  background: #f0f4ff;
+}
+
+.model-chip.active {
+  border-color: #6366f1;
+  background: #eef2ff;
+  color: #4338ca;
+  font-weight: 600;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
+}
+
+.model-chip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.model-tier-badge {
+  font-size: 0.62rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.08rem 0.3rem;
+  border-radius: 4px;
+  background: #f3f4f6;
+  color: #9ca3af;
+}
+
+.model-chip.tier-fast .model-tier-badge {
+  background: #ecfdf5;
+  color: #059669;
+}
+
+.model-chip.tier-balanced .model-tier-badge {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.model-chip.tier-powerful .model-tier-badge {
+  background: #faf5ff;
+  color: #7c3aed;
+}
+
+.model-selector-saving {
+  margin: 0.4rem 0 0;
+  font-size: 0.78rem;
+  color: #6b7280;
+  font-style: italic;
+}

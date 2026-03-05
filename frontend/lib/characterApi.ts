@@ -13,26 +13,42 @@ import type { UserPsychologyLedger } from "../../shared/types/userPsychology";
 
 const BASE = "/api";
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
-  });
+const DEFAULT_TIMEOUT_MS = 180_000;
 
-  let data: any;
-  const ct = res.headers.get("content-type") ?? "";
-  if (ct.includes("application/json")) {
-    data = await res.json();
-  } else {
-    const text = await res.text();
-    data = { message: text || `Server error (${res.status})` };
+async function request<T>(path: string, options?: RequestInit & { timeoutMs?: number }): Promise<T> {
+  const { timeoutMs, ...fetchOptions } = options ?? {};
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs ?? DEFAULT_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(`${BASE}${path}`, {
+      headers: { "Content-Type": "application/json" },
+      ...fetchOptions,
+      signal: controller.signal,
+    });
+
+    let data: any;
+    const ct = res.headers.get("content-type") ?? "";
+    if (ct.includes("application/json")) {
+      data = await res.json();
+    } else {
+      const text = await res.text();
+      data = { message: text || `Server error (${res.status})` };
+    }
+
+    if (!res.ok || data.error) {
+      throw new Error(data?.message ?? "Something went wrong");
+    }
+
+    return data as T;
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error(`Request to ${path} timed out after ${((timeoutMs ?? DEFAULT_TIMEOUT_MS) / 1000).toFixed(0)}s`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
   }
-
-  if (!res.ok || data.error) {
-    throw new Error(data?.message ?? "Something went wrong");
-  }
-
-  return data as T;
 }
 
 export const characterApi = {
@@ -53,12 +69,14 @@ export const characterApi = {
     request<CharacterGenerateResponse>("/character/generate", {
       method: "POST",
       body: JSON.stringify({ projectId, promptOverrides }),
+      timeoutMs: 360_000, // 6 min — builder + judge + polish
     }),
 
   reroll: (projectId: string, promptOverrides?: { builder?: CharacterPromptOverrides; judge?: CharacterPromptOverrides }) =>
     request<CharacterGenerateResponse>("/character/reroll", {
       method: "POST",
       body: JSON.stringify({ projectId, promptOverrides }),
+      timeoutMs: 360_000,
     }),
 
   lock: (projectId: string) =>

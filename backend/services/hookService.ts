@@ -241,7 +241,10 @@ export class HookService {
       throw new HookServiceError("LLM_CALL_FAILED", "Clarifier call failed");
     }
 
-    let clarifier = this.parseAndValidate<any>(clarifierRaw, [
+    // Structured outputs guarantee valid JSON schema compliance, so parse failures
+    // indicate a non-retryable shape issue — no point re-calling with identical prompt.
+    // LLMClient.call() already retries transient transport errors (429/500/529).
+    const clarifier = this.parseAndValidate<any>(clarifierRaw, [
       "hypothesis_line",
       "question",
       "options",
@@ -256,34 +259,8 @@ export class HookService {
     ]);
 
     if (!clarifier) {
-      try {
-        const retryRaw = await this.llm.call("clarifier", systemPrompt, userPrompt, {
-          temperature: 0.7,
-          maxTokens: 1800,
-          modelOverride,
-          jsonSchema: HOOK_CLARIFIER_SCHEMA,
-        });
-        clarifier = this.parseAndValidate<any>(retryRaw, [
-          "hypothesis_line",
-          "question",
-          "options",
-          "allow_free_text",
-          "ready_for_hook",
-          "readiness_pct",
-          "readiness_note",
-          "missing_signal",
-          "conflict_flag",
-          "assumptions",
-          "state_update",
-        ]);
-      } catch (err) {
-        console.error("CLARIFY RETRY LLM ERROR:", err);
-        throw new HookServiceError("LLM_PARSE_ERROR", "Failed to parse clarifier response");
-      }
-
-      if (!clarifier) {
-        throw new HookServiceError("LLM_PARSE_ERROR", "Failed to parse clarifier response");
-      }
+      console.error("CLARIFIER PARSE FAILED. Raw (first 500):", clarifierRaw.slice(0, 500));
+      throw new HookServiceError("LLM_PARSE_ERROR", "Failed to parse clarifier response");
     }
 
     // Record prompt history
@@ -405,31 +382,35 @@ export class HookService {
     const builderUser = promptOverrides?.builder?.user ?? builderPrompt.user;
     const temperatures = [0.7, 0.85, 1.0];
 
-    // Run builders individually for crash recovery (save after each)
-    for (let i = 0; i < temperatures.length; i++) {
-      try {
-        const raw = await this.llm.call("builder", builderSystem, builderUser, {
-          temperature: temperatures[i],
-          maxTokens: 2400,
-          modelOverride,
-          jsonSchema: HOOK_BUILDER_SCHEMA,
-        });
+    // Run all 3 builders concurrently — they're independent (same prompt, different temps)
+    const builderStart = Date.now();
+    const builderPromises = temperatures.map((temp, i) =>
+      this.llm.call("builder", builderSystem, builderUser, {
+        temperature: temp,
+        maxTokens: 2400,
+        modelOverride,
+        jsonSchema: HOOK_BUILDER_SCHEMA,
+      }).then(raw => {
         const parsed = this.parseAndValidate<HookBuilderOutput>(raw, [
           "hook_sentence", "emotional_promise", "premise", "opening_image",
           "page_1_splash_prompt", "page_turn_trigger", "why_addictive", "collision_sources",
         ]);
-        session.tournamentProgress!.builderResults.push({ raw, parsed });
         if (!parsed) {
           console.error(`BUILDER CANDIDATE ${i + 1} PARSE FAILED. Raw:`, raw.slice(0, 500));
         }
-      } catch (err) {
+        return { raw, parsed };
+      }).catch(err => {
         console.error(`BUILDER CANDIDATE ${i + 1} LLM ERROR:`, err);
-        session.tournamentProgress!.builderResults.push({ raw: "", parsed: null });
-      }
-      // Save after each builder completes
-      session.lastSavedAt = new Date().toISOString();
-      await this.store.save(session);
-    }
+        return { raw: "", parsed: null as HookBuilderOutput | null };
+      })
+    );
+    const builderSettled = await Promise.all(builderPromises);
+    session.tournamentProgress!.builderResults = builderSettled;
+    console.log(`[perf] 3 builders completed in ${Date.now() - builderStart}ms (parallel)`);
+
+    // Single checkpoint save after all builders complete
+    session.lastSavedAt = new Date().toISOString();
+    await this.store.save(session);
 
     // Record builder prompt history (one entry covers all 3 candidates)
     const builderResponseSummary = session.tournamentProgress!.builderResults
@@ -455,33 +436,37 @@ export class HookService {
     session.lastSavedAt = new Date().toISOString();
     await this.store.save(session);
 
-    // Run judges individually for crash recovery
-    for (let i = 0; i < hooks.length; i++) {
-      try {
-        const judgePrompt = this.buildJudgePrompt(hooks[i], session.currentState);
-        const judgeSystem = promptOverrides?.judge?.system ?? judgePrompt.system;
-        const judgeUser = promptOverrides?.judge?.user ?? judgePrompt.user;
-        const raw = await this.llm.call("judge", judgeSystem, judgeUser, {
-          temperature: 0.3,
-          modelOverride,
-          jsonSchema: HOOK_JUDGE_SCHEMA,
-        });
+    // Run all judges concurrently — each judges one independent candidate
+    const judgeStart = Date.now();
+    const judgePromises = hooks.map((hook, i) => {
+      const judgePrompt = this.buildJudgePrompt(hook, session.currentState);
+      const judgeSystem = promptOverrides?.judge?.system ?? judgePrompt.system;
+      const judgeUser = promptOverrides?.judge?.user ?? judgePrompt.user;
+      return this.llm.call("judge", judgeSystem, judgeUser, {
+        temperature: 0.3,
+        modelOverride,
+        jsonSchema: HOOK_JUDGE_SCHEMA,
+      }).then(raw => {
         const parsed = this.parseAndValidate<HookJudgeOutput>(raw, [
           "pass", "hard_fail_reasons", "scores",
           "most_generic_part", "one_fix_instruction",
         ]);
-        session.tournamentProgress!.judgeResults.push({ raw, parsed });
         if (!parsed) {
           console.error(`JUDGE ${i + 1} PARSE FAILED. Raw:`, raw.slice(0, 500));
         }
-      } catch (err) {
+        return { raw, parsed };
+      }).catch(err => {
         console.error(`JUDGE ${i + 1} LLM ERROR:`, err);
-        session.tournamentProgress!.judgeResults.push({ raw: "", parsed: null });
-      }
-      // Save after each judge completes
-      session.lastSavedAt = new Date().toISOString();
-      await this.store.save(session);
-    }
+        return { raw: "", parsed: null as HookJudgeOutput | null };
+      });
+    });
+    const judgeSettled = await Promise.all(judgePromises);
+    session.tournamentProgress!.judgeResults = judgeSettled;
+    console.log(`[perf] ${hooks.length} judges completed in ${Date.now() - judgeStart}ms (parallel)`);
+
+    // Single checkpoint save after all judges complete
+    session.lastSavedAt = new Date().toISOString();
+    await this.store.save(session);
 
     // Record judge prompt history
     if (hooks.length > 0) {
