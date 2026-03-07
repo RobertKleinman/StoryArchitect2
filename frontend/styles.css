@@ -1739,6 +1739,121 @@ button:disabled {
   flex-wrap: wrap;
 }
 
+/* ─── Behavior Signal additions (v4) ─── */
+.psych-confidence-bar {
+  display: inline-flex;
+  align-items: center;
+  width: 60px;
+  height: 8px;
+  background: #313244;
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+  margin-left: 6px;
+}
+.psych-confidence-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+.psych-confidence-label {
+  position: absolute;
+  right: -32px;
+  font-size: 0.65rem;
+  color: #a6adc8;
+  white-space: nowrap;
+}
+.psych-evidence-events {
+  margin-top: 6px;
+  padding-left: 4px;
+  border-left: 2px solid #313244;
+}
+.psych-evidence-event {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  color: #bac2de;
+  padding: 2px 0;
+}
+.psych-ev-turn {
+  font-weight: 600;
+  color: #89b4fa;
+  min-width: 24px;
+}
+.psych-ev-valence {
+  font-weight: 700;
+  width: 12px;
+  text-align: center;
+}
+.psych-ev-supports .psych-ev-valence,
+.psych-evidence-event.psych-ev-supports .psych-ev-valence { color: #a6e3a1; }
+.psych-evidence-event.psych-ev-contradicts .psych-ev-valence { color: #f38ba8; }
+.psych-ev-action {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.psych-ev-more {
+  font-size: 0.68rem;
+  color: #6c7086;
+  padding: 2px 0 2px 8px;
+}
+.psych-adapt {
+  font-size: 0.75rem;
+  color: #a6e3a1;
+  margin-top: 4px;
+  font-style: italic;
+}
+.psych-suppression {
+  font-size: 0.72rem;
+  color: #f38ba8;
+  margin-top: 4px;
+}
+.psych-ev-valence-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+.psych-ev-valence-badge.psych-ev-supports {
+  background: rgba(166, 227, 161, 0.2);
+  color: #a6e3a1;
+}
+.psych-ev-valence-badge.psych-ev-contradicts {
+  background: rgba(243, 139, 168, 0.2);
+  color: #f38ba8;
+}
+.psych-read-summary {
+  margin-bottom: 6px;
+}
+.psych-read-meta {
+  display: flex;
+  gap: 12px;
+  font-size: 0.72rem;
+  color: #6c7086;
+  margin-top: 4px;
+}
+.psych-read-plan {
+  margin-top: 6px;
+  font-size: 0.75rem;
+  color: #bac2de;
+}
+.psych-plan-moves {
+  margin: 4px 0 0 16px;
+  padding: 0;
+  font-size: 0.72rem;
+  color: #a6adc8;
+}
+.psych-plan-moves li {
+  margin-bottom: 2px;
+}
+
 /* ─── Art Style Selection ─── */
 .art-style-phase {
   padding: 16px 0;
@@ -2061,4 +2176,641 @@ button:disabled {
   font-size: 0.78rem;
   color: #6b7280;
   font-style: italic;
+}
+
+/* ─── Connect Phase: Manual Input Fallback ─── */
+
+.link-btn {
+  background: none;
+  border: none;
+  color: #6366f1;
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+  text-decoration: underline;
+}
+
+.link-btn:hover {
+  color: #4f46e5;
+}
+
+.connect-inputs {
+  display: grid;
+  gap: 0.6rem;
+  margin-bottom: 0.6rem;
+}
+
+.connect-field label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #4b5563;
+  margin-bottom: 0.25rem;
+}
+
+.connect-field input {
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 0.88rem;
+}
+
+.connect-field input:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
+}
+
+.connect-hint {
+  display: block;
+  font-size: 0.75rem;
+  color: #10b981;
+  margin-top: 0.15rem;
+}
+
+.resolved-ids {
+  padding: 0.5rem 0.7rem;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+}
+
+.resolved-ids p {
+  margin: 0;
+  color: #374151;
+}
+
+/* ─── World Workshop: Revealed Phase ─── */
+
+.world-section {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 0.8rem;
+  margin-bottom: 0.8rem;
+  background: #fafbfc;
+  animation: fadeIn 200ms ease;
+}
+
+.world-section h4 {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+  color: #1e293b;
+}
+
+.world-section h5 {
+  margin: 0.5rem 0 0.3rem;
+  font-size: 0.85rem;
+  color: #4b5563;
+}
+
+.world-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.world-detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.detail-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b7280;
+}
+
+.detail-value {
+  font-size: 0.88rem;
+  color: #1e293b;
+}
+
+.world-tone-rule {
+  margin: 0;
+  font-size: 0.88rem;
+  color: #4b5563;
+  font-style: italic;
+}
+
+/* Arena */
+.arena-location-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 0.6rem;
+  margin-bottom: 0.5rem;
+  background: #fff;
+}
+
+.arena-location-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.3rem;
+}
+
+.arena-badge {
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.arena-badge-hidden {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.arena-access {
+  font-size: 0.75rem;
+  color: #6b7280;
+  margin-left: auto;
+}
+
+.arena-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.3rem;
+  font-size: 0.85rem;
+}
+
+.arena-affordances,
+.arena-register,
+.arena-characters {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.arena-edges {
+  margin-top: 0.5rem;
+}
+
+.arena-edge {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.82rem;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.edge-path {
+  font-weight: 500;
+  color: #1e293b;
+  min-width: 120px;
+}
+
+.edge-traversal {
+  color: #6b7280;
+}
+
+.edge-tension {
+  color: #d97706;
+  font-style: italic;
+  margin-left: auto;
+}
+
+/* Rules */
+.world-rule-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 0.6rem;
+  margin-bottom: 0.5rem;
+  background: #fff;
+}
+
+.rule-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.3rem;
+}
+
+.rule-domain {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #dc2626;
+  background: #fef2f2;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+}
+
+.rule-enforcer {
+  font-size: 0.78rem;
+  color: #6b7280;
+}
+
+.rule-text {
+  margin: 0 0 0.3rem;
+  font-size: 0.92rem;
+  font-weight: 500;
+  color: #1e293b;
+}
+
+.rule-details p {
+  margin: 0.15rem 0;
+  font-size: 0.85rem;
+  color: #4b5563;
+}
+
+/* Factions */
+.faction-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 0.6rem;
+  margin-bottom: 0.5rem;
+  background: #fff;
+}
+
+.faction-card h5 {
+  margin: 0 0 0.25rem;
+  font-size: 0.95rem;
+  color: #6d28d9;
+}
+
+.faction-goal {
+  margin: 0 0 0.3rem;
+  font-size: 0.88rem;
+}
+
+.faction-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  margin-bottom: 0.3rem;
+}
+
+.faction-details > div {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.faction-pressure {
+  margin: 0;
+  font-size: 0.88rem;
+  color: #92400e;
+  font-style: italic;
+}
+
+.faction-characters {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  margin-top: 0.2rem;
+}
+
+/* Consequence Patterns */
+.consequence-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 0.6rem;
+  margin-bottom: 0.5rem;
+  background: #fff;
+}
+
+.consequence-header {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 0.3rem;
+}
+
+.consequence-speed {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.consequence-reversible {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.consequence-irreversible {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.consequence-card p {
+  margin: 0.15rem 0;
+  font-size: 0.85rem;
+  color: #4b5563;
+}
+
+/* Canon Register */
+.canon-list {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.canon-fact {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  padding: 0.4rem;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+}
+
+.canon-source {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b7280;
+  background: #f3f4f6;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.canon-text {
+  color: #1e293b;
+  line-height: 1.4;
+}
+
+.canon-category {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+/* Scene Types (on location cards) */
+.arena-scene-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.3rem;
+}
+
+.scene-type-chip {
+  font-size: 0.7rem;
+  font-weight: 500;
+  padding: 0.15rem 0.45rem;
+  border-radius: 10px;
+  background: #ecfdf5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+
+/* Internal Tensions (on faction cards) */
+.faction-tensions {
+  margin-top: 0.35rem;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.tension-item {
+  font-size: 0.8rem;
+  color: #b45309;
+  padding: 0.25rem 0.5rem;
+  background: #fffbeb;
+  border-left: 2px solid #f59e0b;
+  border-radius: 0 4px 4px 0;
+  line-height: 1.35;
+}
+
+/* Information Access (truth matrix) */
+.info-layer-card {
+  background: #fff;
+  border: 1px solid #e0e7ff;
+  border-radius: 8px;
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.info-truth {
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: #1e293b;
+  margin-bottom: 0.35rem;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.2rem 0.6rem;
+  font-size: 0.82rem;
+  color: #4b5563;
+}
+
+.info-grid strong {
+  color: #6366f1;
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.info-irony {
+  margin-top: 0.35rem;
+  font-size: 0.82rem;
+  font-style: italic;
+  color: #7c3aed;
+  padding: 0.3rem 0.5rem;
+  background: #f5f3ff;
+  border-radius: 6px;
+}
+
+/* Volatility (live wires) */
+.volatility-card {
+  background: #fff;
+  border: 1px solid #fee2e2;
+  border-radius: 8px;
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.volatility-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.3rem;
+}
+
+.volatility-header strong {
+  font-size: 0.88rem;
+  color: #1e293b;
+}
+
+.volatility-likelihood {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+}
+
+.likelihood-high {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.likelihood-medium {
+  background: #fffbeb;
+  color: #d97706;
+}
+
+.likelihood-low {
+  background: #f0fdf4;
+  color: #16a34a;
+}
+
+.volatility-card p {
+  margin: 0.15rem 0;
+  font-size: 0.82rem;
+  color: #4b5563;
+}
+
+.volatility-card p strong {
+  color: #6b7280;
+  font-size: 0.75rem;
+}
+
+/* Development Targets Panel */
+.dev-targets-panel {
+  margin-bottom: 1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.dev-targets-panel.weaknesses-panel {
+  border-color: #fde68a;
+}
+
+.dev-targets-summary {
+  cursor: pointer;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #475569;
+  background: #f8fafc;
+  user-select: none;
+}
+
+.dev-targets-summary:hover {
+  background: #f1f5f9;
+}
+
+.weaknesses-panel .dev-targets-summary {
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.dev-targets-list {
+  padding: 0.5rem 0.75rem;
+}
+
+.dev-target-card {
+  padding: 0.5rem 0.6rem;
+  margin-bottom: 0.4rem;
+  border-radius: 6px;
+  border-left: 3px solid #e2e8f0;
+  background: #fff;
+}
+
+.dev-target-card.dev-target-addressed {
+  border-left-color: #10b981;
+  background: #f0fdf4;
+}
+
+.dev-target-card.dev-target-partially_addressed {
+  border-left-color: #f59e0b;
+  background: #fffbeb;
+}
+
+.dev-target-card.dev-target-unaddressed {
+  border-left-color: #94a3b8;
+  background: #f8fafc;
+}
+
+.dev-target-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.dev-target-status {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.dev-target-status.status-addressed {
+  color: #059669;
+}
+
+.dev-target-status.status-partially_addressed {
+  color: #d97706;
+}
+
+.dev-target-status.status-unaddressed {
+  color: #94a3b8;
+}
+
+.dev-target-source {
+  font-size: 0.7rem;
+  color: #9ca3af;
+  font-style: italic;
+}
+
+.dev-target-text {
+  font-size: 0.82rem;
+  color: #1e293b;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.dev-target-notes {
+  font-size: 0.75rem;
+  color: #6b7280;
+  margin: 0.2rem 0 0 0;
+  font-style: italic;
+}
+
+.dev-target-addressed {
+  font-size: 0.72rem;
+  color: #059669;
+  margin: 0.15rem 0 0 0;
 }

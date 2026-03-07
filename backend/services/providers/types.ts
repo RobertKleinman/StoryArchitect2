@@ -51,6 +51,6 @@ export class ProviderHttpError extends Error {
   }
 
   get isRetriable(): boolean {
-    return [429, 500, 529].includes(this.status);
+    return [429, 500, 502, 503, 504, 529].includes(this.status);
   }
 }

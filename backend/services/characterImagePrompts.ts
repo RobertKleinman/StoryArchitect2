@@ -11,8 +11,14 @@ import {
   OBVIOUS_PATTERN_DETECTION,
   DIAGNOSTIC_OPTIONS_GUIDANCE,
   ASSUMPTION_PERSISTENCE_CHECK,
-  PSYCHOLOGY_STRATEGY_INSTRUCTIONS,
+  ADAPTATION_PLAN_INSTRUCTIONS,
+  BUILDER_SIGNAL_INSTRUCTIONS,
+  JUDGE_SIGNAL_INSTRUCTIONS,
+  UPSTREAM_DEVELOPMENT_TARGETS_INSTRUCTIONS,
+  BUILDER_UPSTREAM_TARGETS_INSTRUCTIONS,
+  JUDGE_UPSTREAM_TARGETS_INSTRUCTIONS,
 } from "./psychologyPromptFragments";
+const PSYCHOLOGY_STRATEGY_INSTRUCTIONS = ADAPTATION_PLAN_INSTRUCTIONS;
 
 export const CHARACTER_IMAGE_CLARIFIER_SYSTEM = `You are VisualArchitect: the friend who gets FIRED UP about how characters LOOK and makes the user see them too.
 
@@ -81,11 +87,18 @@ TRANSLATING PSYCHOLOGY TO VISUALS:
   - Their misbelief can show in what they hide or emphasize
 
 ═══════════════════════════════════════════
+UPSTREAM DEVELOPMENT (from prior modules)
+═══════════════════════════════════════════
+${UPSTREAM_DEVELOPMENT_TARGETS_INSTRUCTIONS}
+
+═══════════════════════════════════════════
 ADAPTIVE ENGINE — run EVERY turn
 ═══════════════════════════════════════════
 
-STEP 1 — READ THE CHARACTERS
+STEP 1 — READ THE CHARACTERS + DEVELOPMENT TARGETS
 You have the user's locked character profiles. The psychology IS your guide to visuals. A control freak looks different from a chaos agent. A character hiding vulnerability looks different from one wearing it openly.
+
+You also have development targets from earlier modules — character weaknesses that visuals can help address. A character flagged as "lacking presence" can be given a striking visual signature. A "flat relationship" can be developed through visual contrast.
 
 STEP 2 — READ THE USER (check the psychology ledger for accumulated observations)
 ${SHARED_USER_BEHAVIOR_CLASSIFICATION}
@@ -251,6 +264,9 @@ Ensemble Dynamic: "{{ENSEMBLE_DYNAMIC}}"
 ═══ USER'S VISUAL SEED ═══
 {{VISUAL_SEED}}
 
+═══ UPSTREAM DEVELOPMENT TARGETS (from earlier modules — weave in subtly through visuals) ═══
+{{UPSTREAM_DEVELOPMENT_TARGETS}}
+
 ═══ CONVERSATION ═══
 {{PRIOR_TURNS}}
 
@@ -265,6 +281,10 @@ Turn: {{TURN_NUMBER}}
 Run the adaptive engine. Be the friend who makes them see their characters. Make this visual discovery exciting.`;
 
 export const CHARACTER_IMAGE_BUILDER_SYSTEM = `You are VisualBuilder. Generate detailed visual descriptions for each character that are vivid, distinctive, and ready for anime-style image generation.
+
+${BUILDER_SIGNAL_INSTRUCTIONS}
+
+${BUILDER_UPSTREAM_TARGETS_INSTRUCTIONS}
 
 FOR EACH CHARACTER, PRODUCE:
 - role: their role in the story
@@ -325,15 +345,25 @@ Ensemble Dynamic: "{{ENSEMBLE_DYNAMIC}}"
 ═══ ART STYLE PREFERENCE ═══
 {{STYLE_PREFERENCE}}
 
+═══ UPSTREAM DEVELOPMENT TARGETS (strengthen through visuals where natural) ═══
+{{UPSTREAM_DEVELOPMENT_TARGETS}}
+
 ═══ CONVERSATION (visual clarification turns) ═══
 {{PRIOR_TURNS}}
 
 ═══ CONSTRAINT LEDGER (authoritative visual decisions) ═══
 {{CONSTRAINT_LEDGER}}
 
+═══ USER BEHAVIOR SIGNALS ═══
+{{PSYCHOLOGY_SIGNALS}}
+
 Return ONLY the VisualBuilder JSON.`;
 
 export const CHARACTER_IMAGE_JUDGE_SYSTEM = `You are VisualJudge. Prevent visually generic, indistinct, or psychology-mismatched character designs from shipping.
+
+${JUDGE_SIGNAL_INSTRUCTIONS}
+
+${JUDGE_UPSTREAM_TARGETS_INSTRUCTIONS}
 
 HARD-FAIL if ANY of these are true:
 1. Two characters share essentially the same silhouette (build + posture + hair style)
@@ -368,6 +398,12 @@ Story context:
 Premise: "{{PREMISE}}"
 Emotional Promise: "{{EMOTIONAL_PROMISE}}"
 Tone: {{TONE_CHIPS}}
+
+═══ USER BEHAVIOR SIGNALS ═══
+{{PSYCHOLOGY_SIGNALS}}
+
+═══ UPSTREAM DEVELOPMENT TARGETS (assess whether visuals addressed these) ═══
+{{UPSTREAM_DEVELOPMENT_TARGETS}}
 
 Return judgment JSON only.`;
 

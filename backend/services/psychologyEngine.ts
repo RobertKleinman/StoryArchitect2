@@ -2,65 +2,186 @@
  * Psychology Engine — shared utilities for computing and formatting
  * the user psychology ledger across modules.
  *
- * v2: Structured hypothesis store with evidence/confidence tracking,
- *     plus service-level non-choice (assumption delta) tracking.
+ * v4: BehaviorSignal governance.
+ *     - LLM produces raw observations → engine computes confidence + lifecycle
+ *     - Signal lifecycle: candidate → active → stable → suppressed
+ *     - Confidence is numeric (0–1), computed from evidence count + recency + contradictions
+ *     - Contradiction detection: when a signal's contradictionCriteria are met
+ *     - Decay: signals lose confidence over turns without reinforcement
  */
 
 import {
   UserPsychologyLedger,
-  UserHypothesis,
+  BehaviorSignal,
+  EvidenceEvent,
+  RawSignalObservation,
+  BehaviorSummary,
+  AdaptationPlan,
   AssumptionDelta,
   UserInteractionHeuristics,
-  HypothesisCategory,
+  SignalCategory,
+  SignalStatus,
   createEmptyLedger,
 } from "../../shared/types/userPsychology";
 
-// ─── Hypothesis ID counter (per-session) ───
-
-let nextHypothesisId = 1;
-
-/** Reset ID counter (call when starting a fresh session) */
-export function resetHypothesisIdCounter(): void {
-  nextHypothesisId = 1;
-}
-
-function generateHypothesisId(): string {
-  return `h${nextHypothesisId++}`;
-}
-
-// ─── Record structured hypotheses from LLM ───
+// ─── Ledger shape guard (for imported/deserialized ledgers) ───
 
 /**
- * Record the LLM's structured user_read output into the ledger.
- * Stores the per-turn read AND merges hypotheses into the hypothesis store.
+ * Ensures a psychology ledger has all required arrays and objects initialized.
+ * Handles ledgers imported from upstream modules that may have been serialized
+ * with older schema versions or have missing fields.
  */
-export function recordHypotheses(
-  ledger: UserPsychologyLedger,
-  turnNumber: number,
-  module: "hook" | "character" | "character_image",
-  hypotheses: {
-    hypothesis: string;
-    evidence: string;
-    confidence: "low" | "medium" | "high";
-    scope: string;
-    category?: HypothesisCategory;
-  }[],
-  overall_read: string,
-  satisfaction?: { score: number; trend: "rising" | "stable" | "declining"; note: string }
-): void {
-  // Record LLM-assessed satisfaction if provided
-  if (satisfaction) {
-    recordSatisfaction(ledger, turnNumber, satisfaction);
+export function ensureLedgerShape(ledger: UserPsychologyLedger): UserPsychologyLedger {
+  if (!ledger.signalStore) ledger.signalStore = ledger.hypothesisStore ?? [];
+  if (!ledger.reads) ledger.reads = [];
+  if (!ledger.assumptionDeltas) ledger.assumptionDeltas = [];
+  if (!ledger.heuristics) {
+    ledger.heuristics = {
+      typeRatio: 0.5,
+      avgResponseLength: 0,
+      deferralRate: 0,
+      changeRate: 0,
+      totalInteractions: 0,
+      engagementTrend: 0,
+    };
+  }
+  return ledger;
+}
+
+// ─── Signal ID counter (per-session) ───
+
+let nextSignalId = 1;
+
+/** Reset ID counter (call when starting a fresh session) */
+export function resetSignalIdCounter(): void {
+  nextSignalId = 1;
+}
+
+/** @deprecated Use resetSignalIdCounter */
+export function resetHypothesisIdCounter(): void {
+  resetSignalIdCounter();
+}
+
+function generateSignalId(): string {
+  return `s${nextSignalId++}`;
+}
+
+// ─── Confidence computation ───
+
+/**
+ * Compute numeric confidence (0–1) from evidence events and context.
+ *
+ * Factors:
+ *   - Base: 0.15 per supporting evidence event (diminishing after 4)
+ *   - Recency bonus: +0.05 for evidence within last 2 turns
+ *   - Contradiction penalty: -0.20 per contradicting event
+ *   - Turn cap: max 0.3 on turn 1, max 0.5 on turns 2-3
+ *   - Cross-turn bonus: +0.1 if evidence spans 3+ distinct turns
+ */
+function computeConfidence(
+  events: EvidenceEvent[],
+  currentTurn: number,
+): number {
+  const supporting = events.filter(e => e.valence === "supports");
+  const contradicting = events.filter(e => e.valence === "contradicts");
+
+  // Base from supporting evidence (diminishing returns)
+  let conf = 0;
+  for (let i = 0; i < supporting.length; i++) {
+    conf += i < 4 ? 0.15 : 0.05;
   }
 
-  if (!hypotheses || hypotheses.length === 0) return;
+  // Recency bonus
+  const recentSupport = supporting.filter(e => currentTurn - e.turn <= 2).length;
+  conf += recentSupport * 0.05;
+
+  // Cross-turn bonus
+  const distinctTurns = new Set(supporting.map(e => e.turn));
+  if (distinctTurns.size >= 3) conf += 0.1;
+
+  // Contradiction penalty
+  conf -= contradicting.length * 0.20;
+
+  // Turn cap (prevents overconfidence early)
+  const earliestTurn = Math.min(...events.map(e => e.turn));
+  const turnsOfHistory = currentTurn - earliestTurn;
+  if (turnsOfHistory === 0) conf = Math.min(conf, 0.30);
+  else if (turnsOfHistory <= 2) conf = Math.min(conf, 0.50);
+
+  return Math.max(0, Math.min(1, Math.round(conf * 100) / 100));
+}
+
+/**
+ * Determine signal status from confidence and evidence.
+ */
+function computeStatus(
+  confidence: number,
+  events: EvidenceEvent[],
+  currentTurn: number,
+): SignalStatus {
+  const supporting = events.filter(e => e.valence === "supports");
+  const contradicting = events.filter(e => e.valence === "contradicts");
+
+  // Suppressed: more contradictions than support, or confidence bottomed out
+  if (contradicting.length >= supporting.length && contradicting.length > 0) {
+    return "suppressed";
+  }
+  if (confidence <= 0.05 && events.length > 1) {
+    return "suppressed";
+  }
+
+  // Stable: 4+ supporting events across 3+ turns
+  const distinctSupportTurns = new Set(supporting.map(e => e.turn));
+  if (supporting.length >= 4 && distinctSupportTurns.size >= 3 && confidence >= 0.6) {
+    return "stable";
+  }
+
+  // Active: 2+ supporting events
+  if (supporting.length >= 2 && confidence >= 0.25) {
+    return "active";
+  }
+
+  return "candidate";
+}
+
+// ─── Record structured signals from LLM ───
+
+/**
+ * Process the LLM's raw signal observations into the signal store.
+ * - Merges with existing signals (keyword overlap)
+ * - Computes confidence from evidence
+ * - Manages lifecycle transitions
+ * - Handles contradictions
+ */
+export function recordSignals(
+  ledger: UserPsychologyLedger,
+  turnNumber: number,
+  module: "hook" | "character" | "character_image" | "world",
+  rawSignals: RawSignalObservation[],
+  behaviorSummary: BehaviorSummary,
+  adaptationPlan: AdaptationPlan,
+): void {
+  // Record satisfaction
+  if (behaviorSummary?.satisfaction) {
+    recordSatisfaction(ledger, turnNumber, {
+      score: behaviorSummary.satisfaction.score,
+      trend: behaviorSummary.satisfaction.trend,
+      note: behaviorSummary.satisfaction.reason,
+    });
+  }
 
   // Store the per-turn read
   ledger.reads.push({
     turnNumber,
     module,
-    hypotheses,
-    overall_read: overall_read?.trim() ?? "",
+    signals: rawSignals ?? [],
+    behaviorSummary: behaviorSummary ?? {
+      orientation: "",
+      currentFocus: "",
+      engagementMode: "exploring" as const,
+      satisfaction: { score: 0.5, trend: "stable" as const, reason: "first turn" },
+    },
+    adaptationPlan: adaptationPlan ?? { dominantNeed: "", moves: [] },
   });
 
   // Cap reads at 10
@@ -68,149 +189,216 @@ export function recordHypotheses(
     ledger.reads = ledger.reads.slice(-10);
   }
 
-  // Merge each hypothesis into the hypothesis store
-  for (const h of hypotheses) {
-    mergeHypothesis(ledger, turnNumber, h);
+  if (!rawSignals || rawSignals.length === 0) return;
+
+  // Process each raw observation
+  for (const raw of rawSignals) {
+    processRawSignal(ledger, turnNumber, module, raw);
   }
+
+  // Apply confidence decay to signals not reinforced this turn
+  applyConfidenceDecay(ledger, turnNumber);
+
+  // Cap signal store at 12 (was 10 for hypotheses)
+  capSignalStore(ledger);
 }
 
 /**
- * Merge a single hypothesis into the store.
- * If a similar one exists, update its evidence and potentially bump confidence.
- * Otherwise, create a new entry.
+ * Backward-compatible wrapper for code still calling recordHypotheses.
+ * Converts old-format hypotheses to raw signals.
  */
-/**
- * Hard confidence cap based on turn number.
- * The LLM is instructed to follow these rules in the prompt,
- * but we enforce them here as a safety net.
- */
-/**
- * Hard confidence cap based on turn number.
- * The LLM is instructed to follow these rules in the prompt,
- * but we enforce them here as a safety net.
- *
- * globalTurnEstimate accounts for prior modules: if the hypothesis store
- * already has entries, we're not truly on "turn 1" of the user's experience.
- */
-function capConfidenceByTurn(
-  confidence: "low" | "medium" | "high",
-  turnNumber: number,
-  priorHypothesisCount?: number
-): "low" | "medium" | "high" {
-  // If there are prior hypotheses from earlier modules, the user isn't new.
-  // Estimate global turn count by adding prior hypothesis count as a proxy.
-  const globalEstimate = turnNumber + (priorHypothesisCount ?? 0 > 0 ? 3 : 0);
-
-  if (globalEstimate <= 1) return "low";                         // True first turn: always low
-  if (globalEstimate <= 3 && confidence === "high") return "medium"; // Early turns: medium max
-  return confidence;                                              // Established user: trust the LLM
-}
-
-function mergeHypothesis(
+export function recordHypotheses(
   ledger: UserPsychologyLedger,
   turnNumber: number,
-  incoming: {
+  module: "hook" | "character" | "character_image" | "world",
+  hypotheses: {
     hypothesis: string;
     evidence: string;
     confidence: "low" | "medium" | "high";
     scope: string;
-    category?: HypothesisCategory;
-  }
+    category?: SignalCategory;
+  }[],
+  overall_read: string,
+  satisfaction?: { score: number; trend: "rising" | "stable" | "declining"; note: string }
 ): void {
-  const store = ledger.hypothesisStore;
+  // Convert old hypotheses to raw signals
+  const rawSignals: RawSignalObservation[] = (hypotheses ?? []).map(h => ({
+    hypothesis: h.hypothesis,
+    action: h.evidence,
+    valence: "supports" as const,
+    scope: (["this_story", "this_genre", "global"].includes(h.scope) ? h.scope : "this_story") as "this_story" | "this_genre" | "global",
+    category: h.category ?? inferCategory(h.hypothesis),
+    adaptationConsequence: "",
+    contradictionCriteria: "",
+  }));
 
-  // Enforce confidence cap by turn number (accounting for prior module hypotheses)
-  const cappedConfidence = capConfidenceByTurn(incoming.confidence, turnNumber, store.length);
+  const behaviorSummary: BehaviorSummary = {
+    orientation: overall_read ?? "",
+    currentFocus: "",
+    engagementMode: "exploring",
+    satisfaction: satisfaction
+      ? { score: satisfaction.score, trend: satisfaction.trend, reason: satisfaction.note }
+      : { score: 0.5, trend: "stable", reason: "default" },
+  };
 
-  // Simple similarity check: look for overlapping keywords
-  const existing = findSimilarHypothesis(store, incoming.hypothesis);
+  recordSignals(ledger, turnNumber, module, rawSignals, behaviorSummary, { dominantNeed: "", moves: [] });
+}
 
-  const incomingCategory: HypothesisCategory = incoming.category ?? inferCategory(incoming.hypothesis);
+// ─── Core signal processing ───
 
-  if (existing) {
-    // Update existing — append evidence, potentially bump confidence
-    existing.evidence = `${existing.evidence}; ${incoming.evidence}`;
+function processRawSignal(
+  ledger: UserPsychologyLedger,
+  turnNumber: number,
+  module: "hook" | "character" | "character_image" | "world",
+  raw: RawSignalObservation,
+): void {
+  const store = ledger.signalStore;
+
+  // Create the evidence event
+  const event: EvidenceEvent = {
+    turn: turnNumber,
+    module,
+    action: raw.action,
+    valence: raw.valence,
+  };
+
+  // Handle explicit contradiction of a named signal
+  if (raw.valence === "contradicts" && raw.contradictsSignalId) {
+    const target = store.find(s => s.id === raw.contradictsSignalId);
+    if (target) {
+      target.evidenceEvents.push(event);
+      target.confidence = computeConfidence(target.evidenceEvents, turnNumber);
+      target.status = computeStatus(target.confidence, target.evidenceEvents, turnNumber);
+      target.lastUpdated = turnNumber;
+      if (target.status === "suppressed") {
+        target.suppressionReason = `Contradicted at turn ${turnNumber}: ${raw.action}`;
+      }
+      return;
+    }
+  }
+
+  // Find similar existing signal (by keyword overlap)
+  const existing = findSimilarSignal(store, raw.hypothesis);
+
+  if (existing && existing.status !== "suppressed") {
+    // Merge into existing signal
+    existing.evidenceEvents.push(event);
     existing.lastUpdated = turnNumber;
+    existing.confidence = computeConfidence(existing.evidenceEvents, turnNumber);
+    existing.status = computeStatus(existing.confidence, existing.evidenceEvents, turnNumber);
 
-    // Keep the more specific category (incoming may be more precise)
-    if (existing.category !== incomingCategory && incomingCategory !== "content_preferences") {
-      existing.category = incomingCategory;
+    // Update adaptation consequence if the new one is non-empty
+    if (raw.adaptationConsequence) {
+      existing.adaptationConsequence = raw.adaptationConsequence;
     }
-
-    // Bump confidence if incoming (after cap) is higher
-    const confidenceRank = { low: 0, medium: 1, high: 2 };
-    if (confidenceRank[cappedConfidence] > confidenceRank[existing.confidence]) {
-      existing.confidence = cappedConfidence;
-    }
-    // If the LLM surfaced it again with same or higher confidence, that's confirmation
-    // But still respect the turn cap
-    if (existing.confidence === "low" && cappedConfidence === "low" && turnNumber >= 2) {
-      // Seen twice at low, and we're past turn 1 → upgrade to medium
-      existing.confidence = "medium";
+    if (raw.contradictionCriteria) {
+      existing.contradictionCriteria = raw.contradictionCriteria;
     }
   } else {
-    // New hypothesis
-    const scope = (["this_story", "this_genre", "global"].includes(incoming.scope)
-      ? incoming.scope
+    // New signal
+    const scope = (["this_story", "this_genre", "global"].includes(raw.scope)
+      ? raw.scope
       : "this_story") as "this_story" | "this_genre" | "global";
 
-    store.push({
-      id: generateHypothesisId(),
-      hypothesis: incoming.hypothesis,
-      evidence: incoming.evidence,
-      confidence: cappedConfidence,
+    const newSignal: BehaviorSignal = {
+      id: generateSignalId(),
+      hypothesis: raw.hypothesis,
+      evidenceEvents: [event],
+      confidence: computeConfidence([event], turnNumber),
       scope,
-      category: incomingCategory,
+      category: raw.category ?? inferCategory(raw.hypothesis),
+      status: "candidate",
+      adaptationConsequence: raw.adaptationConsequence ?? "",
+      contradictionCriteria: raw.contradictionCriteria ?? "",
       firstSeen: turnNumber,
       lastUpdated: turnNumber,
-    });
-  }
+    };
 
-  // Cap store at 10 hypotheses — fewer but deeper
-  // Drop oldest low-confidence ones first
-  if (store.length > 10) {
-    store.sort((a, b) => {
-      const confRank = { low: 0, medium: 1, high: 2 };
-      const confDiff = confRank[a.confidence] - confRank[b.confidence];
-      if (confDiff !== 0) return confDiff; // low confidence first (to be dropped)
-      return a.lastUpdated - b.lastUpdated; // older first
-    });
-    ledger.hypothesisStore = store.slice(store.length - 10);
+    // Compute initial status
+    newSignal.status = computeStatus(newSignal.confidence, newSignal.evidenceEvents, turnNumber);
+
+    store.push(newSignal);
   }
 }
 
+// ─── Confidence decay ───
+
 /**
- * Simple keyword overlap to find a similar hypothesis.
- * Strips common words and checks if >50% of keywords overlap.
+ * Signals not reinforced within 3 turns lose confidence gradually.
+ * This prevents stale signals from dominating.
  */
-function findSimilarHypothesis(
-  store: UserHypothesis[],
-  text: string
-): UserHypothesis | undefined {
-  const stopWords = new Set(["the", "a", "an", "is", "are", "was", "were", "to", "of", "in", "for", "and", "or", "but", "with", "they", "their", "this", "that"]);
-  const keywords = text
+function applyConfidenceDecay(ledger: UserPsychologyLedger, currentTurn: number): void {
+  for (const signal of ledger.signalStore) {
+    if (signal.status === "suppressed") continue;
+
+    const turnsSinceUpdate = currentTurn - signal.lastUpdated;
+    if (turnsSinceUpdate >= 3) {
+      // Decay: -0.05 per turn beyond the 3-turn grace period
+      const decayAmount = (turnsSinceUpdate - 2) * 0.05;
+      signal.confidence = Math.max(0, Math.round((signal.confidence - decayAmount) * 100) / 100);
+
+      // Re-evaluate status
+      signal.status = computeStatus(signal.confidence, signal.evidenceEvents, currentTurn);
+      if (signal.confidence <= 0.05 && signal.evidenceEvents.length > 1) {
+        signal.status = "suppressed";
+        signal.suppressionReason = `Decayed: no reinforcement for ${turnsSinceUpdate} turns`;
+      }
+    }
+  }
+}
+
+// ─── Signal store management ───
+
+function capSignalStore(ledger: UserPsychologyLedger): void {
+  const store = ledger.signalStore;
+  if (store.length <= 12) return;
+
+  // Sort: suppressed first (to be dropped), then by confidence (low first), then by age
+  store.sort((a, b) => {
+    const statusRank: Record<SignalStatus, number> = { suppressed: 0, candidate: 1, active: 2, stable: 3 };
+    const statusDiff = statusRank[a.status] - statusRank[b.status];
+    if (statusDiff !== 0) return statusDiff;
+    const confDiff = a.confidence - b.confidence;
+    if (Math.abs(confDiff) > 0.01) return confDiff;
+    return a.lastUpdated - b.lastUpdated;
+  });
+
+  ledger.signalStore = store.slice(store.length - 12);
+}
+
+// ─── Similarity detection ───
+
+const STOP_WORDS = new Set([
+  "the", "a", "an", "is", "are", "was", "were", "to", "of", "in", "for",
+  "and", "or", "but", "with", "they", "their", "this", "that", "user",
+  "prefers", "wants", "likes", "tends", "shows", "seems",
+]);
+
+function extractKeywords(text: string): string[] {
+  return text
     .toLowerCase()
     .split(/\W+/)
-    .filter((w) => w.length > 2 && !stopWords.has(w));
+    .filter(w => w.length > 2 && !STOP_WORDS.has(w));
+}
 
+function findSimilarSignal(
+  store: BehaviorSignal[],
+  text: string,
+): BehaviorSignal | undefined {
+  const keywords = extractKeywords(text);
   if (keywords.length === 0) return undefined;
 
-  let bestMatch: UserHypothesis | undefined;
+  let bestMatch: BehaviorSignal | undefined;
   let bestOverlap = 0;
 
-  for (const h of store) {
-    if (h.disconfirmedBy) continue; // skip disconfirmed
-    const existingKeywords = new Set(
-      h.hypothesis
-        .toLowerCase()
-        .split(/\W+/)
-        .filter((w) => w.length > 2 && !stopWords.has(w))
-    );
-    const overlap = keywords.filter((k) => existingKeywords.has(k)).length;
+  for (const s of store) {
+    if (s.status === "suppressed") continue;
+    const existingKeywords = new Set(extractKeywords(s.hypothesis));
+    const overlap = keywords.filter(k => existingKeywords.has(k)).length;
     const overlapRatio = overlap / keywords.length;
     if (overlapRatio > 0.5 && overlap > bestOverlap) {
       bestOverlap = overlap;
-      bestMatch = h;
+      bestMatch = s;
     }
   }
 
@@ -219,22 +407,22 @@ function findSimilarHypothesis(
 
 // ─── Category inference (fallback when LLM doesn't provide one) ───
 
-const CATEGORY_KEYWORDS: Record<HypothesisCategory, string[]> = {
-  content_preferences: ["prefer", "want", "desire", "enjoy", "like", "theme", "genre", "kink", "fetish", "aesthetic", "tone", "mood", "explicit", "erotic", "body", "physical"],
-  control_orientation: ["control", "direct", "guide", "surprise", "agency", "lead", "follow", "decide", "choice", "steer", "driver"],
-  power_dynamics: ["power", "hierarchy", "authority", "dominan", "submiss", "worship", "command", "serve", "obey", "status", "rank"],
+const CATEGORY_KEYWORDS: Record<SignalCategory, string[]> = {
+  content_preferences: ["prefer", "want", "desire", "enjoy", "like", "theme", "genre", "aesthetic", "tone", "mood", "explicit", "body", "physical", "romantic", "dark", "light"],
+  control_orientation: ["control", "direct", "guide", "surprise", "agency", "lead", "follow", "decide", "choice", "steer", "driver", "typed", "clicked", "chip"],
+  power_dynamics: ["power", "hierarchy", "authority", "dominan", "submiss", "command", "serve", "obey", "status", "rank"],
   tonal_risk: ["risk", "boundary", "taboo", "push", "edge", "transgress", "bold", "safe", "comfort", "provocat", "absurd"],
-  narrative_ownership: ["vision", "ownership", "protect", "MY story", "specific", "particular", "image", "brand", "reputation", "audience"],
-  engagement_satisfaction: ["engage", "interest", "bore", "excit", "satisf", "enjoy", "frustrat", "pace", "momentum"],
+  narrative_ownership: ["vision", "ownership", "protect", "specific", "particular", "image", "brand", "audience", "protective"],
+  engagement_satisfaction: ["engage", "interest", "bore", "excit", "satisf", "enjoy", "frustrat", "pace", "momentum", "energy"],
 };
 
-function inferCategory(hypothesis: string): HypothesisCategory {
+function inferCategory(hypothesis: string): SignalCategory {
   const lower = hypothesis.toLowerCase();
-  let bestCategory: HypothesisCategory = "content_preferences";
+  let bestCategory: SignalCategory = "content_preferences";
   let bestScore = 0;
 
-  for (const [cat, keywords] of Object.entries(CATEGORY_KEYWORDS) as [HypothesisCategory, string[]][]) {
-    const score = keywords.filter((kw) => lower.includes(kw)).length;
+  for (const [cat, keywords] of Object.entries(CATEGORY_KEYWORDS) as [SignalCategory, string[]][]) {
+    const score = keywords.filter(kw => lower.includes(kw)).length;
     if (score > bestScore) {
       bestScore = score;
       bestCategory = cat;
@@ -248,19 +436,8 @@ function inferCategory(hypothesis: string): HypothesisCategory {
 
 /**
  * Check whether prior hypothesis-informed changes are still relevant.
- * Called after each turn to track if the user's prior choices "stuck."
- *
- * v2: Per-category tracking instead of raw keep-vs-change counts.
- * A user who changed "tone" last turn and "character_role" this turn hasn't
- * invalidated the tone change — they're engaged and opinionated about different things.
- *
- * A prior change is "faded" ONLY if:
- *   1. The hypothesis was explicitly disconfirmed (already tracked elsewhere), OR
- *   2. The user is making changes at a very high rate (>75%) AND satisfaction is declining
- *      — suggesting broad dissatisfaction, not targeted refinement
- *
- * Otherwise, prior changes are assumed to still be relevant. Changing different
- * things across turns is a POSITIVE signal (engaged, opinionated user).
+ * A prior change is "faded" ONLY if there's broad dissatisfaction
+ * (>75% change rate + declining satisfaction).
  */
 export function checkPersistence(
   ledger: UserPsychologyLedger,
@@ -272,40 +449,31 @@ export function checkPersistence(
   const currentDelta = ledger.assumptionDeltas[ledger.assumptionDeltas.length - 1];
   const priorDeltas = ledger.assumptionDeltas.slice(0, -1);
 
-  // Current turn stats
   const currentValues = Object.values(currentActions);
-  const currentChangeCount = currentValues.filter((a) => a === "alternative" || a === "freeform").length;
-  const currentTotal = currentValues.filter((a) => a !== "not_ready").length;
+  const currentChangeCount = currentValues.filter(a => a === "alternative" || a === "freeform").length;
+  const currentTotal = currentValues.filter(a => a !== "not_ready").length;
   const currentChangeRate = currentTotal > 0 ? currentChangeCount / currentTotal : 0;
 
-  // Check satisfaction trend — declining satisfaction + high change rate suggests real dissatisfaction
   const satisfactionDeclining = ledger.heuristics.satisfaction?.trend === "declining";
   const broadDissatisfaction = currentChangeRate > 0.75 && satisfactionDeclining;
 
-  // Find hypotheses that were updated by user changes in prior turns
   const priorChanges: Array<{ hypothesis_id: string; change_applied: string; still_relevant: boolean }> = [];
 
   for (const delta of priorDeltas) {
-    // Count how many changes the user made in this prior turn
     const priorChangeCount = Object.values(delta.actions).filter(
-      (a) => a === "alternative" || a === "freeform"
+      a => a === "alternative" || a === "freeform"
     ).length;
     if (priorChangeCount === 0) continue;
 
-    // Find hypotheses that were updated around that turn
-    const relatedHyps = ledger.hypothesisStore.filter((h) =>
-      !h.disconfirmedBy && h.lastUpdated === delta.turnNumber
+    const relatedSignals = ledger.signalStore.filter(s =>
+      s.status !== "suppressed" && s.lastUpdated === delta.turnNumber
     );
 
-    for (const hyp of relatedHyps) {
-      // Default: prior change is still relevant (user changing different things is normal)
-      // Only mark as faded if there's evidence of broad dissatisfaction
-      const stillRelevant = !broadDissatisfaction;
-
+    for (const sig of relatedSignals) {
       priorChanges.push({
-        hypothesis_id: hyp.id,
-        change_applied: `Turn ${delta.turnNumber}: user made ${priorChangeCount} changes, updating "${hyp.hypothesis.slice(0, 50)}"`,
-        still_relevant: stillRelevant,
+        hypothesis_id: sig.id,
+        change_applied: `Turn ${delta.turnNumber}: user made ${priorChangeCount} changes, updating "${sig.hypothesis.slice(0, 50)}"`,
+        still_relevant: !broadDissatisfaction,
       });
     }
   }
@@ -317,11 +485,6 @@ export function checkPersistence(
 
 // ─── Satisfaction (LLM-assessed) ───
 
-/**
- * Store the LLM's satisfaction assessment from user_read output.
- * The LLM has full conversational context and is much better at judging
- * user satisfaction than any hardcoded formula.
- */
 export function recordSatisfaction(
   ledger: UserPsychologyLedger,
   turnNumber: number,
@@ -336,12 +499,8 @@ export function recordSatisfaction(
   };
 }
 
-// ─── Assumption delta (non-choice tracking) ───
+// ─── Assumption delta (non-choice tracking — unchanged) ───
 
-/**
- * Record what assumptions were offered vs responded to.
- * The service calls this after processing assumption responses each turn.
- */
 export function recordAssumptionDelta(
   ledger: UserPsychologyLedger,
   turnNumber: number,
@@ -350,7 +509,7 @@ export function recordAssumptionDelta(
   actions: Record<string, "keep" | "alternative" | "freeform" | "not_ready">
 ): void {
   const respondedSet = new Set(respondedIds);
-  const ignored = offeredIds.filter((id) => !respondedSet.has(id));
+  const ignored = offeredIds.filter(id => !respondedSet.has(id));
 
   ledger.assumptionDeltas.push({
     turnNumber,
@@ -360,23 +519,13 @@ export function recordAssumptionDelta(
     actions,
   });
 
-  // Keep last 5 turns
   if (ledger.assumptionDeltas.length > 5) {
     ledger.assumptionDeltas = ledger.assumptionDeltas.slice(-5);
   }
 }
 
-// ─── Heuristics (v2: cross-module accumulation) ───
+// ─── Heuristics (v2: cross-module accumulation — unchanged) ───
 
-/**
- * Compute interaction heuristics from turn data.
- * Works with both hook and character turn shapes.
- *
- * v2: Accumulates raw stats across module boundaries. Each module passes its
- * OWN turn stats (from session.turns), and this function adds them to the
- * baseline _rawStats carried from previous modules. Derived fields (typeRatio,
- * changeRate, etc.) are computed from the combined totals.
- */
 export function updateHeuristics(
   ledger: UserPsychologyLedger,
   currentModuleStats: {
@@ -390,23 +539,14 @@ export function updateHeuristics(
 ): void {
   const h = ledger.heuristics;
 
-  // Get the frozen baseline from previous modules (set once at module init)
   const baseline = h._importedBaseline ?? {
-    typedCount: 0,
-    clickedCount: 0,
-    totalAssumptions: 0,
-    deferredAssumptions: 0,
-    changedAssumptions: 0,
-    responseLengths: [],
+    typedCount: 0, clickedCount: 0, totalAssumptions: 0,
+    deferredAssumptions: 0, changedAssumptions: 0, responseLengths: [],
   };
 
-  // If current module has no data yet, preserve existing heuristics
   const currentTotal = currentModuleStats.typedCount + currentModuleStats.clickedCount;
-  if (currentTotal === 0 && currentModuleStats.totalAssumptions === 0) {
-    return;
-  }
+  if (currentTotal === 0 && currentModuleStats.totalAssumptions === 0) return;
 
-  // Combine baseline (previous modules) + current module stats
   const combined = {
     typedCount: baseline.typedCount + currentModuleStats.typedCount,
     clickedCount: baseline.clickedCount + currentModuleStats.clickedCount,
@@ -421,17 +561,13 @@ export function updateHeuristics(
   h.totalInteractions = total + combined.totalAssumptions;
   h.typeRatio = total > 0 ? combined.typedCount / total : 0.5;
   h.deferralRate = combined.totalAssumptions > 0
-    ? combined.deferredAssumptions / combined.totalAssumptions
-    : 0;
+    ? combined.deferredAssumptions / combined.totalAssumptions : 0;
   h.changeRate = combined.totalAssumptions > 0
-    ? combined.changedAssumptions / combined.totalAssumptions
-    : 0;
+    ? combined.changedAssumptions / combined.totalAssumptions : 0;
 
   const lengths = combined.responseLengths;
   if (lengths.length > 0) {
-    h.avgResponseLength = Math.round(
-      lengths.reduce((a, b) => a + b, 0) / lengths.length
-    );
+    h.avgResponseLength = Math.round(lengths.reduce((a, b) => a + b, 0) / lengths.length);
   }
 
   if (lengths.length >= 4) {
@@ -444,25 +580,15 @@ export function updateHeuristics(
     else h.engagementTrend = 0;
   }
 
-  // Store combined raw stats — next module reads this to set its _importedBaseline
   h._rawStats = combined;
 }
 
-/**
- * Snapshot the current module's raw stats as the baseline for the next module.
- * Call this when a module imports a psychology ledger from a previous module.
- * The _rawStats from the previous module become this module's _importedBaseline.
- */
 export function snapshotBaselineForNewModule(ledger: UserPsychologyLedger): void {
   const h = ledger.heuristics;
-  // Use _rawStats from previous module if available, otherwise back-compute from heuristics
   if (h._rawStats) {
     h._importedBaseline = { ...h._rawStats };
   } else if (h.totalInteractions > 0) {
-    // Legacy ledger without _rawStats — approximate from derived fields
     const total = h.totalInteractions;
-    // Estimate split between response interactions and assumptions
-    // Use a heuristic: if changeRate or deferralRate > 0, assumptions exist
     const hasAssumptions = h.changeRate > 0 || h.deferralRate > 0;
     const assumptionCount = hasAssumptions ? Math.round(total * 0.5) : 0;
     const responseCount = total - assumptionCount;
@@ -473,18 +599,12 @@ export function snapshotBaselineForNewModule(ledger: UserPsychologyLedger): void
       deferredAssumptions: Math.round(assumptionCount * h.deferralRate),
       changedAssumptions: Math.round(assumptionCount * h.changeRate),
       responseLengths: h.avgResponseLength > 0
-        ? Array(Math.round(responseCount * h.typeRatio)).fill(h.avgResponseLength)
-        : [],
+        ? Array(Math.round(responseCount * h.typeRatio)).fill(h.avgResponseLength) : [],
     };
   } else {
-    // Empty ledger — no baseline
     h._importedBaseline = {
-      typedCount: 0,
-      clickedCount: 0,
-      totalAssumptions: 0,
-      deferredAssumptions: 0,
-      changedAssumptions: 0,
-      responseLengths: [],
+      typedCount: 0, clickedCount: 0, totalAssumptions: 0,
+      deferredAssumptions: 0, changedAssumptions: 0, responseLengths: [],
     };
   }
 }
@@ -494,26 +614,29 @@ export function snapshotBaselineForNewModule(ledger: UserPsychologyLedger): void
 /**
  * STORAGE vs PROMPT BOUNDARY
  * ===========================
- * The psychology ledger stores EVERYTHING (full hypothesis history, all deltas, all reads).
- * This formatter produces a CURATED view for the LLM prompt — deliberately smaller than storage.
+ * The ledger stores everything. This formatter produces a CURATED view for the LLM.
  *
- * What goes into the prompt (curated):
- *   - Interaction heuristics summary (always)
- *   - Top 6 active hypotheses by confidence (not all 10 in store)
- *   - Disconfirmed hypotheses (brief, so LLM doesn't repeat them)
- *   - Last turn's assumption delta only (not all 5 stored)
- *   - Last turn's overall_read synthesis
+ * What goes into the prompt:
+ *   - Interaction heuristics summary
+ *   - Top signals by confidence (active + stable only), grouped by category
+ *   - Suppressed signals (brief, so LLM doesn't repeat them)
+ *   - Last turn's assumption delta
+ *   - Last turn's behavior summary
+ *   - Last turn's adaptation plan
  *
- * What stays in storage only (never sent to LLM):
- *   - Full hypothesis store (all 10, including ones not shown in prompt)
+ * What stays in storage only:
+ *   - Full signal store (all 12)
+ *   - All evidence events on each signal
  *   - All assumption deltas (last 5 turns)
  *   - All per-turn reads (last 10)
- *   - Full evidence chains on hypotheses (prompt gets truncated version)
  */
 export function formatPsychologyLedgerForPrompt(
   ledger: UserPsychologyLedger | undefined
 ): string {
   if (!ledger) return "(No user observations yet — this is a new user)";
+
+  // Guard imported/deserialized ledgers with missing fields
+  ensureLedgerShape(ledger);
 
   const lines: string[] = [];
   const h = ledger.heuristics;
@@ -533,85 +656,93 @@ export function formatPsychologyLedgerForPrompt(
       lines.push(`Note: changes ${Math.round(h.changeRate * 100)}% of assumptions — opinionated, give more to react to`);
     }
     if (h.engagementTrend === -1) {
-      lines.push(`⚠ Responses getting shorter — engagement may be dropping. Be more provocative.`);
+      lines.push(`Warning: responses getting shorter — engagement may be dropping. Be more provocative.`);
     } else if (h.engagementTrend === 1) {
       lines.push(`Responses getting longer — engagement increasing. Match their energy.`);
     }
   }
 
-  // ── Hypothesis store (PROMPT VIEW: up to 5, ensuring category coverage) ──
-  const activeHypotheses = ledger.hypothesisStore.filter((hyp) => !hyp.disconfirmedBy);
-  if (activeHypotheses.length > 0) {
-    // Sort: high first, then medium, then low. Within same confidence, most recently updated first.
-    const sorted = [...activeHypotheses].sort((a, b) => {
-      const confRank = { high: 2, medium: 1, low: 0 };
-      const confDiff = confRank[b.confidence] - confRank[a.confidence];
-      if (confDiff !== 0) return confDiff;
-      return b.lastUpdated - a.lastUpdated;
-    });
+  // ── Active + stable signals (prompt view: up to 6, category-aware) ──
+  const signalStore = ledger.signalStore ?? ledger.hypothesisStore ?? [];
+  const activeSignals = signalStore.filter(s => s.status === "active" || s.status === "stable");
+  if (activeSignals.length > 0) {
+    const sorted = [...activeSignals].sort((a, b) => b.confidence - a.confidence);
 
-    // Category-aware selection: pick top 1 per active category first, then fill by confidence
-    const MAX_PROMPT_HYPOTHESES = 5;
-    const selected = new Set<string>(); // hypothesis IDs
+    // Category-aware selection
+    const MAX_PROMPT_SIGNALS = 6;
+    const selected = new Set<string>();
     const seenCategories = new Set<string>();
 
-    // Pass 1: one per category (ensures no category goes dark)
-    for (const hyp of sorted) {
-      const cat = hyp.category ?? "content_preferences";
-      if (!seenCategories.has(cat) && selected.size < MAX_PROMPT_HYPOTHESES) {
-        selected.add(hyp.id);
-        seenCategories.add(cat);
+    // Pass 1: one per category
+    for (const s of sorted) {
+      if (!seenCategories.has(s.category) && selected.size < MAX_PROMPT_SIGNALS) {
+        selected.add(s.id);
+        seenCategories.add(s.category);
       }
     }
-
-    // Pass 2: fill remaining slots by confidence
-    for (const hyp of sorted) {
-      if (selected.size >= MAX_PROMPT_HYPOTHESES) break;
-      if (!selected.has(hyp.id)) {
-        selected.add(hyp.id);
-      }
+    // Pass 2: fill by confidence
+    for (const s of sorted) {
+      if (selected.size >= MAX_PROMPT_SIGNALS) break;
+      if (!selected.has(s.id)) selected.add(s.id);
     }
 
-    const promptHypotheses = sorted.filter((h) => selected.has(h.id));
-
-    // Group by category for structure
-    const byCategory = new Map<string, typeof promptHypotheses>();
-    for (const hyp of promptHypotheses) {
-      const cat = hyp.category ?? "content_preferences";
-      if (!byCategory.has(cat)) byCategory.set(cat, []);
-      byCategory.get(cat)!.push(hyp);
+    const promptSignals = sorted.filter(s => selected.has(s.id));
+    const byCategory = new Map<string, typeof promptSignals>();
+    for (const s of promptSignals) {
+      if (!byCategory.has(s.category)) byCategory.set(s.category, []);
+      byCategory.get(s.category)!.push(s);
     }
 
     lines.push("");
-    lines.push("YOUR PRIOR HYPOTHESES ABOUT THIS USER:");
-    for (const [cat, hyps] of byCategory) {
+    lines.push("ACTIVE BEHAVIOR SIGNALS:");
+    for (const [cat, sigs] of byCategory) {
       lines.push(`  [${cat}]`);
-      for (const hyp of hyps) {
-        const evidence = hyp.evidence.length > 80
-          ? "..." + hyp.evidence.slice(-77)
-          : hyp.evidence;
-        lines.push(`    [${hyp.id}] (${hyp.confidence}) "${hyp.hypothesis}" — ${evidence}`);
+      for (const s of sigs) {
+        const evCount = s.evidenceEvents.filter(e => e.valence === "supports").length;
+        const lastAction = s.evidenceEvents.length > 0
+          ? s.evidenceEvents[s.evidenceEvents.length - 1].action
+          : "";
+        const actionPreview = lastAction.length > 60 ? lastAction.slice(0, 57) + "..." : lastAction;
+        lines.push(`    [${s.id}] (${s.status}, conf=${s.confidence}) "${s.hypothesis}"`);
+        lines.push(`      evidence: ${evCount} events, latest: "${actionPreview}"`);
+        if (s.adaptationConsequence) {
+          lines.push(`      adapt: ${s.adaptationConsequence}`);
+        }
       }
     }
-    if (activeHypotheses.length > MAX_PROMPT_HYPOTHESES) {
-      lines.push(`  (${activeHypotheses.length - MAX_PROMPT_HYPOTHESES} more in storage, not shown)`);
+    if (activeSignals.length > MAX_PROMPT_SIGNALS) {
+      lines.push(`  (${activeSignals.length - MAX_PROMPT_SIGNALS} more in storage, not shown)`);
     }
-    lines.push("  → Update these: confirm, refine, or disconfirm based on this turn's behavior.");
+    lines.push("  → Confirm, refine, or contradict these based on this turn's behavior.");
   }
 
-  // ── Disconfirmed hypotheses (brief, so LLM doesn't repeat them) ──
-  const disconfirmed = ledger.hypothesisStore.filter((hyp) => hyp.disconfirmedBy);
-  if (disconfirmed.length > 0) {
+  // ── Candidate signals (brief) ──
+  const candidates = signalStore.filter(s => s.status === "candidate");
+  if (candidates.length > 0) {
     lines.push("");
-    lines.push("DISCONFIRMED (do not repeat these):");
-    for (const hyp of disconfirmed) {
-      lines.push(`  [${hyp.id}] "${hyp.hypothesis}" — disconfirmed: ${hyp.disconfirmedBy}`);
+    lines.push(`CANDIDATE SIGNALS (${candidates.length} — need more evidence):`);
+    for (const s of candidates.slice(0, 3)) {
+      lines.push(`    [${s.id}] (conf=${s.confidence}) "${s.hypothesis}"`);
+    }
+    if (candidates.length > 3) {
+      lines.push(`    (${candidates.length - 3} more candidates not shown)`);
     }
   }
 
-  // ── Last turn's assumption delta only (storage keeps 5, prompt gets 1) ──
-  const lastDelta = ledger.assumptionDeltas.length > 0
-    ? ledger.assumptionDeltas[ledger.assumptionDeltas.length - 1]
+  // ── Suppressed signals (so LLM doesn't repeat them) ──
+  const suppressed = signalStore.filter(s => s.status === "suppressed");
+  if (suppressed.length > 0) {
+    lines.push("");
+    lines.push("SUPPRESSED (do not repeat — contradicted or decayed):");
+    for (const s of suppressed) {
+      lines.push(`  [${s.id}] "${s.hypothesis}" — ${s.suppressionReason ?? "suppressed"}`);
+    }
+  }
+
+  // ── Last turn's assumption delta ──
+  const assumptionDeltas = ledger.assumptionDeltas ?? [];
+  const lastDelta = assumptionDeltas.length > 0
+    ? assumptionDeltas[assumptionDeltas.length - 1]
     : null;
 
   if (lastDelta && lastDelta.ignored.length > 0) {
@@ -623,16 +754,15 @@ export function formatPsychologyLedgerForPrompt(
 
   // ── Persistence summary ──
   if (lastDelta?.prior_changes && lastDelta.prior_changes.length > 0) {
-    const stillActive = lastDelta.prior_changes.filter((p) => p.still_relevant).length;
+    const stillActive = lastDelta.prior_changes.filter(p => p.still_relevant).length;
     const total = lastDelta.prior_changes.length;
     lines.push("");
     lines.push(`PERSISTENCE SUMMARY: ${stillActive} of ${total} prior changes still active`);
     if (stillActive < total) {
-      const faded = lastDelta.prior_changes.filter((p) => !p.still_relevant);
+      const faded = lastDelta.prior_changes.filter(p => !p.still_relevant);
       for (const f of faded) {
         lines.push(`  [${f.hypothesis_id}] change faded: ${f.change_applied}`);
       }
-      lines.push("  → These changes didn't stick. Go deeper on those dimensions or try new angles.");
     }
   }
 
@@ -641,19 +771,79 @@ export function formatPsychologyLedgerForPrompt(
     lines.push("");
     lines.push(`SATISFACTION: ${Math.round(h.satisfaction.score * 100)}% (${h.satisfaction.trend})`);
     if (h.satisfaction.trend === "declining") {
-      lines.push("  ⚠ User satisfaction declining — be more responsive to their vision, less formulaic.");
+      lines.push("  Warning: user satisfaction declining — be more responsive to their vision, less formulaic.");
     }
   }
 
-  // ── Overall read from last turn ──
+  // ── Last turn's behavior summary ──
   const lastRead = ledger.reads.length > 0 ? ledger.reads[ledger.reads.length - 1] : null;
-  if (lastRead?.overall_read) {
+  if (lastRead?.behaviorSummary) {
+    const bs = lastRead.behaviorSummary;
+    lines.push("");
+    lines.push(`LAST TURN SUMMARY: "${bs.orientation}" | focus: ${bs.currentFocus} | mode: ${bs.engagementMode}`);
+  } else if (lastRead?.overall_read) {
     lines.push("");
     lines.push(`Last turn synthesis: "${lastRead.overall_read}"`);
   }
 
+  // ── Last turn's adaptation plan ──
+  if (lastRead?.adaptationPlan && lastRead.adaptationPlan.moves.length > 0) {
+    lines.push("");
+    lines.push(`LAST ADAPTATION PLAN: "${lastRead.adaptationPlan.dominantNeed}"`);
+    for (const move of lastRead.adaptationPlan.moves) {
+      lines.push(`  → ${move.action} [targets: ${move.target}] [driven by: ${move.drivenBy.join(", ")}]`);
+    }
+    lines.push("  Check: did last turn's plan work? If not, adjust strategy.");
+  }
+
   if (lines.length === 0) {
     return "(No user observations yet — read them from their first response)";
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * Format signals specifically for builder/judge prompts.
+ * Shorter than the full clarifier view — only active/stable signals + adaptation consequences.
+ */
+export function formatSignalsForBuilderJudge(
+  ledger: UserPsychologyLedger | undefined
+): string {
+  if (!ledger) return "(No behavior signals — first-time user)";
+
+  // Guard imported/deserialized ledgers with missing fields
+  ensureLedgerShape(ledger);
+
+  const lines: string[] = [];
+
+  // Only active + stable signals
+  const signals = ledger.signalStore
+    .filter(s => s.status === "active" || s.status === "stable")
+    .sort((a, b) => b.confidence - a.confidence)
+    .slice(0, 5);
+
+  if (signals.length === 0) return "(No confirmed behavior signals yet)";
+
+  lines.push("USER BEHAVIOR SIGNALS (shape your output accordingly):");
+  for (const s of signals) {
+    lines.push(`  [${s.id}] (${s.status}, conf=${s.confidence}) "${s.hypothesis}"`);
+    if (s.adaptationConsequence) {
+      lines.push(`    → ${s.adaptationConsequence}`);
+    }
+  }
+
+  // Heuristics summary
+  const h = ledger.heuristics;
+  if (h.totalInteractions >= 2) {
+    const style = h.typeRatio > 0.65 ? "directorial (types a lot)"
+      : h.typeRatio < 0.35 ? "explorer (clicks options)"
+      : "mixed";
+    lines.push(`  User style: ${style}`);
+  }
+
+  if (h.satisfaction) {
+    lines.push(`  Satisfaction: ${Math.round(h.satisfaction.score * 100)}% (${h.satisfaction.trend})`);
   }
 
   return lines.join("\n");

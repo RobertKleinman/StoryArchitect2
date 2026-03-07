@@ -14,4 +14,8 @@ export const FEATURE_FLAGS: FeatureFlags = {
     process.env.CHARACTER_IMAGE_MODULE_ENABLED !== undefined
       ? process.env.CHARACTER_IMAGE_MODULE_ENABLED !== "false"
       : DEFAULT_FEATURE_FLAGS.CHARACTER_IMAGE_MODULE_ENABLED,
+  WORLD_MODULE_ENABLED:
+    process.env.WORLD_MODULE_ENABLED !== undefined
+      ? process.env.WORLD_MODULE_ENABLED !== "false"
+      : DEFAULT_FEATURE_FLAGS.WORLD_MODULE_ENABLED,
 };

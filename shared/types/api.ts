@@ -25,6 +25,15 @@ import {
   GeneratedCharacterImage,
 } from "./characterImage";
 
+import {
+  WorldClarifierResponse,
+  WorldBuilderOutput,
+  WorldJudgeScores,
+  WorldPack,
+  WorldSessionState,
+  DevelopmentTarget,
+} from "./world";
+
 /** Standard error shape for all endpoints */
 export interface ApiError {
   error: true;
@@ -136,3 +145,38 @@ export type CharacterImageLockResponse = CharacterImagePack;
 
 /** GET /api/character-image/:projectId */
 export type CharacterImageSessionResponse = CharacterImageSessionState;
+
+// ─── World Module API ───
+
+/** POST /api/world/clarify */
+export interface WorldClarifyResponse {
+  clarifier: WorldClarifierResponse;
+  turnNumber: number;
+  totalTurns: number;
+}
+
+/** POST /api/world/generate and /reroll */
+export interface WorldGenerateResponse {
+  world: WorldBuilderOutput;
+  judge: {
+    passed: boolean;
+    hard_fail_reasons: string[];
+    scores: WorldJudgeScores;
+    weakest_element: string;
+    one_fix_instruction: string;
+  } | null;
+  /** Development targets tracked across modules — shows what weaknesses have been addressed */
+  developmentTargets?: DevelopmentTarget[];
+  /** Judge weaknesses specific to this world build */
+  weaknesses?: Array<{
+    area: string;
+    weakness: string;
+    development_opportunity: string;
+  }>;
+}
+
+/** POST /api/world/lock */
+export type WorldLockResponse = WorldPack;
+
+/** GET /api/world/:projectId */
+export type WorldSessionResponse = WorldSessionState;

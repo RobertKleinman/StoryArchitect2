@@ -3,112 +3,133 @@
  * ════════════════════════════
  * LAYER: Psychology (the user-insight system, shared across all modules)
  *
- * These fragments define how the LLM builds and refines its understanding of the
- * user's creative psychology. Hypothesis generation, deepening rules, non-action
- * interpretation, psychology-revealing assumptions — anything about understanding
- * WHO the user is, not what they're building.
- *
- * WHEN TO EDIT THIS FILE:
- *   - You want to change how hypotheses are generated or deepened
- *   - You want to change confidence rules or scope definitions
- *   - You want to change how non-actions (ignoring assumptions) are interpreted
- *   - You want to change how psychology-revealing assumptions work
- *
- * WHEN NOT TO EDIT THIS FILE:
- *   - You want to change general interaction behavior → generalPromptFragments.ts
- *   - You want to change module-specific prompts → hookPrompts.ts / characterPrompts.ts
+ * v4: Structured BehaviorSignal output format.
+ *     - LLM outputs raw signal observations, NOT confidence or status (backend computes those)
+ *     - Evidence must cite specific user actions with turn reference
+ *     - Adaptation consequences are concrete pipeline behaviors, not prose
+ *     - Ban literary/academic language — use plain observational language
+ *     - behavior_summary replaces overall_read
+ *     - adaptation_plan replaces psychology_strategy
  */
 
 // ─────────────────────────────────────────────────────────────────
-// FRAGMENT: USER READ OUTPUT INSTRUCTIONS
-// Used in: hook clarifier (output format #12), character clarifier (output format #14)
-// Purpose: Tells the LLM what to output in the structured user_read field
-// NOTE: Each module may wrap this with module-specific framing.
-//       The CORE instruction is shared; the context sentence before it is module-specific.
+// FRAGMENT: USER READ OUTPUT INSTRUCTIONS (v4 — structured signals)
 // ─────────────────────────────────────────────────────────────────
-export const SHARED_USER_READ_INSTRUCTIONS = `Output as STRUCTURED JSON (not a freeform string):
+export const SHARED_USER_READ_INSTRUCTIONS = `Output as STRUCTURED JSON (not freeform):
 
   user_read: {
-    hypotheses: [  // 1-3 hypotheses about this USER (not the story)
+    signals: [  // 1-3 observations about this USER's behavior (not the story)
       {
-        hypothesis: "short observation, max ~15 words",
-        evidence: "what specific user action supports this, max ~25 words",
-        confidence: "low" | "medium" | "high",
+        hypothesis: "concrete observation, max ~20 words — what they DO, not what they ARE",
+        action: "the specific user action this turn that supports this — quote their choice or behavior",
+        valence: "supports" | "contradicts",
         scope: "this_story" | "this_genre" | "global",
-        category: "content_preferences" | "control_orientation" | "power_dynamics" | "tonal_risk" | "narrative_ownership" | "engagement_satisfaction"
+        category: "content_preferences" | "control_orientation" | "power_dynamics" | "tonal_risk" | "narrative_ownership" | "engagement_satisfaction",
+        adaptationConsequence: "what the pipeline should DO differently — concrete action, not vibe",
+        contradictionCriteria: "what user action would prove this wrong — specific and testable",
+        contradictsSignalId: "s3"  // optional: if this contradicts a prior signal, name it
       }
     ],
-    overall_read: "1-2 sentence synthesis of this user's creative fingerprint",
-    satisfaction: {
-      score: 0.0-1.0,  // your honest assessment of how satisfied/engaged they are
-      trend: "rising" | "stable" | "declining",
-      note: "brief reason — what tells you this? max ~15 words"
+    behaviorSummary: {
+      orientation: "1-sentence summary of user's current creative approach — plain language",
+      currentFocus: "what they're most invested in right now (1-3 words)",
+      engagementMode: "exploring" | "converging" | "stuck" | "disengaged",
+      satisfaction: {
+        score: 0.0-1.0,
+        trend: "rising" | "stable" | "declining",
+        reason: "what tells you this — cite a specific action, max ~15 words"
+      }
+    },
+    adaptationPlan: {
+      dominantNeed: "what does this user need from THIS turn — plain, specific",
+      moves: [  // 2-4 concrete actions you'll take
+        {
+          action: "what specifically to do — not a vibe, a pipeline behavior",
+          drivenBy: ["s1", "s3"],  // which signal IDs drive this move
+          target: "question" | "options" | "assumptions" | "builder_tone" | "builder_content" | "judge_criteria"
+        }
+      ]
     }
   }
 
+SIGNAL RULES — READ THESE CAREFULLY:
+
+1. YOU DO NOT SET CONFIDENCE OR STATUS. The backend computes those from evidence count,
+   recency, and contradictions. You provide the observation + evidence + consequences.
+
+2. EVIDENCE MUST CITE A SPECIFIC ACTION. Not "they seem to prefer dark themes."
+   YES: "chose 'morally ambiguous antagonist' over 'clear villain' on turn 3"
+   YES: "typed 'I want the reader to feel uncomfortable' in free text"
+   YES: "kept all assumptions about power dynamics, changed the romantic ones"
+   NO: "appears drawn to complexity"
+   NO: "gravitates toward darker material"
+   NO: "shows a preference for nuanced characters"
+
+3. ADAPTATION CONSEQUENCES MUST BE PIPELINE ACTIONS. Not "lean into their interests."
+   YES: "offer antagonist options with moral complexity, avoid clear heroes/villains"
+   YES: "make next question about emotional stakes, not plot mechanics"
+   YES: "include a provocative assumption that challenges their settled direction"
+   NO: "continue exploring these themes"
+   NO: "match their creative energy"
+   NO: "deepen the emotional resonance"
+
+4. CONTRADICTION CRITERIA MUST BE TESTABLE. Not "they change their mind."
+   YES: "user chooses simple/clear morality options 2+ times in a row"
+   YES: "user ignores power dynamic assumptions for 3 consecutive turns"
+   YES: "user types that they want something lighter or more straightforward"
+   NO: "they show less interest in this area"
+   NO: "the pattern doesn't hold up"
+
+5. BANNED LANGUAGE — do NOT use these words/phrases in signals:
+   "yearns", "craves", "resonates", "transcendence", "cathartic", "psyche",
+   "soul", "essence", "journey", "tapestry", "weave", "thread", "dance between",
+   "delicate balance", "rich tapestry", "deeply invested", "speaks to their",
+   "drawn to", "gravitates toward", "reveals a deep", "underlying need for",
+   "creative fingerprint", "emotional landscape", "psychological profile"
+
+   USE INSTEAD: plain observational language like "picks X over Y consistently",
+   "typed specific details about Z", "ignored all options related to W",
+   "changed their mind about X after seeing Y", "spent the most words on Z"
+
+6. CHECK PRIOR SIGNALS in the psychology section above. Reference them by ID.
+   - If you see supporting evidence → output valence: "supports" with the signal's observation
+   - If you see contradicting evidence → output valence: "contradicts" with contradictsSignalId
+   - If it's genuinely new → just output it as a new signal
+   - DO NOT restate prior signals with different words. Either add new evidence or don't.
+
+7. DEEPENING RULE (after turn 2):
+   After turn 2, new signals MUST add information, not restate.
+   "Prefers dark themes" → already captured. DON'T output again.
+   "Specifically interested in moral corruption, not violence — chose 'slow moral slide' over 'brutal revenge'" → NEW information.
+
+ENGAGEMENT MODE DEFINITIONS:
+  - "exploring": trying different directions, high variety in choices
+  - "converging": narrowing in on a specific vision, choices getting more consistent
+  - "stuck": repeating similar patterns, deferring, or short responses
+  - "disengaged": minimal effort, ignoring options, satisfaction dropping
+
 SATISFACTION ASSESSMENT:
-  You have the full conversational context — use it. Assess how the user is FEELING about this experience.
-  - score: 0.0 = frustrated/disengaged, 0.5 = neutral/going through the motions, 1.0 = delighted/deeply invested
-  - trend: is their satisfaction going up, holding steady, or declining compared to prior turns?
-  - note: what specific signals inform your read? (e.g. "longer responses, more specific requests" or "shorter answers, ignoring assumptions")
+  You have the full conversational context — use it.
+  - A user who changes many assumptions may be HIGHLY satisfied — they're engaged and opinionated.
+  - A user who keeps everything may be passive or bored.
+  - Read the CONTEXT, not just the numbers.
+  - Turn 1: default to 0.5/stable unless their seed shows obvious enthusiasm.
 
-  IMPORTANT: A user who changes many assumptions may be HIGHLY satisfied — they're engaged and opinionated.
-  A user who keeps everything may be passive or bored. Read the CONTEXT, not just the numbers.
-  Turn 1: default to 0.5/stable unless their seed shows obvious enthusiasm.
-
-HYPOTHESIS CATEGORIES (assign exactly one per hypothesis):
-  - "content_preferences": What they explicitly want — themes, genres, kinks, aesthetics, tones
+SIGNAL CATEGORIES (assign exactly one per signal):
+  - "content_preferences": What they explicitly want — themes, aesthetics, tones
   - "control_orientation": How much they want to drive vs be surprised
-  - "power_dynamics": Their fascination with hierarchy, authority, dominance, submission
+  - "power_dynamics": Interest in hierarchy, authority, dominance patterns
   - "tonal_risk": How far they push boundaries, appetite for transgression
-  - "narrative_ownership": How protective they are of their vision, audience awareness
-  - "engagement_satisfaction": How they're feeling about the experience itself
-
-CONFIDENCE ENFORCEMENT (hard rules — the engine will cap these anyway):
-  - Turn 1: ALL hypotheses MUST be "low". You have one data point. No exceptions.
-  - Turns 2-3: "medium" is the maximum. You're seeing early patterns, not confirmed traits.
-  - Turn 4+: "high" is EXPECTED for hypotheses with consistent evidence from 3+ turns. If a hypothesis has been confirmed or deepened across multiple turns without contradiction, PROMOTE it to "high". Don't stay at "medium" forever — that's wasted signal.
-  - PROMOTION TRIGGERS (turn 4+): A hypothesis SHOULD be "high" when:
-    - The same pattern appears in 3+ turns (even if the hypothesis text evolved/deepened)
-    - Evidence comes from different choice types (option picks + typing + assumption responses)
-    - The user hasn't contradicted or moved away from the pattern
-    - You've deepened the hypothesis beyond surface level (you understand the WHY, not just the WHAT)
-  - Still "medium" when: you're seeing the pattern but haven't understood the underlying motivation yet, or evidence comes from only one choice type.
-  - Still "low" when: it's a new hypothesis even if we're on a late turn.
-  - When in doubt between "medium" and "high" on turn 4+, lean toward "high" if the evidence is multi-turn. The system benefits more from confident signals than from perpetual hedging.
+  - "narrative_ownership": How protective of their vision
+  - "engagement_satisfaction": How they're feeling about the experience
 
 SCOPE:
-  - "this_story": Preference specific to this story's content (e.g. "wants the antagonist to be sympathetic")
-  - "this_genre": Preference that likely applies to similar stories (e.g. "drawn to power dynamics in dark romance")
-  - "global": Interaction style or deep preference (e.g. "control-seeker who prefers to shape rather than discover")
-
-DEEPENING RULE (critical after turn 2):
-  After turn 2, every new hypothesis MUST build on, challenge, or refine a prior one — not restate it. Reference the prior hypothesis ID you're building on (e.g. "Refining h4: ...").
-  If you can't go deeper than what's already there, output FEWER hypotheses. 1 deep hypothesis > 3 shallow restatements.
-
-  WHAT "DEEPER" MEANS:
-  - Surface level: "Director type" / "Likes control" / "Fast decision-maker" → these are LABELS, not insights
-  - One level deeper: "Their control instinct is about moral outcomes, not character emotion" → now we know WHAT they control
-  - Real depth: "They'll let characters surprise them but not the story's moral message — control is about meaning, not events" → now we understand WHY
-
-  EVOLUTION EXAMPLES:
-  Turn 1: "Director type — gives specific instructions rather than exploring options" (low, global)
-  Turn 2 WRONG: "Control-oriented — likes to direct the story" ← SAME THING, different words. REJECTED.
-  Turn 2 RIGHT: "Their directorial instinct targets moral dimensions specifically — they typed details about the villain's justification but clicked chips for everything else" (low, refining h3)
-  Turn 3 RIGHT: "Control is about meaning, not plot — they let me surprise them with a plot twist but immediately reshaped its thematic implication" (medium, refining h3)
-
-RULES:
-  - Check YOUR PRIOR HYPOTHESES in the psychology section above. Do NOT repeat them. Instead: confirm (raise evidence), refine (make more specific), or disconfirm (note what contradicted it).
-  - Each hypothesis must be DIFFERENT from prior ones. Restating with synonyms is NOT different. You must add NEW information: what specifically, why, in what contexts, with what exceptions.
-  - Track CHANGES: did they start typing more? Did energy shift? Did they defer something unusual? Changes are MORE interesting than consistency.
-  - Go beyond surface actions. "Clicks a lot" is obvious. WHY those clicks? What do their choice patterns reveal about preferences, fears, emotional pulls?
-  - If the user IGNORED certain assumptions last turn (shown in "ASSUMPTIONS IGNORED"), factor that in — it's a weak signal they don't care about those areas yet.
-  - The overall_read should EVOLVE each turn — not converge on a catchphrase. If your last overall_read was "fast-moving director who builds from theme outward," this turn's should add nuance, not repeat it.`;
+  - "this_story": Specific to this story's content
+  - "this_genre": Likely applies to similar stories
+  - "global": Interaction style or deep preference`;
 
 // ─────────────────────────────────────────────────────────────────
 // FRAGMENT: NON-ACTION READING
-// Used in: hook clarifier (STEP 1 addendum), character clarifier (can be added)
-// Purpose: How to interpret what the user DIDN'T do
 // ─────────────────────────────────────────────────────────────────
 export const SHARED_NON_ACTION_READING = `READ NON-ACTIONS TOO:
   - User didn't type anything, only clicked chips/assumptions → they prefer guided choices, lean into proposals
@@ -119,8 +140,6 @@ export const SHARED_NON_ACTION_READING = `READ NON-ACTIONS TOO:
 
 // ─────────────────────────────────────────────────────────────────
 // FRAGMENT: PSYCHOLOGY-MOTIVATED ASSUMPTIONS
-// Used in: hook clarifier (ASSUMPTIONS section), character clarifier (ASSUMPTIONS section)
-// Purpose: Some assumptions should be designed to learn about the USER's creative psychology
 // ─────────────────────────────────────────────────────────────────
 export const SHARED_PSYCHOLOGY_ASSUMPTIONS = `PSYCHOLOGY-REVEALING ASSUMPTIONS (include 1 per turn when possible):
 Not every assumption should be about the story. Some should be designed so that the user's RESPONSE tells you something about THEM — their creative instincts, emotional preferences, risk tolerance, storytelling values.
@@ -131,52 +150,37 @@ HOW: Frame a story choice where the alternatives reveal different creative perso
   - "The antagonist genuinely cares about the protagonist" → alternatives: "Uses caring as a weapon" / "Cares but would still destroy them" / "Doesn't care at all"
     (Each reveals how the user thinks about moral complexity.)
 
-WHAT YOU LEARN feeds into user_read:
-  - Do they gravitate toward control or chaos?
-  - Do they prefer moral complexity or clear heroes/villains?
-  - Are they drawn to emotional intimacy or power dynamics?
-  - Do they like slow reveals or explosive moments?
-  - When forced to choose, do they pick the safe option or the risky one?
-
 RULES:
-  - These MUST still be valid, useful story assumptions — they serve double duty, not just psychological profiling
-  - Don't label them differently from other assumptions — they should look and feel the same to the user
-  - The psychological insight is for YOUR user_read, not something you tell the user
+  - These MUST still be valid, useful story assumptions — they serve double duty, not just profiling
+  - Don't label them differently from other assumptions — they should feel the same
+  - Feed what you learn into your signals
   - Don't overthink it: a good assumption naturally reveals something about the chooser`;
 
 // ─────────────────────────────────────────────────────────────────
 // FRAGMENT: OBVIOUS PATTERN DETECTION
-// Used in: all clarifiers (before subtle analysis)
-// Purpose: Ensure the system catches explicit content preferences FIRST
 // ─────────────────────────────────────────────────────────────────
 export const OBVIOUS_PATTERN_DETECTION = `OBVIOUS PATTERN DETECTION (do this FIRST, before subtle analysis):
 
-Before looking for hidden patterns, identify what the user is EXPLICITLY telling you. This is critical —
-the system should never be so focused on subtle psychological insights that it misses the obvious.
+Before looking for hidden patterns, identify what the user is EXPLICITLY telling you.
 
 CAPTURE FIRST:
-  - Direct content requests (genres, themes, kinks, aesthetics, specific things they asked for)
+  - Direct content requests (genres, themes, aesthetics, specific things they asked for)
   - Stated preferences ("I want...", "I like...", repeated emphasis on specific elements)
   - Obvious fixations (topics returned to multiple times, things they highlight or emphasize)
-  - Explicit fetishes, interests, or thematic obsessions stated in the seed or free text
+  - Explicit interests stated in the seed or free text
 
-Record these as hypotheses in category "content_preferences" with appropriate confidence:
-  - Turn 1 explicit statement → "low" confidence (it's their first words, but still explicit)
-  - Repeated emphasis or return to same topic → bump confidence
+Record these as signals in category "content_preferences".
 
 ONLY AFTER capturing the obvious should you look for subtler dimensions:
   - Control orientation (do they want to drive or be surprised?)
-  - Power dynamics fascination (hierarchy, authority, submission patterns)
-  - Tonal risk appetite (how far they push boundaries, absurdity tolerance)
-  - Narrative ownership (how protective of their vision, audience awareness)
-  - Audience framing sensitivity (who do they imagine consuming this?)
+  - Power dynamics interest (hierarchy, authority patterns)
+  - Tonal risk appetite (how far they push boundaries)
+  - Narrative ownership (how protective of their vision)
 
 The OBVIOUS and the SUBTLE are BOTH important. But never skip the obvious to look clever.`;
 
 // ─────────────────────────────────────────────────────────────────
 // FRAGMENT: DIAGNOSTIC OPTIONS GUIDANCE
-// Used in: all clarifiers (assumption design)
-// Purpose: Some options should be designed to reveal creative psychology
 // ─────────────────────────────────────────────────────────────────
 export const DIAGNOSTIC_OPTIONS_GUIDANCE = `DIAGNOSTIC OPTIONS (1-2 per turn):
 1-2 of your assumption options per turn should be intentionally diagnostic — designed to reveal
@@ -189,12 +193,10 @@ These diagnostic options serve the story AND reveal the user. They must:
   - Be genuinely good story options (not just psych tests)
   - Feel natural alongside non-diagnostic options
   - Cover different psychological dimensions across turns (don't keep testing the same thing)
-  - Feed insights into your user_read hypotheses when the user chooses`;
+  - Feed insights into your signals when the user chooses`;
 
 // ─────────────────────────────────────────────────────────────────
 // FRAGMENT: ASSUMPTION PERSISTENCE CHECK
-// Used in: all clarifiers (before generating new assumptions)
-// Purpose: Ensure prior changes are tracked and deepened
 // ─────────────────────────────────────────────────────────────────
 export const ASSUMPTION_PERSISTENCE_CHECK = `ASSUMPTION PERSISTENCE CHECK (before generating new assumptions):
 Review the PERSISTENCE SUMMARY in the psychology ledger (if present). This tells you which of the
@@ -212,43 +214,166 @@ Every assumption MUST have at least 3 alternatives. Never offer only 2 — the u
 choice, and 2 options feel like a binary trap. 3-4 alternatives is ideal.`;
 
 // ─────────────────────────────────────────────────────────────────
-// FRAGMENT: PSYCHOLOGY STRATEGY REASONING
-// Used in: all clarifiers (output field)
-// Purpose: Forces the LLM to explicitly reason about how psychology
-//          should shape THIS turn's question, options, and assumptions
+// FRAGMENT: ADAPTATION PLAN INSTRUCTIONS (replaces PSYCHOLOGY_STRATEGY)
 // ─────────────────────────────────────────────────────────────────
-export const PSYCHOLOGY_STRATEGY_INSTRUCTIONS = `PSYCHOLOGY STRATEGY (output this FIRST, before crafting your question):
+export const ADAPTATION_PLAN_INSTRUCTIONS = `ADAPTATION PLAN (output in user_read.adaptationPlan — replaces psychology_strategy):
 
-Before you write your question, options, or assumptions, you MUST reason about the user's psychology and how it should shape this turn. Output this as the "psychology_strategy" field in your JSON.
+Before you write your question, options, or assumptions, you MUST plan how the user's behavior
+signals should shape this turn. This goes in the adaptationPlan field.
 
-This is YOUR private reasoning — the user never sees it. Be specific and actionable. DON'T restate the hypotheses. Instead answer these questions:
+This is YOUR private reasoning — the user never sees it. Be SPECIFIC and ACTIONABLE.
 
-1. WHAT DOES THIS USER WANT FROM THIS EXPERIENCE RIGHT NOW?
-   Based on their interaction pattern, satisfaction, and hypotheses — are they exploring freely, driving toward a specific vision, getting bored, getting excited? What emotional state are they in?
+dominantNeed: What does this user need from THIS turn?
+  BAD: "continue engaging with them" / "adapt to their preferences"
+  GOOD: "they're stuck on character dynamics — need a provocative question that breaks the loop"
+  GOOD: "satisfaction dropping + they've deferred 3 turns — give them a big-picture question to zoom out"
 
-2. WHAT SHOULD I DO DIFFERENTLY BECAUSE OF WHAT I KNOW?
-   Be CONCRETE. Examples of good strategy:
-   - "They type long responses about relationships but click through combat stuff → lean into relationship dynamics, make my question about the emotional tension between characters, not plot mechanics"
-   - "High change rate + satisfaction rising → they WANT to be challenged. Offer a provocative assumption they might disagree with"
-   - "They defer a lot → stop asking them to decide fine details. Make bolder proposals they can react to"
-   - "Control-seeker with specific vision → my options should be interpretations of THEIR idea, not new directions"
-   - "Engagement dropping → I'm being too safe/predictable. Do something surprising — challenge an assumption they've kept, surface a contradiction they haven't noticed"
+moves: 2-4 concrete actions, each targeting a specific pipeline stage.
+  Each move MUST reference which signal(s) drive it (by ID).
 
-3. WHAT SPECIFIC MOVES SHOULD I MAKE THIS TURN?
-   - Should my question be open-ended or focused?
-   - Should my options expand possibilities or refine what they've started?
-   - Should my assumptions be bold (to provoke reaction) or supportive (to build momentum)?
-   - Is there a specific character/relationship/theme I should focus on because the psychology suggests they're most invested there?
-   - Should I challenge anything they've settled on, or reinforce their momentum?
+  BAD MOVES (too vague):
+  - "lean into their interests"
+  - "match their energy"
+  - "offer options aligned with their preferences"
 
-BAD STRATEGY (too vague, doesn't change behavior):
-  "The user seems engaged so I'll keep doing what I'm doing"
-  "I'll adapt to their preferences"
-  "I notice they like dark themes so I'll include dark themes"
+  GOOD MOVES:
+  - action: "make question about the emotional stakes between characters, not plot mechanics"
+    drivenBy: ["s2"] (control_orientation: types long responses about relationships, clicks through plot)
+    target: "question"
+  - action: "include a provocative assumption challenging their settled antagonist direction"
+    drivenBy: ["s1", "s4"] (high change rate + rising satisfaction = they want to be challenged)
+    target: "assumptions"
+  - action: "offer fewer pre-made options, more open space — they're typing their own vision"
+    drivenBy: ["s3"] (narrative_ownership: ignores chips, types free text)
+    target: "options"
 
-GOOD STRATEGY (specific, changes what you actually output):
-  "They've typed detailed responses about Kira's internal conflict but only clicked chips for Renji — they're invested in Kira's psychology. This turn: make my question about the thing Kira won't admit to herself, offer options that each reveal a different fear. For assumptions, propose something provocative about Renji that might make them finally care about him."
-  "Satisfaction declining + they've been deferring assumptions for 2 turns. They feel stuck. Break the pattern: instead of asking about character details, ask a big-picture question about what FEELING they want the reader to have. Give them permission to zoom out."
+Your adaptationPlan directly shapes what you output. If your plan says 'focus on relationships'
+but your question is about plot mechanics, you failed.`;
 
-Your psychology_strategy directly shapes your question, options, and assumptions. If your strategy says 'lean into relationships' but your question is about plot mechanics, you failed.`;
+/** @deprecated Use ADAPTATION_PLAN_INSTRUCTIONS */
+export const PSYCHOLOGY_STRATEGY_INSTRUCTIONS = ADAPTATION_PLAN_INSTRUCTIONS;
 
+// ─────────────────────────────────────────────────────────────────
+// FRAGMENT: BUILDER/JUDGE SIGNAL INSTRUCTIONS
+// Used in: all builder and judge system prompts
+// Purpose: Tell builders/judges how to USE behavior signals
+// ─────────────────────────────────────────────────────────────────
+export const BUILDER_SIGNAL_INSTRUCTIONS = `USER BEHAVIOR SIGNALS (use these to shape your output):
+
+The psychology ledger above contains behavior signals about this user. Each signal has:
+  - A hypothesis (what we observed about the user)
+  - A confidence score (0-1, higher = more evidence)
+  - An adaptation consequence (what to DO differently)
+
+HOW TO USE SIGNALS IN YOUR OUTPUT:
+  - Read the "adapt:" line for each signal — it tells you what pipeline behavior to change
+  - Signals with confidence >= 0.5 are reliable patterns — follow their adaptation consequences
+  - Signals with confidence < 0.3 are early impressions — consider but don't over-commit
+  - If a signal says "offer more X" or "avoid Y", actually do it in your output
+  - If two signals conflict, prefer the one with higher confidence
+
+EXAMPLES:
+  Signal: "picks morally complex options over simple ones" → adapt: "make antagonist sympathetic, avoid clear villain"
+  → In your output: write an antagonist with genuine motivations, not a cardboard villain
+
+  Signal: "typed detailed relationship descriptions, clicked through world-building" → adapt: "prioritize character dynamics over setting detail"
+  → In your output: spend more words on character interactions, less on world description
+
+  Signal: "changes assumptions about tone frequently" → adapt: "keep tonal range in options, don't lock to one register"
+  → In your output: include moments of tonal variety, don't be monotone`;
+
+export const JUDGE_SIGNAL_INSTRUCTIONS = `USER FIT SCORING (additional judge dimension):
+
+In addition to your standard scoring criteria, evaluate how well the candidate
+matches the user's behavior signals.
+
+USER FIT (score 0-10):
+  - 10: Every adaptation consequence from active signals is reflected in the output
+  - 7-9: Most signals are reflected, minor mismatches
+  - 4-6: Some signals reflected but key adaptations are missing
+  - 1-3: Output ignores or contradicts user behavior signals
+  - 0: Output actively contradicts what we know about the user
+
+Check each active signal's "adapt:" line and verify the output follows it.
+If the output contradicts a signal with confidence >= 0.5, that's a hard penalty.
+
+Include user_fit in your scores object and explain any mismatches in your judgment.`;
+
+// ─────────────────────────────────────────────────────────────────
+// FRAGMENT: UPSTREAM DEVELOPMENT TARGETS
+// Used in: clarifier and builder system prompts for all modules EXCEPT hook
+// Purpose: Previous modules' judges identified weaknesses. This module
+//          should subtly address them without being heavy-handed.
+// ─────────────────────────────────────────────────────────────────
+export const UPSTREAM_DEVELOPMENT_TARGETS_INSTRUCTIONS = `UPSTREAM DEVELOPMENT TARGETS (weave these in — do NOT announce them):
+
+You have received development targets from earlier modules. These are weaknesses or gaps
+identified by previous judges that YOUR module can help address.
+
+HOW TO USE THEM:
+  - DO NOT tell the user "the previous module found a weakness in X"
+  - DO NOT ask directly about the weakness — that breaks immersion
+  - Instead, shape your questions, assumptions, and options so the user's choices
+    NATURALLY develop the weak area
+  - Think of it like a conversation where you steer toward a topic without saying
+    "we need to talk about this"
+
+EXAMPLES:
+  Target: "antagonist's moral logic is underdeveloped"
+  BAD: "The previous module flagged that your antagonist needs more moral depth. What drives them?"
+  GOOD: (in a world module) Surface an assumption about the institution the antagonist works for
+        and what it rewards — the user's choice will reveal and deepen the antagonist's moral framework
+
+  Target: "protagonist lacks clear competence"
+  BAD: "What is your protagonist actually good at?"
+  GOOD: (in a visual module) "The protagonist carries herself like someone who's won a lot of fights
+        she picked on purpose" — alternatives that shape competence through visual language
+
+  Target: "relationship between supporting_1 and antagonist is flat"
+  BAD: "How do these two interact?"
+  GOOD: Surface a faction or arena question that forces these two characters into proximity,
+        making the user think about how they'd behave around each other
+
+RULES:
+  - Address AT MOST 2 targets per turn — don't overwhelm
+  - If a target has already been addressed by the user's choices, skip it
+  - Prioritize targets where THIS module has natural leverage
+    (e.g., world module can develop institutional/faction pressure;
+     visual module can develop character presence and energy;
+     theme module can develop moral frameworks)
+  - Some targets may not be addressable by this module — that's fine, pass them forward`;
+
+export const BUILDER_UPSTREAM_TARGETS_INSTRUCTIONS = `UPSTREAM DEVELOPMENT TARGETS (strengthen these in your output):
+
+You have received development targets from earlier modules — weaknesses or gaps that your output
+should help address. These are things previous judges flagged as underdeveloped.
+
+HOW TO USE THEM:
+  - Where your output can organically strengthen a weak area, do it
+  - Don't force it — if a target doesn't fit your module's scope, leave it
+  - The user's clarifier choices may have already addressed some targets — check before acting
+
+EXAMPLES:
+  Target: "supporting_1's role_function is vague"
+  → In world builder: give supporting_1 a clear position in the power map / faction structure
+     that naturally defines their role
+
+  Target: "stakes feel abstract, not grounded"
+  → In world builder: make resource flows and consequence chains concrete — tie stakes to
+     physical locations and institutional pressures the user confirmed
+
+RULES:
+  - Address what you naturally can — don't stretch
+  - Targets already resolved by clarifier choices should be marked as addressed
+  - Remaining unresolved targets get passed to the next module's pack`;
+
+export const JUDGE_UPSTREAM_TARGETS_INSTRUCTIONS = `UPSTREAM TARGET ASSESSMENT (additional judge check):
+
+Check whether the builder output addressed any of the upstream development targets.
+For each target, note whether it was:
+  - "addressed": the output meaningfully develops this area
+  - "partially_addressed": some improvement but still weak
+  - "unaddressed": the output didn't touch this area (may be out of scope for this module)
+
+This assessment helps downstream modules know what still needs work.
+Include this in your judgment output.`;

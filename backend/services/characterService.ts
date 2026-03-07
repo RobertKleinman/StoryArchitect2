@@ -40,12 +40,15 @@ import {
 import {
   createEmptyLedger,
   recordHypotheses,
+  recordSignals,
   recordAssumptionDelta,
   updateHeuristics,
   checkPersistence,
   formatPsychologyLedgerForPrompt,
+  formatSignalsForBuilderJudge,
   snapshotBaselineForNewModule,
 } from "./psychologyEngine";
+import type { RawSignalObservation, BehaviorSummary, AdaptationPlan } from "../../shared/types/userPsychology";
 
 export class CharacterServiceError extends Error {
   code: "NOT_FOUND" | "INVALID_INPUT" | "LLM_PARSE_ERROR" | "LLM_CALL_FAILED";
@@ -334,17 +337,29 @@ export class CharacterService {
     if (!session.constraintLedger) session.constraintLedger = [];
     this.processStateUpdatesIntoLedger(session, clarifier.state_updates ?? {}, session.turns.length + 1);
 
-    // ─── Psychology Ledger: record LLM's structured hypotheses + update heuristics ───
+    // ─── Psychology Ledger: record LLM's structured signals + update heuristics ───
     if (!session.psychologyLedger) session.psychologyLedger = createEmptyLedger();
     if (clarifier.user_read && typeof clarifier.user_read === "object") {
-      recordHypotheses(
-        session.psychologyLedger,
-        session.turns.length + 1,
-        "character",
-        clarifier.user_read.hypotheses ?? [],
-        clarifier.user_read.overall_read ?? "",
-        clarifier.user_read.satisfaction
-      );
+      const ur = clarifier.user_read;
+      if (ur.signals && ur.behaviorSummary) {
+        recordSignals(
+          session.psychologyLedger,
+          session.turns.length + 1,
+          "character",
+          ur.signals as RawSignalObservation[],
+          ur.behaviorSummary as BehaviorSummary,
+          (ur.adaptationPlan as AdaptationPlan) ?? { dominantNeed: "", moves: [] },
+        );
+      } else {
+        recordHypotheses(
+          session.psychologyLedger,
+          session.turns.length + 1,
+          "character",
+          (ur as any).hypotheses ?? [],
+          (ur as any).overall_read ?? "",
+          (ur as any).satisfaction
+        );
+      }
     }
     this.updatePsychologyHeuristics(session);
 
@@ -728,6 +743,7 @@ export class CharacterService {
     const turnNumber = String(session.turns.length + 1);
 
     const psychText = formatPsychologyLedgerForPrompt(session.psychologyLedger);
+    const upstreamTargets = this.formatUpstreamTargetsFromHook(session.sourceHook);
 
     const user = CHARACTER_CLARIFIER_USER_TEMPLATE
       .replace("{{PREMISE}}", hook.locked.premise)
@@ -743,7 +759,8 @@ export class CharacterService {
       .replace("{{CONSTRAINT_LEDGER}}", ledgerText)
       .replace("{{CAST_STATE_JSON}}", castStateJson)
       .replace("{{TURN_NUMBER}}", turnNumber)
-      .replace("{{CHARACTER_SEED}}", session.characterSeed ?? "(none provided)");
+      .replace("{{CHARACTER_SEED}}", session.characterSeed ?? "(none provided)")
+      .replace("{{UPSTREAM_DEVELOPMENT_TARGETS}}", upstreamTargets);
 
     return { system: CHARACTER_CLARIFIER_SYSTEM, user };
   }
@@ -756,7 +773,8 @@ export class CharacterService {
     const castStateJson = JSON.stringify(this.stripNilCharacters(session.characters));
     const ledgerText = this.formatLedgerForPrompt(session.constraintLedger ?? [], false);
 
-    const psychText = formatPsychologyLedgerForPrompt(session.psychologyLedger);
+    const signalsText = formatSignalsForBuilderJudge(session.psychologyLedger);
+    const upstreamTargets = this.formatUpstreamTargetsFromHook(session.sourceHook);
 
     const user = CHARACTER_BUILDER_USER_TEMPLATE
       .replace("{{PREMISE}}", hook.locked.premise)
@@ -765,12 +783,13 @@ export class CharacterService {
       .replace("{{CORE_ENGINE_JSON}}", JSON.stringify(hook.locked.core_engine))
       .replace("{{SETTING}}", hook.locked.core_engine.setting_anchor ?? "")
       .replace("{{PRIOR_TURNS}}", this.formatPriorTurns(session.turns))
-      .replace("{{PSYCHOLOGY_LEDGER}}", psychText)
+      .replace("{{PSYCHOLOGY_SIGNALS}}", signalsText)
       .replace("{{CONSTRAINT_LEDGER}}", ledgerText)
       .replace("{{CAST_STATE_JSON}}", castStateJson)
       .replace("{{TONE_CHIPS}}", JSON.stringify(hook.preferences?.tone_chips ?? []))
       .replace("{{BAN_LIST}}", JSON.stringify(hook.preferences?.bans ?? []))
-      .replace("{{CHARACTER_SEED}}", session.characterSeed ?? "(none provided)");
+      .replace("{{CHARACTER_SEED}}", session.characterSeed ?? "(none provided)")
+      .replace("{{UPSTREAM_DEVELOPMENT_TARGETS}}", upstreamTargets);
 
     return { system: CHARACTER_BUILDER_SYSTEM, user };
   }
@@ -781,12 +800,17 @@ export class CharacterService {
   ): { system: string; user: string } {
     const hook = session.sourceHook;
     const castStateJson = JSON.stringify(this.stripNilCharacters(session.characters));
+    const signalsText = formatSignalsForBuilderJudge(session.psychologyLedger);
+
+    const upstreamTargets = this.formatUpstreamTargetsFromHook(session.sourceHook);
 
     const user = CHARACTER_JUDGE_USER_TEMPLATE
       .replace("{{CAST_JSON}}", JSON.stringify(cast))
       .replace("{{PREMISE}}", hook.locked.premise)
       .replace("{{EMOTIONAL_PROMISE}}", hook.locked.emotional_promise)
-      .replace("{{CAST_STATE_JSON}}", castStateJson);
+      .replace("{{CAST_STATE_JSON}}", castStateJson)
+      .replace("{{PSYCHOLOGY_SIGNALS}}", signalsText)
+      .replace("{{UPSTREAM_DEVELOPMENT_TARGETS}}", upstreamTargets);
 
     return { system: CHARACTER_JUDGE_SYSTEM, user };
   }
@@ -1109,6 +1133,44 @@ export class CharacterService {
     }
 
     lines.push(`\nUser-shaped: ${confirmed.length} confirmed, ${inferred.length} inferred, ${imported.length} imported`);
+
+    return lines.join("\n");
+  }
+
+  // ─── Upstream Development Targets ───
+
+  /**
+   * Format upstream development targets from the HookPack for injection into prompts.
+   * Includes: open_threads (unexplored narrative threads) and unused_assumptions
+   * (things surfaced during hook but not used in the final hook output).
+   */
+  private formatUpstreamTargetsFromHook(hook: HookPack): string {
+    const lines: string[] = [];
+
+    // Open threads from hook
+    if (hook.open_threads && hook.open_threads.length > 0) {
+      lines.push("OPEN THREADS (from hook — narrative threads worth developing through characters):");
+      for (const thread of hook.open_threads) {
+        lines.push(`  - ${thread}`);
+      }
+    }
+
+    // Unused assumptions from hook (things the user considered but didn't use)
+    if (hook.unused_assumptions && hook.unused_assumptions.length > 0) {
+      const relevant = hook.unused_assumptions.filter(a =>
+        a.status !== "rejected" // Only include deferred/unused, not rejected
+      );
+      if (relevant.length > 0) {
+        lines.push("UNUSED ASSUMPTIONS (from hook — user saw these but they weren't used; may be worth exploring):");
+        for (const a of relevant.slice(0, 5)) { // Cap at 5 to avoid bloat
+          lines.push(`  - [${a.category}] ${a.assumption}`);
+        }
+      }
+    }
+
+    if (lines.length === 0) {
+      return "(No upstream targets)";
+    }
 
     return lines.join("\n");
   }

@@ -12,8 +12,12 @@ import {
   OBVIOUS_PATTERN_DETECTION,
   DIAGNOSTIC_OPTIONS_GUIDANCE,
   ASSUMPTION_PERSISTENCE_CHECK,
-  PSYCHOLOGY_STRATEGY_INSTRUCTIONS,
+  ADAPTATION_PLAN_INSTRUCTIONS,
+  BUILDER_SIGNAL_INSTRUCTIONS,
+  JUDGE_SIGNAL_INSTRUCTIONS,
 } from "./psychologyPromptFragments";
+// backward compat alias
+const PSYCHOLOGY_STRATEGY_INSTRUCTIONS = ADAPTATION_PLAN_INSTRUCTIONS;
 
 export const HOOK_CLARIFIER_SYSTEM = `You are HookClarifier: an adaptive creative partner who makes finding a story hook FUN, ADDICTIVE, and IMAGINATION-SPARKING.
 
@@ -333,6 +337,8 @@ Run the adaptive engine:
 
 export const HOOK_BUILDER_SYSTEM = `You are HookBuilder. Use COLLISION + specificity to generate a hook that feels like it could only be THIS story.
 
+${BUILDER_SIGNAL_INSTRUCTIONS}
+
 COLLISION METHOD:
 1. Pick 3–5 real sources (fiction, real events, subcultures, scandals, institutions). Don't pick broad pop culture references unless you extract a specific mechanism from them.
 2. Extract ONE concrete structural element from each source: a loyalty test, recruitment ritual, punishment system, enforcement mechanism, transaction type, visual signature, or specific rule.
@@ -375,6 +381,9 @@ Conversation so far:
 {{CONSTRAINT_LEDGER}}
 CRITICAL: All CONFIRMED entries above MUST be honored in the premise. These are elements the user explicitly chose or approved. Do not contradict them.
 
+═══ USER BEHAVIOR SIGNALS ═══
+{{PSYCHOLOGY_SIGNALS}}
+
 Accumulated creative state:
 {{CURRENT_STATE_JSON}}
 
@@ -384,6 +393,8 @@ Tone: {{TONE_CHIPS}}
 Return ONLY the HookBuilder JSON.`;
 
 export const HOOK_JUDGE_SYSTEM = `You are HookJudge. Be mean. Your job is to prevent "competent but generic" hooks from shipping.
+
+${JUDGE_SIGNAL_INSTRUCTIONS}
 
 HARD-FAIL if ANY of these are true:
 1. Premise is genre-average — it could describe dozens of stories, not just this one.
@@ -405,6 +416,9 @@ export const HOOK_JUDGE_USER_TEMPLATE = `Judge this hook candidate:
 
 Story state context:
 {{CURRENT_STATE_JSON}}
+
+═══ USER BEHAVIOR SIGNALS ═══
+{{PSYCHOLOGY_SIGNALS}}
 
 Return judgment JSON only.`;
 

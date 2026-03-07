@@ -6,53 +6,181 @@
  * v2: Structured hypothesis store replaces freeform observation strings.
  *     Non-choice (assumption delta) tracking added.
  * v3: Hypothesis categories, satisfaction signal, assumption persistence tracking.
+ * v4: BehaviorSignal replaces UserHypothesis.
+ *     - Evidence must reference specific turns + actions (not prose)
+ *     - Confidence is numeric (0–1), computed by backend from evidence count + recency + contradictions
+ *     - Signal lifecycle: candidate → active → stable → suppressed
+ *     - Each signal carries an adaptation_consequence (LLM-authored natural language)
+ *     - Contradiction criteria are machine-checkable
+ *     - psychology_strategy replaced by structured AdaptationPlan
+ *     - overall_read replaced by behavior_summary (structured)
  */
 
-// ─── Hypothesis categories ───
+// ─── Signal categories (unchanged) ───
 
-export type HypothesisCategory =
-  | "content_preferences"      // explicit themes, kinks, genres, aesthetics
+export type SignalCategory =
+  | "content_preferences"      // explicit themes, genres, aesthetics
   | "control_orientation"      // do they want to drive or be surprised?
   | "power_dynamics"           // hierarchy, authority, submission patterns
   | "tonal_risk"               // how far they push boundaries
   | "narrative_ownership"      // how protective of their vision?
   | "engagement_satisfaction"; // how they're feeling about the experience
 
-// ─── Structured hypothesis (replaces freeform observation) ───
+/** @deprecated Use SignalCategory — kept for back-compat during migration */
+export type HypothesisCategory = SignalCategory;
 
-export interface UserHypothesis {
-  /** Stable ID for tracking across turns ("h1", "h2", etc.) */
+// ─── Signal lifecycle ───
+
+export type SignalStatus =
+  | "candidate"   // first impression, < 2 evidence events
+  | "active"      // 2+ evidence events, no contradictions
+  | "stable"      // 4+ evidence events across 3+ turns, high confidence
+  | "suppressed"; // contradicted or decayed
+
+// ─── Evidence event (references a specific user action) ───
+
+export interface EvidenceEvent {
+  /** Turn number where the evidence occurred */
+  turn: number;
+  /** Module where observed */
+  module: "hook" | "character" | "character_image" | "world";
+  /** What the user actually did */
+  action: string;   // e.g. "chose 'dark romance' chip", "typed 'I want the villain to be sympathetic'"
+  /** Whether this supports or contradicts the signal */
+  valence: "supports" | "contradicts";
+}
+
+// ─── BehaviorSignal (replaces UserHypothesis) ───
+
+export interface BehaviorSignal {
+  /** Stable ID for tracking across turns ("s1", "s2", etc.) */
   id: string;
-  /** The observation/inference about the user */
+  /** The observation/inference — concrete, not literary. Max ~20 words. */
   hypothesis: string;
-  /** What specific user action(s) support this */
-  evidence: string;
-  /** How confident we are — "low" = first impression, "medium" = pattern seen, "high" = repeatedly confirmed */
-  confidence: "low" | "medium" | "high";
+  /** Specific user actions that support or contradict this signal */
+  evidenceEvents: EvidenceEvent[];
+  /**
+   * Numeric confidence, 0–1. Computed by backend from:
+   *   - Evidence count (more events = higher)
+   *   - Recency (recent evidence weighted more)
+   *   - Contradictions (reduce confidence)
+   *   - Turn number (early turns capped)
+   * LLM never sets this directly.
+   */
+  confidence: number;
   /** How broadly this applies */
   scope: "this_story" | "this_genre" | "global";
-  /** Which psychological dimension this hypothesis belongs to */
-  category: HypothesisCategory;
+  /** Which behavioral dimension */
+  category: SignalCategory;
+  /** Signal lifecycle status — managed by backend */
+  status: SignalStatus;
+  /** What the pipeline should DO differently because of this signal.
+   *  LLM-authored natural language, e.g. "offer more morally complex antagonist options"
+   *  Updated when new evidence arrives. */
+  adaptationConsequence: string;
+  /** Machine-checkable: what user action would CONTRADICT this signal?
+   *  e.g. "user chooses simple/clear morality options 2+ times" */
+  contradictionCriteria: string;
   /** Turn number when first surfaced */
   firstSeen: number;
   /** Turn number when last updated */
   lastUpdated: number;
-  /** If contradicted, what contradicted it */
-  disconfirmedBy?: string;
+  /** If suppressed, why */
+  suppressionReason?: string;
 }
 
-// ─── LLM-assessed signal (one per clarifier turn) ───
+// ─── Backward compat alias ───
+/** @deprecated Use BehaviorSignal */
+export type UserHypothesis = BehaviorSignal;
 
-/** What the LLM outputs each turn — structured hypotheses + brief synthesis */
+// ─── LLM raw output (what the LLM produces each turn — backend processes this) ───
+
+/**
+ * Raw signal observation from the LLM. The LLM does NOT set confidence or status —
+ * those are computed by the backend. The LLM provides the insight + evidence + consequences.
+ */
+export interface RawSignalObservation {
+  /** The observation — concrete, specific, max ~20 words */
+  hypothesis: string;
+  /** What specific user action supports this — must reference the turn */
+  action: string;
+  /** Does this support or contradict a prior signal? */
+  valence: "supports" | "contradicts";
+  /** How broadly this applies */
+  scope: "this_story" | "this_genre" | "global";
+  /** Which behavioral dimension */
+  category: SignalCategory;
+  /** What the pipeline should do differently because of this */
+  adaptationConsequence: string;
+  /** What would contradict this signal? */
+  contradictionCriteria: string;
+  /** If contradicting a prior signal, which signal ID? */
+  contradictsSignalId?: string;
+}
+
+/**
+ * Structured behavior summary — replaces freeform overall_read.
+ * The LLM produces this each turn as a structured assessment.
+ */
+export interface BehaviorSummary {
+  /** 1-sentence summary of user's current creative orientation */
+  orientation: string;
+  /** What the user is most invested in right now (1-2 words) */
+  currentFocus: string;
+  /** Are they exploring, converging, stuck, or disengaged? */
+  engagementMode: "exploring" | "converging" | "stuck" | "disengaged";
+  /** Satisfaction assessment */
+  satisfaction: {
+    score: number;           // 0–1
+    trend: "rising" | "stable" | "declining";
+    reason: string;          // max ~15 words, what tells you this
+  };
+}
+
+/**
+ * Structured adaptation plan — replaces freeform psychology_strategy.
+ * Machine-checkable: each item maps to a concrete pipeline behavior.
+ */
+export interface AdaptationPlan {
+  /** What is the user's dominant need this turn? */
+  dominantNeed: string;
+  /** Concrete moves for this turn (2-4 items) */
+  moves: AdaptationMove[];
+}
+
+export interface AdaptationMove {
+  /** What to do — concrete and specific */
+  action: string;
+  /** Which signal(s) drive this move (signal IDs) */
+  drivenBy: string[];
+  /** Which pipeline stage this affects */
+  target: "question" | "options" | "assumptions" | "builder_tone" | "builder_content" | "judge_criteria";
+}
+
+/**
+ * What the LLM outputs each turn — structured signals + summary + plan.
+ * Replaces StructuredUserRead.
+ */
 export interface StructuredUserRead {
-  hypotheses: {
+  /** Raw signal observations — backend processes these into BehaviorSignals */
+  signals: RawSignalObservation[];
+  /** Structured behavior summary */
+  behaviorSummary: BehaviorSummary;
+  /** Structured adaptation plan */
+  adaptationPlan: AdaptationPlan;
+
+  // ─── Backward compat (deprecated, will be removed) ───
+  /** @deprecated Use signals */
+  hypotheses?: {
     hypothesis: string;
     evidence: string;
     confidence: "low" | "medium" | "high";
     scope: "this_story" | "this_genre" | "global";
-    category?: HypothesisCategory;
+    category?: SignalCategory;
   }[];
-  overall_read: string;
+  /** @deprecated Use behaviorSummary.orientation */
+  overall_read?: string;
+  /** @deprecated Use behaviorSummary.satisfaction */
   satisfaction?: {
     score: number;
     trend: "rising" | "stable" | "declining";
@@ -60,23 +188,32 @@ export interface StructuredUserRead {
   };
 }
 
-/** Stored record of each turn's LLM read */
+// ─── Per-turn read record (stored in ledger.reads) ───
+
 export interface UserPsychologyRead {
   turnNumber: number;
-  module: "hook" | "character" | "character_image";
-  /** Structured hypotheses from the LLM */
-  hypotheses: {
+  module: "hook" | "character" | "character_image" | "world";
+  /** Raw signal observations from this turn */
+  signals: RawSignalObservation[];
+  /** Structured behavior summary */
+  behaviorSummary: BehaviorSummary;
+  /** Structured adaptation plan */
+  adaptationPlan: AdaptationPlan;
+
+  // ─── Backward compat ───
+  /** @deprecated */
+  hypotheses?: {
     hypothesis: string;
     evidence: string;
     confidence: "low" | "medium" | "high";
     scope: string;
-    category?: HypothesisCategory;
+    category?: SignalCategory;
   }[];
-  /** Brief LLM synthesis — the overall vibe read */
-  overall_read: string;
+  /** @deprecated */
+  overall_read?: string;
 }
 
-// ─── Assumption delta (non-choice tracking) ───
+// ─── Assumption delta (non-choice tracking — unchanged) ───
 
 export interface AssumptionDelta {
   turnNumber: number;
@@ -151,10 +288,14 @@ export interface UserPsychologyLedger {
   reads: UserPsychologyRead[];
   /** Service-computed interaction heuristics. Updated after each turn. */
   heuristics: UserInteractionHeuristics;
-  /** Accumulated hypotheses about the user — deduplicated, confidence-tracked */
-  hypothesisStore: UserHypothesis[];
+  /** Accumulated behavior signals — deduplicated, lifecycle-managed */
+  signalStore: BehaviorSignal[];
   /** Last N turns of offered-vs-responded assumption tracking */
   assumptionDeltas: AssumptionDelta[];
+
+  // ─── Backward compat ───
+  /** @deprecated Use signalStore */
+  hypothesisStore?: BehaviorSignal[];
 }
 
 /** Empty ledger for initialization */
@@ -169,7 +310,7 @@ export function createEmptyLedger(): UserPsychologyLedger {
       totalInteractions: 0,
       engagementTrend: 0,
     },
-    hypothesisStore: [],
+    signalStore: [],
     assumptionDeltas: [],
   };
 }

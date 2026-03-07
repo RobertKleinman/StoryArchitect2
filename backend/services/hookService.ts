@@ -37,11 +37,14 @@ import {
 import {
   createEmptyLedger,
   recordHypotheses,
+  recordSignals,
   recordAssumptionDelta,
   updateHeuristics,
   checkPersistence,
   formatPsychologyLedgerForPrompt,
+  formatSignalsForBuilderJudge,
 } from "./psychologyEngine";
+import type { RawSignalObservation, BehaviorSummary, AdaptationPlan } from "../../shared/types/userPsychology";
 
 export class HookServiceError extends Error {
   code: "NOT_FOUND" | "INVALID_INPUT" | "LLM_PARSE_ERROR" | "LLM_CALL_FAILED";
@@ -232,7 +235,7 @@ export class HookService {
     try {
       clarifierRaw = await this.llm.call("clarifier", systemPrompt, userPrompt, {
         temperature: 0.7,
-        maxTokens: 1800,
+        maxTokens: 4000,
         modelOverride,
         jsonSchema: HOOK_CLARIFIER_SCHEMA,
       });
@@ -275,17 +278,31 @@ export class HookService {
     if (!session.constraintLedger) session.constraintLedger = [];
     this.processStateUpdateIntoLedger(session, clarifier.state_update, session.turns.length + 1);
 
-    // ─── Psychology Ledger: record LLM's structured hypotheses + update heuristics ───
+    // ─── Psychology Ledger: record LLM's structured signals + update heuristics ───
     if (!session.psychologyLedger) session.psychologyLedger = createEmptyLedger();
     if (clarifier.user_read && typeof clarifier.user_read === "object") {
-      recordHypotheses(
-        session.psychologyLedger,
-        session.turns.length + 1,
-        "hook",
-        clarifier.user_read.hypotheses ?? [],
-        clarifier.user_read.overall_read ?? "",
-        clarifier.user_read.satisfaction
-      );
+      const ur = clarifier.user_read;
+      // v4 format: signals + behaviorSummary + adaptationPlan
+      if (ur.signals && ur.behaviorSummary) {
+        recordSignals(
+          session.psychologyLedger,
+          session.turns.length + 1,
+          "hook",
+          ur.signals as RawSignalObservation[],
+          ur.behaviorSummary as BehaviorSummary,
+          (ur.adaptationPlan as AdaptationPlan) ?? { dominantNeed: "", moves: [] },
+        );
+      } else {
+        // Backward compat: v3 format with hypotheses + overall_read
+        recordHypotheses(
+          session.psychologyLedger,
+          session.turns.length + 1,
+          "hook",
+          (ur as any).hypotheses ?? [],
+          (ur as any).overall_read ?? "",
+          (ur as any).satisfaction
+        );
+      }
     }
     this.updatePsychologyHeuristics(session);
 
@@ -387,7 +404,7 @@ export class HookService {
     const builderPromises = temperatures.map((temp, i) =>
       this.llm.call("builder", builderSystem, builderUser, {
         temperature: temp,
-        maxTokens: 2400,
+        maxTokens: 4000,
         modelOverride,
         jsonSchema: HOOK_BUILDER_SCHEMA,
       }).then(raw => {
@@ -439,7 +456,7 @@ export class HookService {
     // Run all judges concurrently — each judges one independent candidate
     const judgeStart = Date.now();
     const judgePromises = hooks.map((hook, i) => {
-      const judgePrompt = this.buildJudgePrompt(hook, session.currentState);
+      const judgePrompt = this.buildJudgePrompt(hook, session.currentState, session.psychologyLedger);
       const judgeSystem = promptOverrides?.judge?.system ?? judgePrompt.system;
       const judgeUser = promptOverrides?.judge?.user ?? judgePrompt.user;
       return this.llm.call("judge", judgeSystem, judgeUser, {
@@ -706,10 +723,12 @@ export class HookService {
     user: string;
   } {
     const ledgerText = this.formatLedgerForPrompt(session.constraintLedger ?? []);
+    const signalsText = formatSignalsForBuilderJudge(session.psychologyLedger);
     const user = HOOK_BUILDER_USER_TEMPLATE
       .replace("{{USER_SEED}}", session.seedInput)
       .replace("{{PRIOR_TURNS}}", this.formatPriorTurns(session.turns))
       .replace("{{CONSTRAINT_LEDGER}}", ledgerText)
+      .replace("{{PSYCHOLOGY_SIGNALS}}", signalsText)
       .replace("{{CURRENT_STATE_JSON}}", JSON.stringify(this.stripNil(session.currentState)))
       .replace("{{BAN_LIST}}", JSON.stringify(session.currentState.bans ?? []))
       .replace("{{TONE_CHIPS}}", JSON.stringify(session.currentState.tone_chips ?? []));
@@ -719,11 +738,14 @@ export class HookService {
 
   private buildJudgePrompt(
     candidate: HookBuilderOutput,
-    state: HookStateUpdate
+    state: HookStateUpdate,
+    psychologyLedger?: import("../../shared/types/userPsychology").UserPsychologyLedger,
   ): { system: string; user: string } {
+    const signalsText = formatSignalsForBuilderJudge(psychologyLedger);
     const user = HOOK_JUDGE_USER_TEMPLATE
       .replace("{{CANDIDATE_JSON}}", JSON.stringify(candidate))
-      .replace("{{CURRENT_STATE_JSON}}", JSON.stringify(this.stripNil(state)));
+      .replace("{{CURRENT_STATE_JSON}}", JSON.stringify(this.stripNil(state)))
+      .replace("{{PSYCHOLOGY_SIGNALS}}", signalsText);
 
     return { system: HOOK_JUDGE_SYSTEM, user };
   }

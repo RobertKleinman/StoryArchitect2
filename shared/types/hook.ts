@@ -57,22 +57,8 @@ export interface HookClarifierResponse {
   conflict_flag: string;
   assumptions: HookAssumption[];
   state_update: HookStateUpdate;
-  /** Structured hypotheses about the user + brief synthesis */
-  user_read: {
-    hypotheses: {
-      hypothesis: string;
-      evidence: string;
-      confidence: "low" | "medium" | "high";
-      scope: "this_story" | "this_genre" | "global";
-      category: "content_preferences" | "control_orientation" | "power_dynamics" | "tonal_risk" | "narrative_ownership" | "engagement_satisfaction";
-    }[];
-    overall_read: string;
-    satisfaction: {
-      score: number;
-      trend: "rising" | "stable" | "declining";
-      note: string;
-    };
-  };
+  /** Structured behavior signals about the user */
+  user_read: import("./userPsychology").StructuredUserRead;
 }
 
 // ─── HookBuilder ───
@@ -101,6 +87,7 @@ export interface HookJudgeScores {
   page_turn: number;
   mechanism: number;
   freshness: number;
+  user_fit: number;
 }
 
 export interface HookJudgeOutput {

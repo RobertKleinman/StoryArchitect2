@@ -1,13 +1,13 @@
-import { HookRole, ModelConfig, detectProvider } from "../../shared/modelConfig";
+import { HookRole, ModelConfig, LLMProvider, detectProvider } from "../../shared/modelConfig";
 import type { LLMProvider as ILLMProvider, ProviderCallOptions } from "./providers/types";
 import { ProviderHttpError } from "./providers/types";
 import { AnthropicProvider } from "./providers/anthropicProvider";
 import { OpenAICompatibleProvider } from "./providers/openaiProvider";
 import { GeminiProvider } from "./providers/geminiProvider";
 
-// ── Provider registry (singletons) ─────────────────────────────────
+// ── Provider registry (exhaustively typed against LLMProvider union) ─
 
-const providers: Record<string, ILLMProvider> = {
+const providers: Record<LLMProvider, ILLMProvider> = {
   anthropic: new AnthropicProvider(),
   openai: new OpenAICompatibleProvider({
     name: "openai",

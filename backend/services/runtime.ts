@@ -6,6 +6,8 @@ import { LLMClient } from "./llmClient";
 import { HookService } from "./hookService";
 import { CharacterService } from "./characterService";
 import { CharacterImageService } from "./characterImageService";
+import { WorldStore } from "../storage/worldStore";
+import { WorldService } from "./worldService";
 import { AnimeGenClient } from "./animeGenClient";
 
 function envModel(key: string, fallback: string): string {
@@ -27,6 +29,11 @@ export const activeModelConfig: ModelConfig = {
   img_builder: envModel("IMG_MODEL_BUILDER", DEFAULT_MODEL_CONFIG.img_builder),
   img_judge: envModel("IMG_MODEL_JUDGE", DEFAULT_MODEL_CONFIG.img_judge),
   img_summary: envModel("IMG_MODEL_SUMMARY", DEFAULT_MODEL_CONFIG.img_summary),
+  world_clarifier: envModel("WORLD_MODEL_CLARIFIER", DEFAULT_MODEL_CONFIG.world_clarifier),
+  world_builder: envModel("WORLD_MODEL_BUILDER", DEFAULT_MODEL_CONFIG.world_builder),
+  world_judge: envModel("WORLD_MODEL_JUDGE", DEFAULT_MODEL_CONFIG.world_judge),
+  world_polish: envModel("WORLD_MODEL_POLISH", DEFAULT_MODEL_CONFIG.world_polish),
+  world_summary: envModel("WORLD_MODEL_SUMMARY", DEFAULT_MODEL_CONFIG.world_summary),
 };
 
 export const projectStore = new ProjectStore();
@@ -38,4 +45,8 @@ export const hookService = new HookService(projectStore, llmClient);
 export const characterService = new CharacterService(characterStore, projectStore, llmClient);
 export const characterImageService = new CharacterImageService(
   characterImageStore, characterStore, projectStore, llmClient, animeGenClient
+);
+export const worldStore = new WorldStore();
+export const worldService = new WorldService(
+  worldStore, characterImageStore, characterStore, projectStore, llmClient
 );

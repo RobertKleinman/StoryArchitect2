@@ -1,6 +1,8 @@
 import { Router } from "express";
+import fs from "fs/promises";
+import nodePath from "path";
 import { characterImageFeatureFlagGuard } from "../middleware/characterImageFeatureFlagGuard";
-import { characterImageService, animeGenClient } from "../services/runtime";
+import { characterImageService, characterImageStore, animeGenClient } from "../services/runtime";
 import { CharacterImageServiceError } from "../services/characterImageService";
 
 export const characterImageRoutes = Router();
@@ -234,6 +236,82 @@ characterImageRoutes.get("/debug/psychology/:projectId", async (req, res) => {
       return res.json({ psychologyLedger: null });
     }
     return res.json({ psychologyLedger: session.psychologyLedger });
+  } catch (err) {
+    return handleError(res, err);
+  }
+});
+
+/** Get a character-image module export by project ID */
+characterImageRoutes.get("/export-session/:projectId", async (req, res) => {
+  try {
+    const exportData = await characterImageStore.getExport(req.params.projectId);
+    if (!exportData) {
+      const session = await characterImageService.getSession(req.params.projectId);
+      if (!session) {
+        return res.status(404).json({ error: true, code: "NOT_FOUND", message: "Character image session not found" });
+      }
+      return res.status(400).json({
+        error: true,
+        code: "INVALID_INPUT",
+        message: `Character image session exists but is not locked (status: ${session.status}). Lock the images first.`,
+      });
+    }
+    return res.json(exportData);
+  } catch (err) {
+    return handleError(res, err);
+  }
+});
+
+/** List all available character-image sessions (for the World module to discover) */
+characterImageRoutes.get("/list-sessions", async (_req, res) => {
+  try {
+    const dataDir = "./data/characterImages";
+    const exportDir = nodePath.join(dataDir, "exports");
+
+    let sessionFiles: string[] = [];
+    try {
+      const allFiles: string[] = await fs.readdir(dataDir);
+      sessionFiles = allFiles.filter((f: string) => f.endsWith(".json"));
+    } catch { /* empty dir */ }
+
+    const sessions: Array<{
+      projectId: string;
+      characterProjectId: string;
+      status: string;
+      turnCount: number;
+      hasExport: boolean;
+      artStyle: string;
+      characterCount: number;
+    }> = [];
+
+    for (const file of sessionFiles) {
+      try {
+        const raw = await fs.readFile(nodePath.join(dataDir, file), "utf-8");
+        const session = JSON.parse(raw);
+
+        let hasExport = false;
+        try {
+          await fs.readFile(nodePath.join(exportDir, file), "utf-8");
+          hasExport = true;
+        } catch {}
+
+        const charCount = session.revealedSpecs
+          ? Object.keys(session.revealedSpecs.characters ?? {}).length
+          : 0;
+
+        sessions.push({
+          projectId: session.projectId,
+          characterProjectId: session.characterProjectId ?? "",
+          status: session.status,
+          turnCount: session.turns?.length ?? 0,
+          hasExport,
+          artStyle: session.artStyle ?? "",
+          characterCount: charCount,
+        });
+      } catch { /* skip corrupt files */ }
+    }
+
+    return res.json({ sessions });
   } catch (err) {
     return handleError(res, err);
   }

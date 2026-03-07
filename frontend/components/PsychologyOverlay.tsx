@@ -1,9 +1,10 @@
 import React, { useState } from "react";
 import type {
   UserPsychologyLedger,
-  UserHypothesis,
+  BehaviorSignal,
   UserInteractionHeuristics,
   AssumptionDelta,
+  SignalStatus,
 } from "../../shared/types/userPsychology";
 
 interface Props {
@@ -13,12 +14,20 @@ interface Props {
   onClose: () => void;
 }
 
-type Tab = "hypotheses" | "heuristics" | "deltas" | "reads";
+type Tab = "signals" | "heuristics" | "deltas" | "reads";
 
-const CONFIDENCE_COLORS: Record<string, string> = {
-  low: "#f59e0b",
-  medium: "#3b82f6",
-  high: "#10b981",
+const STATUS_COLORS: Record<SignalStatus, string> = {
+  candidate: "#f59e0b",
+  active: "#3b82f6",
+  stable: "#10b981",
+  suppressed: "#6b7280",
+};
+
+const STATUS_LABELS: Record<SignalStatus, string> = {
+  candidate: "Candidate",
+  active: "Active",
+  stable: "Stable",
+  suppressed: "Suppressed",
 };
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -34,7 +43,7 @@ export function PsychologyOverlay({ fetchPsychology, projectId, visible, onClose
   const [ledger, setLedger] = useState<UserPsychologyLedger | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<Tab>("hypotheses");
+  const [activeTab, setActiveTab] = useState<Tab>("signals");
   const [autoLoaded, setAutoLoaded] = useState<string | null>(null);
 
   const refresh = async () => {
@@ -51,7 +60,6 @@ export function PsychologyOverlay({ fetchPsychology, projectId, visible, onClose
     }
   };
 
-  // Auto-load when becoming visible with a new projectId
   if (visible && projectId && autoLoaded !== projectId) {
     setAutoLoaded(projectId);
     void refresh();
@@ -59,10 +67,12 @@ export function PsychologyOverlay({ fetchPsychology, projectId, visible, onClose
 
   if (!visible) return null;
 
+  const signalStore = ledger?.signalStore ?? ledger?.hypothesisStore ?? [];
+
   return (
     <div className="psych-overlay">
       <div className="psych-overlay-header">
-        <h3>Psychology Debug</h3>
+        <h3>Behavior Signals</h3>
         <div className="psych-overlay-actions">
           <button type="button" className="chip-sm" onClick={() => void refresh()} disabled={loading}>
             {loading ? "..." : "Refresh"}
@@ -74,21 +84,21 @@ export function PsychologyOverlay({ fetchPsychology, projectId, visible, onClose
       {error && <div className="psych-error">{error}</div>}
 
       {!ledger && !loading && !error && (
-        <div className="psych-empty">No psychology data yet. Start a conversation first.</div>
+        <div className="psych-empty">No behavior data yet. Start a conversation first.</div>
       )}
 
       {ledger && (
         <>
           <div className="psych-tabs">
-            {(["hypotheses", "heuristics", "deltas", "reads"] as Tab[]).map((tab) => (
+            {(["signals", "heuristics", "deltas", "reads"] as Tab[]).map((tab) => (
               <button
                 key={tab}
                 type="button"
                 className={`psych-tab${activeTab === tab ? " psych-tab-active" : ""}`}
                 onClick={() => setActiveTab(tab)}
               >
-                {tab === "hypotheses"
-                  ? `Hypotheses (${ledger.hypothesisStore.length})`
+                {tab === "signals"
+                  ? `Signals (${signalStore.length})`
                   : tab === "heuristics"
                   ? "Heuristics"
                   : tab === "deltas"
@@ -99,7 +109,7 @@ export function PsychologyOverlay({ fetchPsychology, projectId, visible, onClose
           </div>
 
           <div className="psych-content">
-            {activeTab === "hypotheses" && <HypothesesPanel hypotheses={ledger.hypothesisStore} />}
+            {activeTab === "signals" && <SignalsPanel signals={signalStore} />}
             {activeTab === "heuristics" && <HeuristicsPanel heuristics={ledger.heuristics} />}
             {activeTab === "deltas" && <DeltasPanel deltas={ledger.assumptionDeltas} />}
             {activeTab === "reads" && <ReadsPanel reads={ledger.reads} />}
@@ -112,13 +122,13 @@ export function PsychologyOverlay({ fetchPsychology, projectId, visible, onClose
 
 /* ─── Sub-panels ─── */
 
-function HypothesesPanel({ hypotheses }: { hypotheses: UserHypothesis[] }) {
-  if (hypotheses.length === 0) return <div className="psych-empty">No hypotheses recorded yet.</div>;
+function SignalsPanel({ signals }: { signals: BehaviorSignal[] }) {
+  if (signals.length === 0) return <div className="psych-empty">No behavior signals recorded yet.</div>;
 
-  const grouped: Record<string, UserHypothesis[]> = {};
-  for (const h of hypotheses) {
-    const cat = h.category || "unknown";
-    (grouped[cat] ??= []).push(h);
+  const grouped: Record<string, BehaviorSignal[]> = {};
+  for (const s of signals) {
+    const cat = s.category || "unknown";
+    (grouped[cat] ??= []).push(s);
   }
 
   return (
@@ -126,23 +136,78 @@ function HypothesesPanel({ hypotheses }: { hypotheses: UserHypothesis[] }) {
       {Object.entries(grouped).map(([category, items]) => (
         <div key={category} className="psych-hyp-group">
           <h4 className="psych-hyp-category">{CATEGORY_LABELS[category] ?? category}</h4>
-          {items.map((h) => (
-            <div key={h.id} className={`psych-hyp-card${h.disconfirmedBy ? " psych-hyp-disconfirmed" : ""}`}>
+          {items.map((s) => (
+            <div
+              key={s.id}
+              className={`psych-hyp-card${s.status === "suppressed" ? " psych-hyp-disconfirmed" : ""}`}
+            >
               <div className="psych-hyp-top">
                 <span
                   className="psych-confidence"
-                  style={{ background: CONFIDENCE_COLORS[h.confidence] ?? "#888" }}
+                  style={{ background: STATUS_COLORS[s.status] ?? "#888" }}
                 >
-                  {h.confidence}
+                  {STATUS_LABELS[s.status] ?? s.status}
                 </span>
-                <span className="psych-scope">{h.scope.replace(/_/g, " ")}</span>
-                {h.disconfirmedBy && <span className="psych-disconfirmed-badge">disconfirmed</span>}
+                <span className="psych-scope">{s.scope.replace(/_/g, " ")}</span>
+                <span className="psych-confidence-bar">
+                  <span
+                    className="psych-confidence-fill"
+                    style={{
+                      width: `${Math.round((s.confidence ?? 0) * 100)}%`,
+                      background: STATUS_COLORS[s.status] ?? "#888",
+                    }}
+                  />
+                  <span className="psych-confidence-label">
+                    {typeof s.confidence === "number"
+                      ? `${Math.round(s.confidence * 100)}%`
+                      : s.confidence}
+                  </span>
+                </span>
+                {s.status === "suppressed" && (
+                  <span className="psych-disconfirmed-badge">suppressed</span>
+                )}
               </div>
-              <p className="psych-hyp-text">{h.hypothesis}</p>
-              <p className="psych-hyp-evidence">{h.evidence}</p>
+              <p className="psych-hyp-text">{s.hypothesis}</p>
+
+              {/* Evidence events */}
+              {s.evidenceEvents && s.evidenceEvents.length > 0 ? (
+                <div className="psych-evidence-events">
+                  {s.evidenceEvents.slice(-3).map((ev, i) => (
+                    <div key={i} className={`psych-evidence-event psych-ev-${ev.valence}`}>
+                      <span className="psych-ev-turn">T{ev.turn}</span>
+                      <span className="psych-ev-valence">{ev.valence === "supports" ? "+" : "-"}</span>
+                      <span className="psych-ev-action">{ev.action}</span>
+                    </div>
+                  ))}
+                  {s.evidenceEvents.length > 3 && (
+                    <div className="psych-ev-more">
+                      +{s.evidenceEvents.length - 3} more events
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* Backward compat: old-format evidence string */
+                (s as any).evidence && (
+                  <p className="psych-hyp-evidence">{(s as any).evidence}</p>
+                )
+              )}
+
+              {/* Adaptation consequence */}
+              {s.adaptationConsequence && (
+                <p className="psych-adapt">Adapt: {s.adaptationConsequence}</p>
+              )}
+
+              {/* Suppression reason */}
+              {s.suppressionReason && (
+                <p className="psych-suppression">{s.suppressionReason}</p>
+              )}
+
               <div className="psych-hyp-meta">
-                <span>First: turn {h.firstSeen}</span>
-                <span>Updated: turn {h.lastUpdated}</span>
+                <span>First: turn {s.firstSeen}</span>
+                <span>Updated: turn {s.lastUpdated}</span>
+                {s.evidenceEvents && (
+                  <span>Evidence: {s.evidenceEvents.filter(e => e.valence === "supports").length} supporting</span>
+                )}
               </div>
             </div>
           ))}
@@ -246,17 +311,59 @@ function ReadsPanel({ reads }: { reads: UserPsychologyLedger["reads"] }) {
           <div className="psych-read-header">
             <span className="psych-read-module">{r.module} &middot; turn {r.turnNumber}</span>
           </div>
-          <p className="psych-read-overall">{r.overall_read}</p>
-          {r.hypotheses.length > 0 && (
+
+          {/* v4 format: behaviorSummary */}
+          {r.behaviorSummary && (
+            <div className="psych-read-summary">
+              <p className="psych-read-overall">{r.behaviorSummary.orientation}</p>
+              <div className="psych-read-meta">
+                <span>Focus: {r.behaviorSummary.currentFocus}</span>
+                <span>Mode: {r.behaviorSummary.engagementMode}</span>
+                {r.behaviorSummary.satisfaction && (
+                  <span>
+                    Satisfaction: {Math.round(r.behaviorSummary.satisfaction.score * 100)}%
+                    ({r.behaviorSummary.satisfaction.trend})
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* v4 format: signals */}
+          {r.signals && r.signals.length > 0 && (
+            <div className="psych-read-hyps">
+              {r.signals.map((s, j) => (
+                <div key={j} className="psych-read-hyp">
+                  <span className={`psych-ev-valence-badge psych-ev-${s.valence}`}>
+                    {s.valence === "supports" ? "+" : "-"}
+                  </span>
+                  <span className="psych-scope">{s.scope.replace(/_/g, " ")}</span>
+                  <span>{s.hypothesis}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* v4 format: adaptationPlan */}
+          {r.adaptationPlan && r.adaptationPlan.moves && r.adaptationPlan.moves.length > 0 && (
+            <div className="psych-read-plan">
+              <strong>Plan:</strong> {r.adaptationPlan.dominantNeed}
+              <ul className="psych-plan-moves">
+                {r.adaptationPlan.moves.map((m, j) => (
+                  <li key={j}>{m.action} [{m.target}]</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Backward compat: v3 format */}
+          {!r.behaviorSummary && r.overall_read && (
+            <p className="psych-read-overall">{r.overall_read}</p>
+          )}
+          {!r.signals && r.hypotheses && r.hypotheses.length > 0 && (
             <div className="psych-read-hyps">
               {r.hypotheses.map((h, j) => (
                 <div key={j} className="psych-read-hyp">
-                  <span
-                    className="psych-confidence"
-                    style={{ background: CONFIDENCE_COLORS[h.confidence] ?? "#888" }}
-                  >
-                    {h.confidence}
-                  </span>
                   <span className="psych-scope">{h.scope.replace(/_/g, " ")}</span>
                   <span>{h.hypothesis}</span>
                 </div>

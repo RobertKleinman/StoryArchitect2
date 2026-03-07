@@ -11,8 +11,14 @@ import {
   OBVIOUS_PATTERN_DETECTION,
   DIAGNOSTIC_OPTIONS_GUIDANCE,
   ASSUMPTION_PERSISTENCE_CHECK,
-  PSYCHOLOGY_STRATEGY_INSTRUCTIONS,
+  ADAPTATION_PLAN_INSTRUCTIONS,
+  BUILDER_SIGNAL_INSTRUCTIONS,
+  JUDGE_SIGNAL_INSTRUCTIONS,
+  UPSTREAM_DEVELOPMENT_TARGETS_INSTRUCTIONS,
+  BUILDER_UPSTREAM_TARGETS_INSTRUCTIONS,
+  JUDGE_UPSTREAM_TARGETS_INSTRUCTIONS,
 } from "./psychologyPromptFragments";
+const PSYCHOLOGY_STRATEGY_INSTRUCTIONS = ADAPTATION_PLAN_INSTRUCTIONS;
 
 export const CHARACTER_CLARIFIER_SYSTEM = `You are CharacterClarifier: the friend who gets WAY too excited about someone's characters and makes them excited too.
 
@@ -98,11 +104,18 @@ SUPPORTING-SPECIFIC:
   - What do they consistently get wrong about the protagonist?
 
 ═══════════════════════════════════════════
+UPSTREAM DEVELOPMENT (from prior modules)
+═══════════════════════════════════════════
+${UPSTREAM_DEVELOPMENT_TARGETS_INSTRUCTIONS}
+
+═══════════════════════════════════════════
 ADAPTIVE ENGINE — run EVERY turn
 ═══════════════════════════════════════════
 
-STEP 1 — READ THE HOOK + USER SEED
+STEP 1 — READ THE HOOK + USER SEED + DEVELOPMENT TARGETS
 You have the user's locked hook AND their free-form character seed (what they typed about their vision for the cast). The characters MUST serve this story AND honor what the user already imagines. If they described specific character dynamics, start there. If they were vague, lead boldly.
+
+You also have development targets from the hook module — open threads and unused assumptions that could enrich the characters. Weave these into your questions naturally.
 
 STEP 2 — READ THE USER (check the psychology ledger for accumulated observations)
 ${SHARED_USER_BEHAVIOR_CLASSIFICATION}
@@ -295,6 +308,9 @@ Hook Summary: "{{STATE_SUMMARY}}"
 ═══ USER'S CHARACTER SEED ═══
 {{CHARACTER_SEED}}
 
+═══ UPSTREAM DEVELOPMENT TARGETS (from hook module — weave in subtly) ═══
+{{UPSTREAM_DEVELOPMENT_TARGETS}}
+
 ═══ CONVERSATION ═══
 {{PRIOR_TURNS}}
 
@@ -312,6 +328,10 @@ Turn: {{TURN_NUMBER}}
 Run the adaptive engine. Be the friend who gets too excited about their characters. Make this the most fun creative conversation they've ever had.`;
 
 export const CHARACTER_BUILDER_SYSTEM = `You are CharacterBuilder. Generate a cast that is psychologically real, structurally diverse, IMPOSSIBLE to stop thinking about, and inseparable from the hook.
+
+${BUILDER_SIGNAL_INSTRUCTIONS}
+
+${BUILDER_UPSTREAM_TARGETS_INSTRUCTIONS}
 
 COLLISION METHOD:
 1. Pick 3-5 real sources (fiction, real events, case studies, subcultures) for character psychology.
@@ -380,11 +400,14 @@ Setting: "{{SETTING}}"
 ═══ USER'S CHARACTER SEED ═══
 {{CHARACTER_SEED}}
 
+═══ UPSTREAM DEVELOPMENT TARGETS (strengthen these where natural) ═══
+{{UPSTREAM_DEVELOPMENT_TARGETS}}
+
 ═══ CONVERSATION ═══
 {{PRIOR_TURNS}}
 
-═══ USER PSYCHOLOGY (what this user wants — shape output to match their creative instincts) ═══
-{{PSYCHOLOGY_LEDGER}}
+═══ USER BEHAVIOR SIGNALS ═══
+{{PSYCHOLOGY_SIGNALS}}
 
 ═══ CONSTRAINT LEDGER (authoritative) ═══
 {{CONSTRAINT_LEDGER}}
@@ -399,6 +422,10 @@ Bans: {{BAN_LIST}}
 Return ONLY the CharacterBuilder JSON.`;
 
 export const CHARACTER_JUDGE_SYSTEM = `You are CharacterJudge. Be mean. Prevent flat, generic, or lifeless casts from shipping.
+
+${JUDGE_SIGNAL_INSTRUCTIONS}
+
+${JUDGE_UPSTREAM_TARGETS_INSTRUCTIONS}
 
 HARD-FAIL if ANY of these are true:
 1. Protagonist's lie doesn't crash into their want.
@@ -438,6 +465,12 @@ Emotional Promise: "{{EMOTIONAL_PROMISE}}"
 
 Story state:
 {{CAST_STATE_JSON}}
+
+═══ USER BEHAVIOR SIGNALS ═══
+{{PSYCHOLOGY_SIGNALS}}
+
+═══ UPSTREAM DEVELOPMENT TARGETS (assess whether builder addressed these) ═══
+{{UPSTREAM_DEVELOPMENT_TARGETS}}
 
 Return judgment JSON only.`;
 

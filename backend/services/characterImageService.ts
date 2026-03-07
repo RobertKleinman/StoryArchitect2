@@ -37,12 +37,15 @@ import {
 import {
   createEmptyLedger,
   recordHypotheses,
+  recordSignals,
   recordAssumptionDelta,
   updateHeuristics,
   checkPersistence,
   formatPsychologyLedgerForPrompt,
+  formatSignalsForBuilderJudge,
   snapshotBaselineForNewModule,
 } from "./psychologyEngine";
+import type { RawSignalObservation, BehaviorSummary, AdaptationPlan } from "../../shared/types/userPsychology";
 
 // ─── API response types ───
 
@@ -314,17 +317,29 @@ export class CharacterImageService {
       session.promptHistory[session.promptHistory.length - 1].responseSummary = clarifierRaw.slice(0, 500);
     }
 
-    // Psychology Ledger: record LLM's structured hypotheses + update heuristics
+    // Psychology Ledger: record LLM's structured signals + update heuristics
     if (!session.psychologyLedger) session.psychologyLedger = createEmptyLedger();
     if (clarifier.user_read && typeof clarifier.user_read === "object") {
-      recordHypotheses(
-        session.psychologyLedger,
-        session.turns.length + 1,
-        "character_image",
-        clarifier.user_read.hypotheses ?? [],
-        clarifier.user_read.overall_read ?? "",
-        clarifier.user_read.satisfaction
-      );
+      const ur = clarifier.user_read;
+      if (ur.signals && ur.behaviorSummary) {
+        recordSignals(
+          session.psychologyLedger,
+          session.turns.length + 1,
+          "character_image",
+          ur.signals as RawSignalObservation[],
+          ur.behaviorSummary as BehaviorSummary,
+          (ur.adaptationPlan as AdaptationPlan) ?? { dominantNeed: "", moves: [] },
+        );
+      } else {
+        recordHypotheses(
+          session.psychologyLedger,
+          session.turns.length + 1,
+          "character_image",
+          (ur as any).hypotheses ?? [],
+          (ur as any).overall_read ?? "",
+          (ur as any).satisfaction
+        );
+      }
     }
     this.updatePsychologyHeuristics(session);
 
@@ -972,6 +987,8 @@ export class CharacterImageService {
     const locked = charPack.locked;
     const charProfilesJson = JSON.stringify(locked.characters, null, 2);
 
+    const upstreamTargets = this.formatUpstreamTargets(session);
+
     const user = CHARACTER_IMAGE_CLARIFIER_USER_TEMPLATE
       .replace("{{CHARACTER_IDENTITIES}}", identities)
       .replace("{{CHARACTER_PROFILES_JSON}}", charProfilesJson)
@@ -985,7 +1002,8 @@ export class CharacterImageService {
       .replace("{{PRIOR_TURNS}}", priorTurns)
       .replace("{{PSYCHOLOGY_LEDGER}}", psychText)
       .replace("{{CONSTRAINT_LEDGER}}", ledgerText)
-      .replace("{{TURN_NUMBER}}", turnNumber);
+      .replace("{{TURN_NUMBER}}", turnNumber)
+      .replace("{{UPSTREAM_DEVELOPMENT_TARGETS}}", upstreamTargets);
 
     return { system: CHARACTER_IMAGE_CLARIFIER_SYSTEM, user };
   }
@@ -1002,6 +1020,10 @@ export class CharacterImageService {
     const identities = this.buildCharacterIdentities(session);
     const storyCtx = this.extractStoryContext(session.constraintLedger ?? []);
 
+    const signalsText = formatSignalsForBuilderJudge(session.psychologyLedger);
+
+    const upstreamTargets = this.formatUpstreamTargets(session);
+
     const user = CHARACTER_IMAGE_BUILDER_USER_TEMPLATE
       .replace("{{CHARACTER_IDENTITIES}}", identities)
       .replace("{{CHARACTER_PROFILES_JSON}}", charProfilesJson)
@@ -1014,7 +1036,9 @@ export class CharacterImageService {
       .replace("{{VISUAL_SEED}}", session.visualSeed ?? "(none provided)")
       .replace("{{STYLE_PREFERENCE}}", this.formatStylePreference(session))
       .replace("{{PRIOR_TURNS}}", priorTurns)
-      .replace("{{CONSTRAINT_LEDGER}}", ledgerText);
+      .replace("{{CONSTRAINT_LEDGER}}", ledgerText)
+      .replace("{{PSYCHOLOGY_SIGNALS}}", signalsText)
+      .replace("{{UPSTREAM_DEVELOPMENT_TARGETS}}", upstreamTargets);
 
     return { system: CHARACTER_IMAGE_BUILDER_SYSTEM, user };
   }
@@ -1035,6 +1059,9 @@ export class CharacterImageService {
     const charProfilesJson = JSON.stringify(charPack.locked.characters, null, 2);
     const identities = this.buildCharacterIdentities(session);
     const storyCtx = this.extractStoryContext(session.constraintLedger ?? []);
+    const signalsText = formatSignalsForBuilderJudge(session.psychologyLedger);
+
+    const upstreamTargets = this.formatUpstreamTargets(session);
 
     const user = CHARACTER_IMAGE_JUDGE_USER_TEMPLATE
       .replace("{{VISUAL_SPECS_JSON}}", JSON.stringify(specs, null, 2))
@@ -1042,7 +1069,9 @@ export class CharacterImageService {
       .replace("{{CHARACTER_PROFILES_JSON}}", charProfilesJson)
       .replace("{{PREMISE}}", charPack.state_summary ?? "")
       .replace("{{EMOTIONAL_PROMISE}}", storyCtx.emotionalPromise)
-      .replace("{{TONE_CHIPS}}", JSON.stringify(charPack.preferences?.tone_chips ?? []));
+      .replace("{{TONE_CHIPS}}", JSON.stringify(charPack.preferences?.tone_chips ?? []))
+      .replace("{{PSYCHOLOGY_SIGNALS}}", signalsText)
+      .replace("{{UPSTREAM_DEVELOPMENT_TARGETS}}", upstreamTargets);
 
     return { system: CHARACTER_IMAGE_JUDGE_SYSTEM, user };
   }
@@ -1061,6 +1090,51 @@ export class CharacterImageService {
       .replace("{{VISUAL_SPECS_JSON}}", JSON.stringify(session.revealedSpecs ?? {}, null, 2));
 
     return { system: CHARACTER_IMAGE_SUMMARY_SYSTEM, user };
+  }
+
+  // ─── Upstream Development Targets ───
+
+  /**
+   * Format upstream development targets from the CharacterPack (and transitively from HookPack).
+   * Includes: character weaknesses from judge, open threads from hook, relationship tensions
+   * that are underdeveloped.
+   */
+  private formatUpstreamTargets(session: CharacterImageSessionState): string {
+    const charPack = session.sourceCharacterPack;
+    const lines: string[] = [];
+
+    // Character weaknesses from the character judge
+    if (charPack.weaknesses && charPack.weaknesses.length > 0) {
+      lines.push("CHARACTER WEAKNESSES (from character judge — address through visuals where possible):");
+      for (const w of charPack.weaknesses) {
+        lines.push(`  - [${w.role}] ${w.weakness}`);
+        if (w.development_opportunity) {
+          lines.push(`    Visual opportunity: ${w.development_opportunity}`);
+        }
+      }
+    }
+
+    // Open threads from hook (if accessible via charPack reference — these are passed as hook context)
+    // The charPack.source_dna may hint at underdeveloped collision sources
+    if (charPack.source_dna && charPack.source_dna.length > 0) {
+      const underused = charPack.source_dna.filter(s =>
+        !Object.values(charPack.locked.characters).some(c =>
+          c.description?.toLowerCase().includes(s.element_extracted.toLowerCase().slice(0, 20))
+        )
+      );
+      if (underused.length > 0) {
+        lines.push("UNDERUSED INSPIRATIONS (collision sources not fully reflected — may inform visual design):");
+        for (const s of underused.slice(0, 3)) {
+          lines.push(`  - From "${s.source}": ${s.element_extracted}`);
+        }
+      }
+    }
+
+    if (lines.length === 0) {
+      return "(No upstream targets)";
+    }
+
+    return lines.join("\n");
   }
 
   // ─── Helpers ───

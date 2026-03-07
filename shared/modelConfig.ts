@@ -4,7 +4,8 @@ export type LLMProvider = "anthropic" | "openai" | "gemini" | "grok";
 
 export type HookRole = "clarifier" | "builder" | "judge" | "summary" | "polish"
   | "char_clarifier" | "char_builder" | "char_judge" | "char_polish" | "char_summary"
-  | "img_clarifier" | "img_builder" | "img_judge" | "img_summary";
+  | "img_clarifier" | "img_builder" | "img_judge" | "img_summary"
+  | "world_clarifier" | "world_builder" | "world_judge" | "world_polish" | "world_summary";
 
 export interface ModelConfig {
   clarifier: string;
@@ -21,6 +22,11 @@ export interface ModelConfig {
   img_builder: string;
   img_judge: string;
   img_summary: string;
+  world_clarifier: string;
+  world_builder: string;
+  world_judge: string;
+  world_polish: string;
+  world_summary: string;
 }
 
 // ── Provider detection from model string ────────────────────────────
@@ -100,4 +106,9 @@ export const DEFAULT_MODEL_CONFIG: ModelConfig = {
   img_builder: "claude-sonnet-4-6",
   img_judge: "claude-sonnet-4-6",
   img_summary: "claude-sonnet-4-6",
+  world_clarifier: "claude-sonnet-4-6",
+  world_builder: "claude-sonnet-4-6",
+  world_judge: "claude-sonnet-4-6",
+  world_polish: "claude-sonnet-4-6",
+  world_summary: "claude-sonnet-4-6",
 };

@@ -4,6 +4,7 @@ import cors from "cors";
 import { hookRoutes } from "./routes/hook";
 import { characterRoutes } from "./routes/character";
 import { characterImageRoutes } from "./routes/characterImage";
+import { worldRoutes } from "./routes/world";
 import { modelRoutes } from "./routes/models";
 
 const app = express();
@@ -12,6 +13,7 @@ app.use(express.json());
 app.use("/api/hook", hookRoutes);
 app.use("/api/character", characterRoutes);
 app.use("/api/character-image", characterImageRoutes);
+app.use("/api/world", worldRoutes);
 app.use("/api", modelRoutes);
 
 const PORT = process.env.PORT ?? 3001;

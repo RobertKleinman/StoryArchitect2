@@ -72,22 +72,8 @@ export interface CharacterImageClarifierResponse {
   missing_signal: string;
   conflict_flag: string;
   assumptions: CharacterImageAssumption[];
-  /** Structured hypotheses about the user + brief synthesis */
-  user_read: {
-    hypotheses: {
-      hypothesis: string;
-      evidence: string;
-      confidence: "low" | "medium" | "high";
-      scope: "this_story" | "this_genre" | "global";
-      category: "content_preferences" | "control_orientation" | "power_dynamics" | "tonal_risk" | "narrative_ownership" | "engagement_satisfaction";
-    }[];
-    overall_read: string;
-    satisfaction: {
-      score: number;
-      trend: "rising" | "stable" | "declining";
-      note: string;
-    };
-  };
+  /** Structured behavior signals about the user */
+  user_read: import("./userPsychology").StructuredUserRead;
 }
 
 // ─── Builder Output ───
@@ -106,6 +92,7 @@ export interface CharacterImageJudgeScores {
   psychology_match: number;         // do they look like who they are?
   ensemble_cohesion: number;        // same art style/world?
   tone_fit: number;                 // matches story mood?
+  user_fit: number;                 // matches user behavior signals?
 }
 
 export interface CharacterImageJudgeOutput {

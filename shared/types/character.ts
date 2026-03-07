@@ -95,22 +95,8 @@ export interface CharacterClarifierResponse {
   characters_surfaced: CharacterSurfaced[];
   relationship_updates: CharacterRelationshipUpdate[];
   state_updates: Record<string, CharacterStateUpdate>;  // keyed by role
-  /** Structured hypotheses about the user + brief synthesis */
-  user_read: {
-    hypotheses: {
-      hypothesis: string;
-      evidence: string;
-      confidence: "low" | "medium" | "high";
-      scope: "this_story" | "this_genre" | "global";
-      category: "content_preferences" | "control_orientation" | "power_dynamics" | "tonal_risk" | "narrative_ownership" | "engagement_satisfaction";
-    }[];
-    overall_read: string;
-    satisfaction: {
-      score: number;
-      trend: "rising" | "stable" | "declining";
-      note: string;
-    };
-  };
+  /** Structured behavior signals about the user */
+  user_read: import("./userPsychology").StructuredUserRead;
 }
 
 // ─── Builder Output ───
@@ -188,6 +174,7 @@ export interface CharacterJudgeScores {
   diversity: number;
   mechanism_clarity: number;
   specificity: number;
+  user_fit: number;
 }
 
 export interface CharacterJudgeOutput {
@@ -243,6 +230,8 @@ export interface CharacterPack {
   state_summary: string;
   /** Reference to the hook module's export — load separately by ID, not embedded */
   hookpack_reference: { hookProjectId: string };
+  /** User psychology ledger accumulated across modules */
+  psychologyLedger?: import("./userPsychology").UserPsychologyLedger;
 }
 
 // ─── Prompt Preview & History (reuse pattern) ───
