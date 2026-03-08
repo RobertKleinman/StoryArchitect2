@@ -3,11 +3,13 @@ import { HookWorkshop } from "./HookWorkshop";
 import { CharacterWorkshop } from "./CharacterWorkshop";
 import { CharacterImageWorkshop } from "./CharacterImageWorkshop";
 import { WorldWorkshop } from "./WorldWorkshop";
+import { ModelSettings } from "./ModelSettings";
 
 type Module = "hook" | "character" | "character_image" | "world";
 
 export function App() {
   const [activeModule, setActiveModule] = useState<Module>("hook");
+  const [showSettings, setShowSettings] = useState(false);
 
   return (
     <div className="app-shell">
@@ -40,12 +42,23 @@ export function App() {
         >
           4. World
         </button>
+        <button
+          type="button"
+          className="module-tab"
+          onClick={() => setShowSettings(true)}
+          title="Model Settings"
+          style={{ marginLeft: "auto", fontSize: "1.1rem" }}
+        >
+          &#9881; Models
+        </button>
       </nav>
 
       {activeModule === "hook" && <HookWorkshop />}
       {activeModule === "character" && <CharacterWorkshop />}
       {activeModule === "character_image" && <CharacterImageWorkshop />}
       {activeModule === "world" && <WorldWorkshop />}
+
+      {showSettings && <ModelSettings onClose={() => setShowSettings(false)} />}
     </div>
   );
 }

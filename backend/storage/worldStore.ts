@@ -11,7 +11,7 @@ export interface WorldModuleExport {
   projectId: string;
   hookProjectId: string;
   characterProjectId: string;
-  characterImageProjectId: string;
+  characterImageProjectId?: string;
   worldPack: WorldPack;
   constraintLedger: WorldSessionState["constraintLedger"];
   stats: {

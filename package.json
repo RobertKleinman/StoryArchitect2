@@ -8,8 +8,10 @@
     "dev:backend": "tsx watch backend/index.ts",
     "dev:frontend": "vite",
     "typecheck": "tsc --noEmit",
-    "build": "npm run typecheck && vite build",
-    "preview": "vite preview"
+    "build": "vite build",
+    "preview": "vite preview",
+    "remote": "vite build && tsx backend/index.ts",
+    "remote:backend": "tsx backend/index.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",

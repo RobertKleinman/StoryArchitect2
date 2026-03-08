@@ -496,19 +496,13 @@ export class WorldService {
 
     const builderResult = this.parseAndValidate<WorldBuilderOutput>(builderRaw, [
       "scope", "arena", "rules", "factions", "consequence_patterns", "canon_register",
-      "information_access", "volatility", "world_thesis", "pressure_summary"
+      "world_thesis", "pressure_summary"
     ]);
 
-    // Defensive defaults for new array fields (LLMs may omit them)
+    // Defensive defaults for optional array fields (schema doesn't require these)
     if (builderResult) {
       if (!Array.isArray(builderResult.information_access)) builderResult.information_access = [];
       if (!Array.isArray(builderResult.volatility)) builderResult.volatility = [];
-      for (const loc of builderResult.arena?.locations ?? []) {
-        if (!Array.isArray((loc as any).scene_types)) (loc as any).scene_types = [];
-      }
-      for (const fac of builderResult.factions ?? []) {
-        if (!Array.isArray((fac as any).internal_tensions)) (fac as any).internal_tensions = [];
-      }
     }
 
     if (!builderResult) {

@@ -1163,18 +1163,6 @@ export function WorldWorkshop() {
                   <div className="arena-register">
                     <span className="detail-label">Emotional register:</span> {loc.emotional_register}
                   </div>
-                  {loc.characters_associated?.length > 0 && (
-                    <div className="arena-characters">
-                      <span className="detail-label">Associated:</span>
-                      {loc.characters_associated.map((c, i) => <span key={i} className="role-chip">{c}</span>)}
-                    </div>
-                  )}
-                  {loc.scene_types?.length > 0 && (
-                    <div className="arena-scene-types">
-                      <span className="detail-label">Scene types:</span>
-                      {loc.scene_types.map((st, i) => <span key={i} className="role-chip scene-type-chip">{st}</span>)}
-                    </div>
-                  )}
                 </div>
               </div>
             ))}
@@ -1185,7 +1173,6 @@ export function WorldWorkshop() {
                   <div key={i} className="arena-edge">
                     <span className="edge-path">{edge.from} → {edge.to}</span>
                     <span className="edge-traversal">{edge.traversal}</span>
-                    {edge.tension_potential && <span className="edge-tension">{edge.tension_potential}</span>}
                   </div>
                 ))}
               </div>
@@ -1204,7 +1191,6 @@ export function WorldWorkshop() {
                 <p className="rule-text">{rule.rule}</p>
                 <div className="rule-details">
                   <p><strong>If broken:</strong> {rule.consequence_if_broken}</p>
-                  {rule.exploit_potential && <p><strong>Exploit:</strong> {rule.exploit_potential}</p>}
                 </div>
               </div>
             ))}
@@ -1222,32 +1208,12 @@ export function WorldWorkshop() {
                     <span className="detail-label">Methods:</span>
                     {faction.methods.map((m, i) => <span key={i} className="role-chip">{m}</span>)}
                   </div>
-                  {faction.resources?.length > 0 && (
-                    <div>
-                      <span className="detail-label">Resources:</span>
-                      {faction.resources.map((r, i) => <span key={i} className="role-chip">{r}</span>)}
-                    </div>
-                  )}
                   <div>
                     <span className="detail-label">Constraints:</span>
                     {faction.constraints.map((c, i) => <span key={i} className="role-chip">{c}</span>)}
                   </div>
                 </div>
                 <p className="faction-pressure"><strong>Pressure on protagonist:</strong> {faction.pressure_on_protagonist}</p>
-                {faction.internal_tensions?.length > 0 && (
-                  <div className="faction-tensions">
-                    <span className="detail-label">Internal tensions:</span>
-                    {faction.internal_tensions.map((t, i) => (
-                      <p key={i} className="tension-item">{t}</p>
-                    ))}
-                  </div>
-                )}
-                {faction.associated_characters?.length > 0 && (
-                  <div className="faction-characters">
-                    <span className="detail-label">Characters:</span>
-                    {faction.associated_characters.map((c, i) => <span key={i} className="role-chip">{c}</span>)}
-                  </div>
-                )}
               </div>
             ))}
           </div>
@@ -1264,7 +1230,6 @@ export function WorldWorkshop() {
                 </div>
                 <p><strong>Trigger:</strong> {cp.trigger}</p>
                 <p><strong>Response:</strong> {cp.world_response}</p>
-                {cp.second_order && <p><strong>Second-order:</strong> {cp.second_order}</p>}
               </div>
             ))}
           </div>
@@ -1277,7 +1242,6 @@ export function WorldWorkshop() {
                 {state.revealedWorld.canon_register.map(fact => (
                   <div key={fact.id} className="canon-fact">
                     <span className="canon-source">{fact.source_module}</span>
-                    {fact.category && <span className="canon-category">{fact.category.replace(/_/g, " ")}</span>}
                     <span className="canon-text">{fact.fact}</span>
                   </div>
                 ))}
@@ -1293,15 +1257,7 @@ export function WorldWorkshop() {
                 <div key={il.id} className="info-layer-card">
                   <p className="info-truth"><strong>Truth:</strong> {il.truth}</p>
                   <div className="info-grid">
-                    {il.who_knows?.length > 0 && (
-                      <div><span className="detail-label">Knows:</span> {il.who_knows.map((w, i) => <span key={i} className="role-chip">{w}</span>)}</div>
-                    )}
-                    {il.who_suspects?.length > 0 && (
-                      <div><span className="detail-label">Suspects:</span> {il.who_suspects.map((w, i) => <span key={i} className="role-chip">{w}</span>)}</div>
-                    )}
-                    {il.who_is_wrong?.length > 0 && (
-                      <div><span className="detail-label">Wrong about it:</span> {il.who_is_wrong.map((w, i) => <span key={i} className="role-chip">{w}</span>)}</div>
-                    )}
+                    <div><span className="detail-label">Knows:</span> {il.who_knows.map((w, i) => <span key={i} className="role-chip">{w}</span>)}</div>
                   </div>
                   <p className="info-irony"><strong>Dramatic irony:</strong> {il.dramatic_irony}</p>
                 </div>
@@ -1315,11 +1271,6 @@ export function WorldWorkshop() {
               <h4>Volatility — {state.revealedWorld.volatility.length} live wires</h4>
               {state.revealedWorld.volatility.map((vp) => (
                 <div key={vp.id} className="volatility-card">
-                  {vp.likelihood && (
-                    <div className="volatility-header">
-                      <span className={`volatility-likelihood likelihood-${vp.likelihood}`}>{vp.likelihood}</span>
-                    </div>
-                  )}
                   <p><strong>Element:</strong> {vp.element}</p>
                   <p><strong>Trigger:</strong> {vp.trigger}</p>
                   <p><strong>Consequence:</strong> {vp.consequence}</p>
