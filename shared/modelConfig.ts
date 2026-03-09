@@ -5,7 +5,8 @@ export type LLMProvider = "anthropic" | "openai" | "gemini" | "grok";
 export type HookRole = "clarifier" | "builder" | "judge" | "summary" | "polish"
   | "char_clarifier" | "char_builder" | "char_judge" | "char_polish" | "char_summary"
   | "img_clarifier" | "img_builder" | "img_judge" | "img_summary"
-  | "world_clarifier" | "world_builder" | "world_judge" | "world_polish" | "world_summary";
+  | "world_clarifier" | "world_builder" | "world_judge" | "world_polish" | "world_summary"
+  | "psych_consolidator";
 
 export interface ModelConfig {
   clarifier: string;
@@ -27,6 +28,8 @@ export interface ModelConfig {
   world_judge: string;
   world_polish: string;
   world_summary: string;
+  /** Background psychology consolidation — runs during user think-time */
+  psych_consolidator: string;
 }
 
 // ── Provider detection from model string ────────────────────────────
@@ -99,6 +102,7 @@ export const CREATIVE_ROLES: ReadonlyArray<keyof ModelConfig> = [
   "char_clarifier", "char_builder", "char_polish", "char_summary",
   "img_clarifier", "img_builder", "img_summary",
   "world_clarifier", "world_builder", "world_polish", "world_summary",
+  "psych_consolidator",
 ];
 
 /** Build a partial ModelConfig setting all judge roles to one model */
@@ -137,4 +141,5 @@ export const DEFAULT_MODEL_CONFIG: ModelConfig = {
   world_judge: "claude-sonnet-4-6",
   world_polish: "claude-sonnet-4-6",
   world_summary: "claude-sonnet-4-6",
+  psych_consolidator: "claude-sonnet-4-6",
 };

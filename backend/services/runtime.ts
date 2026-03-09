@@ -34,6 +34,7 @@ export const activeModelConfig: ModelConfig = {
   world_judge: envModel("WORLD_MODEL_JUDGE", DEFAULT_MODEL_CONFIG.world_judge),
   world_polish: envModel("WORLD_MODEL_POLISH", DEFAULT_MODEL_CONFIG.world_polish),
   world_summary: envModel("WORLD_MODEL_SUMMARY", DEFAULT_MODEL_CONFIG.world_summary),
+  psych_consolidator: envModel("PSYCH_MODEL_CONSOLIDATOR", DEFAULT_MODEL_CONFIG.psych_consolidator),
 };
 
 export const projectStore = new ProjectStore();

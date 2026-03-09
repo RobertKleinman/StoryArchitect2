@@ -281,6 +281,93 @@ export interface UserInteractionHeuristics {
   };
 }
 
+// ─── Psychology consolidation (background think-time step) ───
+
+/**
+ * LLM-produced consolidation output. Runs during user think-time after each
+ * clarifier response. The LLM decides what's worth doing — all fields optional
+ * except `updatedSignals`. This is adaptive, not a fixed checklist.
+ */
+export interface ConsolidationResult {
+  /**
+   * The merged/pruned signal list. This REPLACES the current signalStore.
+   * The LLM may merge semantically similar signals, boost confidence for
+   * converging evidence, or drop dead weight. It returns the full list
+   * because partial diffs are error-prone.
+   */
+  updatedSignals: ConsolidatedSignal[];
+
+  /**
+   * Optional: the most important unresolved ambiguity about this user.
+   * Only present when the LLM judges there's a meaningful fork worth testing.
+   */
+  unresolvedAmbiguity?: {
+    description: string;
+    whyItMatters: string;
+    signalIds: string[];
+  };
+
+  /**
+   * Optional: a story-framed probe the next clarifier can weave in naturally.
+   * This is a HINT, not a command. The clarifier may ignore it if the creative
+   * moment doesn't fit.
+   */
+  suggestedProbe?: {
+    /** A story question or assumption angle — not a psych test */
+    angle: string;
+    /** Which signal this would help disambiguate */
+    targetSignalIds: string[];
+    /** What each possible user response would tell us */
+    interpretationGuide: string;
+  };
+
+  /**
+   * Optional: brief reasoning about what the consolidation did and why.
+   * Stored for debugging, never shown to user.
+   */
+  reasoning?: string;
+}
+
+/**
+ * A signal as output by the consolidation LLM. Similar to BehaviorSignal
+ * but the LLM sets confidence/status directly (it has the full picture).
+ */
+export interface ConsolidatedSignal {
+  /** Keep the original ID if this signal existed, or "merged_N" for merges */
+  id: string;
+  /** Tightened hypothesis — may be a rewrite of the original */
+  hypothesis: string;
+  /** IDs of signals that were merged into this one (empty if unchanged) */
+  absorbedIds: string[];
+  /** LLM-assessed confidence after considering all evidence (0-1) */
+  confidence: number;
+  /** LLM-assessed status */
+  status: SignalStatus;
+  category: SignalCategory;
+  scope: "this_story" | "this_genre" | "global";
+  /** Updated adaptation consequence */
+  adaptationConsequence: string;
+  /** Updated contradiction criteria */
+  contradictionCriteria: string;
+}
+
+/**
+ * Stored on the ledger: the last consolidation result + metadata.
+ * The next clarifier reads the suggestedProbe from here.
+ */
+export interface ConsolidationSnapshot {
+  /** When this consolidation ran */
+  timestamp: string;
+  /** Which turn it ran after */
+  afterTurn: number;
+  /** Which module was active */
+  module: "hook" | "character" | "character_image" | "world";
+  /** The full result */
+  result: ConsolidationResult;
+  /** Whether the suggestedProbe was consumed by the next clarifier turn */
+  probeConsumed: boolean;
+}
+
 // ─── The full ledger ───
 
 export interface UserPsychologyLedger {
@@ -292,6 +379,8 @@ export interface UserPsychologyLedger {
   signalStore: BehaviorSignal[];
   /** Last N turns of offered-vs-responded assumption tracking */
   assumptionDeltas: AssumptionDelta[];
+  /** Last background consolidation result. Updated async during user think-time. */
+  lastConsolidation?: ConsolidationSnapshot;
 
   // ─── Backward compat ───
   /** @deprecated Use signalStore */

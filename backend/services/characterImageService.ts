@@ -45,6 +45,9 @@ import {
   formatSignalsForBuilderJudge,
   formatEngineDialsForPrompt,
   snapshotBaselineForNewModule,
+  runConsolidation,
+  formatSuggestedProbeForPrompt,
+  markProbeConsumed,
 } from "./psychologyEngine";
 import type { RawSignalObservation, BehaviorSummary, AdaptationPlan } from "../../shared/types/userPsychology";
 
@@ -377,13 +380,48 @@ export class CharacterImageService {
     session.status = "clarifying";
     session.lastSavedAt = new Date().toISOString();
 
+    // Mark any pending probe as consumed
+    if (session.psychologyLedger) {
+      markProbeConsumed(session.psychologyLedger);
+    }
+
     await this.imageStore.save(session);
+
+    // ─── Fire background consolidation (non-blocking) ───
+    if (session.psychologyLedger && session.psychologyLedger.signalStore.length > 0) {
+      this.fireBackgroundConsolidation(session.projectId, turn.turnNumber, "character_image")
+        .catch(err => console.error("[PSYCH] CharImage consolidation fire failed:", err));
+    }
 
     return {
       clarifier: turn.clarifierResponse,
       turnNumber: turn.turnNumber,
       totalTurns: session.turns.length,
     };
+  }
+
+  /**
+   * Fire-and-forget background consolidation for character image module.
+   */
+  private async fireBackgroundConsolidation(
+    projectId: string,
+    turnNumber: number,
+    module: "hook" | "character" | "character_image" | "world",
+  ): Promise<void> {
+    const session = await this.imageStore.get(projectId);
+    if (!session?.psychologyLedger) return;
+
+    const snapshot = await runConsolidation(
+      session.psychologyLedger,
+      turnNumber,
+      module,
+      this.llm,
+    );
+
+    if (snapshot) {
+      session.lastSavedAt = new Date().toISOString();
+      await this.imageStore.save(session);
+    }
   }
 
   // ─── Generate Visual Specs (builder + judge) ───
@@ -990,6 +1028,8 @@ export class CharacterImageService {
 
     const upstreamTargets = this.formatUpstreamTargets(session);
 
+    const probeText = formatSuggestedProbeForPrompt(session.psychologyLedger);
+
     const user = CHARACTER_IMAGE_CLARIFIER_USER_TEMPLATE
       .replace("{{CHARACTER_IDENTITIES}}", identities)
       .replace("{{CHARACTER_PROFILES_JSON}}", charProfilesJson)
@@ -1004,7 +1044,8 @@ export class CharacterImageService {
       .replace("{{PSYCHOLOGY_LEDGER}}", psychText)
       .replace("{{CONSTRAINT_LEDGER}}", ledgerText)
       .replace("{{TURN_NUMBER}}", turnNumber)
-      .replace("{{UPSTREAM_DEVELOPMENT_TARGETS}}", upstreamTargets);
+      .replace("{{UPSTREAM_DEVELOPMENT_TARGETS}}", upstreamTargets)
+      + (probeText ? "\n\n" + probeText : "");
 
     return { system: CHARACTER_IMAGE_CLARIFIER_SYSTEM, user };
   }

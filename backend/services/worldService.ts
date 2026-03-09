@@ -49,6 +49,9 @@ import {
   formatSignalsForBuilderJudge,
   formatEngineDialsForPrompt,
   snapshotBaselineForNewModule,
+  runConsolidation,
+  formatSuggestedProbeForPrompt,
+  markProbeConsumed,
 } from "./psychologyEngine";
 import type { RawSignalObservation, BehaviorSummary, AdaptationPlan } from "../../shared/types/userPsychology";
 
@@ -445,13 +448,48 @@ export class WorldService {
     session!.status = "clarifying";
     session!.lastSavedAt = new Date().toISOString();
 
+    // Mark any pending probe as consumed
+    if (session!.psychologyLedger) {
+      markProbeConsumed(session!.psychologyLedger);
+    }
+
     await this.worldStore.save(session!);
+
+    // ─── Fire background consolidation (non-blocking) ───
+    if (session!.psychologyLedger && session!.psychologyLedger.signalStore.length > 0) {
+      this.fireBackgroundConsolidation(session!.projectId, turn.turnNumber, "world")
+        .catch(err => console.error("[PSYCH] World consolidation fire failed:", err));
+    }
 
     return {
       clarifier: turn.clarifierResponse,
       turnNumber: turn.turnNumber,
       totalTurns: session!.turns.length,
     };
+  }
+
+  /**
+   * Fire-and-forget background consolidation for world module.
+   */
+  private async fireBackgroundConsolidation(
+    projectId: string,
+    turnNumber: number,
+    module: "hook" | "character" | "character_image" | "world",
+  ): Promise<void> {
+    const session = await this.worldStore.get(projectId);
+    if (!session?.psychologyLedger) return;
+
+    const snapshot = await runConsolidation(
+      session.psychologyLedger,
+      turnNumber,
+      module,
+      this.llm,
+    );
+
+    if (snapshot) {
+      session.lastSavedAt = new Date().toISOString();
+      await this.worldStore.save(session);
+    }
   }
 
   // ─── Generate (builder + judge) ───
@@ -769,7 +807,9 @@ export class WorldService {
       .replace("{{CONSTRAINT_LEDGER}}", ledgerText)
       .replace("{{TURN_NUMBER}}", turnNumber);
 
-    return { system: WORLD_CLARIFIER_SYSTEM, user };
+    const probeText = formatSuggestedProbeForPrompt(session.psychologyLedger);
+
+    return { system: WORLD_CLARIFIER_SYSTEM, user: user + (probeText ? "\n\n" + probeText : "") };
   }
 
   private buildBuilderPrompt(session: WorldSessionState): {

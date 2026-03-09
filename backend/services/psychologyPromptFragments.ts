@@ -379,3 +379,64 @@ For each target, note whether it was:
 
 This assessment helps downstream modules know what still needs work.
 Include this in your judgment output.`;
+
+// ─────────────────────────────────────────────────────────────────
+// FRAGMENT: VALUE OF INFORMATION — question prioritization
+// Used in: all clarifier system prompts (STEP 4 area)
+// Purpose: Ask fewer, better questions. Skip low-impact ones.
+// ─────────────────────────────────────────────────────────────────
+export const QUESTION_VALUE_CHECK = `QUESTION VALUE CHECK (run before asking ANYTHING):
+Before you ask a question or surface an assumption, run this quick test:
+  "If the user picks option A vs option B vs option C, would the resulting STORY actually be meaningfully different?"
+
+HIGH VALUE — ask it:
+  - The answer changes the emotional engine, character dynamics, or premise shape
+  - The user would CARE about this choice (it's not just flavor)
+  - You genuinely can't infer the answer from what they've already told you
+  Examples: "Is the antagonist someone the protagonist loves?" / "Does the protagonist know about the betrayal?"
+
+LOW VALUE — skip it, infer a default:
+  - Any reasonable answer works fine and the story's core stays the same
+  - You can infer the answer from tone, genre, or prior choices
+  - The builder can make a good call without user input
+  Examples: "Is the school in a city or a small town?" (unless setting IS the story)
+
+This is NOT about asking fewer questions — it's about asking BETTER ones. Every question should earn its spot by changing what gets built.`;
+
+// ─────────────────────────────────────────────────────────────────
+// FRAGMENT: PREMORTEM CHECK — clarifier version
+// Used in: all clarifier quality gates (near readiness checks)
+// Purpose: Imagine failure before committing, catch weak spots
+// ─────────────────────────────────────────────────────────────────
+export const PREMORTEM_CHECK = `PREMORTEM (before setting readiness above 75%):
+Imagine: "This story launched and readers were disappointed. What's the single most likely reason?"
+
+Common killers:
+  - FORGETTABLE — competent but nothing makes someone grab a friend and say "you HAVE to read this"
+  - VAGUE DESIRE — the protagonist "wants freedom" or "wants love" without the wound that gives it weight
+  - CARDBOARD ANTAGONIST — they oppose the protagonist but have no felt reason
+  - ABSTRACT STAKES — "everything is at risk" but we don't viscerally care
+  - CLEVER BUT COLD — the mechanism is intellectually interesting but doesn't make us feel trapped WITH the characters
+
+If you spot a killer that hasn't been addressed:
+  - Do NOT set readiness above 75%
+  - Make your next question target that weakness — framed as an exciting opportunity, not a problem
+  - You only need to catch the BIGGEST one, not audit everything
+
+If you can't identify a plausible failure mode, proceed — that's a good sign.`;
+
+// ─────────────────────────────────────────────────────────────────
+// FRAGMENT: PREMORTEM — judge version
+// Used in: all judge system prompts (alongside OBSESSION TEST)
+// Purpose: Name the single biggest risk before scoring
+// ─────────────────────────────────────────────────────────────────
+export const JUDGE_PREMORTEM = `PREMORTEM (before scoring — do this alongside the obsession test):
+Imagine this story as a finished visual novel. A reader plays it, finishes it, and feels... nothing special. Why?
+
+Name the single most likely failure mode — the weakness that would make this forgettable despite being well-crafted:
+  - "I've read this before" — genre template, not a specific story
+  - "I didn't care" — protagonist's desire didn't have enough weight
+  - "Cool concept, but..." — mechanism is clever but doesn't create emotional pressure
+  - "Where was this going?" — no genuine urgency pulling the reader forward
+
+Factor this into your scoring. If the candidate already addresses its most likely failure mode, that's a significant strength worth noting.`;

@@ -48,6 +48,9 @@ import {
   formatSignalsForBuilderJudge,
   formatEngineDialsForPrompt,
   snapshotBaselineForNewModule,
+  runConsolidation,
+  formatSuggestedProbeForPrompt,
+  markProbeConsumed,
 } from "./psychologyEngine";
 import type { RawSignalObservation, BehaviorSummary, AdaptationPlan } from "../../shared/types/userPsychology";
 
@@ -400,13 +403,48 @@ export class CharacterService {
     session.status = "clarifying";
     session.lastSavedAt = new Date().toISOString();
 
+    // Mark any pending probe as consumed
+    if (session.psychologyLedger) {
+      markProbeConsumed(session.psychologyLedger);
+    }
+
     await this.charStore.save(session);
+
+    // ─── Fire background consolidation (non-blocking) ───
+    if (session.psychologyLedger && session.psychologyLedger.signalStore.length > 0) {
+      this.fireBackgroundConsolidation(session.projectId, turn.turnNumber, "character")
+        .catch(err => console.error("[PSYCH] Character consolidation fire failed:", err));
+    }
 
     return {
       clarifier: turn.clarifierResponse,
       turnNumber: turn.turnNumber,
       totalTurns: session.turns.length,
     };
+  }
+
+  /**
+   * Fire-and-forget background consolidation for character module.
+   */
+  private async fireBackgroundConsolidation(
+    projectId: string,
+    turnNumber: number,
+    module: "hook" | "character" | "character_image" | "world",
+  ): Promise<void> {
+    const session = await this.charStore.get(projectId);
+    if (!session?.psychologyLedger) return;
+
+    const snapshot = await runConsolidation(
+      session.psychologyLedger,
+      turnNumber,
+      module,
+      this.llm,
+    );
+
+    if (snapshot) {
+      session.lastSavedAt = new Date().toISOString();
+      await this.charStore.save(session);
+    }
   }
 
   // ─── Generate (tournament: adaptive multi-candidate + judge) ───
@@ -857,6 +895,7 @@ export class CharacterService {
     const turnNumber = String(session.turns.length + 1);
 
     const psychText = formatPsychologyLedgerForPrompt(session.psychologyLedger);
+    const probeText = formatSuggestedProbeForPrompt(session.psychologyLedger);
     const upstreamTargets = this.formatUpstreamTargetsFromHook(session.sourceHook);
 
     const user = CHARACTER_CLARIFIER_USER_TEMPLATE
@@ -875,7 +914,8 @@ export class CharacterService {
       .replace("{{CAST_STATE_JSON}}", castStateJson)
       .replace("{{TURN_NUMBER}}", turnNumber)
       .replace("{{CHARACTER_SEED}}", session.characterSeed ?? "(none provided)")
-      .replace("{{UPSTREAM_DEVELOPMENT_TARGETS}}", upstreamTargets);
+      .replace("{{UPSTREAM_DEVELOPMENT_TARGETS}}", upstreamTargets)
+      + (probeText ? "\n\n" + probeText : "");
 
     return { system: CHARACTER_CLARIFIER_SYSTEM, user };
   }

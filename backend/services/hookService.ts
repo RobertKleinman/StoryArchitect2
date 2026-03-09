@@ -44,6 +44,9 @@ import {
   formatPsychologyLedgerForPrompt,
   formatSignalsForBuilderJudge,
   formatEngineDialsForPrompt,
+  runConsolidation,
+  formatSuggestedProbeForPrompt,
+  markProbeConsumed,
 } from "./psychologyEngine";
 import type { RawSignalObservation, BehaviorSummary, AdaptationPlan } from "../../shared/types/userPsychology";
 
@@ -340,13 +343,55 @@ export class HookService {
     session.status = "clarifying";
     session.lastSavedAt = new Date().toISOString();
 
+    // Mark any pending probe as consumed (the clarifier had access to it this turn)
+    if (session.psychologyLedger) {
+      markProbeConsumed(session.psychologyLedger);
+    }
+
     await this.store.save(session);
+
+    // ─── Fire background consolidation (non-blocking) ───
+    // Runs during user think-time. If it finishes before the user's next
+    // submission, the next clarifier turn gets the consolidated ledger.
+    // If it doesn't finish in time, no harm — same as today.
+    if (session.psychologyLedger && session.psychologyLedger.signalStore.length > 0) {
+      this.fireBackgroundConsolidation(session.projectId, turn.turnNumber, "hook")
+        .catch(err => console.error("[PSYCH] Background consolidation fire failed:", err));
+    }
 
     return {
       clarifier: turn.clarifierResponse,
       turnNumber: turn.turnNumber,
       totalTurns: session.turns.length,
     };
+  }
+
+  /**
+   * Fire-and-forget background consolidation. Reads the session fresh,
+   * runs the LLM consolidation, and saves the updated ledger back.
+   * Non-blocking — failures are logged and swallowed.
+   */
+  private async fireBackgroundConsolidation(
+    projectId: string,
+    turnNumber: number,
+    module: "hook" | "character" | "character_image" | "world",
+  ): Promise<void> {
+    // Re-read session fresh (the main path may have moved on)
+    const session = await this.store.get(projectId);
+    if (!session?.psychologyLedger) return;
+
+    const snapshot = await runConsolidation(
+      session.psychologyLedger,
+      turnNumber,
+      module,
+      this.llm,
+    );
+
+    if (snapshot) {
+      // Save the updated ledger back
+      session.lastSavedAt = new Date().toISOString();
+      await this.store.save(session);
+    }
   }
 
   async runTournament(
@@ -706,6 +751,7 @@ export class HookService {
     const turnNumber = String(session.turns.length + 1);
 
     const psychText = formatPsychologyLedgerForPrompt(session.psychologyLedger);
+    const probeText = formatSuggestedProbeForPrompt(session.psychologyLedger);
 
     const user = HOOK_CLARIFIER_USER_TEMPLATE
       .replace("{{USER_SEED}}", session.seedInput)
@@ -715,7 +761,8 @@ export class HookService {
       .replace("{{ENGINE_DIALS}}", formatEngineDialsForPrompt(session.psychologyLedger))
       .replace("{{CURRENT_STATE_JSON}}", currentStateJson)
       .replace("{{BAN_LIST}}", bans)
-      .replace("{{TURN_NUMBER}}", turnNumber);
+      .replace("{{TURN_NUMBER}}", turnNumber)
+      + (probeText ? "\n\n" + probeText : "");
 
     return { system: HOOK_CLARIFIER_SYSTEM, user };
   }

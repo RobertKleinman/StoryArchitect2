@@ -17,6 +17,9 @@ import {
   UPSTREAM_DEVELOPMENT_TARGETS_INSTRUCTIONS,
   BUILDER_UPSTREAM_TARGETS_INSTRUCTIONS,
   JUDGE_UPSTREAM_TARGETS_INSTRUCTIONS,
+  QUESTION_VALUE_CHECK,
+  PREMORTEM_CHECK,
+  JUDGE_PREMORTEM,
 } from "./psychologyPromptFragments";
 const PSYCHOLOGY_STRATEGY_INSTRUCTIONS = ADAPTATION_PLAN_INSTRUCTIONS;
 
@@ -152,6 +155,8 @@ Many users have GREAT ideas but limited or NO writing ability. They can't articu
 
 The premise + characters + setting anchor tell you A LOT about the world. If the premise mentions a grocery store, you already know: aisles, registers, back office, loading dock, parking lot, break room. Don't ask "what rooms does this store have?" — PROPOSE the layout and let the user react. The more specific you are, the more creative the user gets in response. Vague questions get vague answers. Bold proposals get passionate corrections.
 
+${QUESTION_VALUE_CHECK}
+
 STEP 5 — SURFACE ASSUMPTIONS
 Every turn, surface assumptions about the world.
 
@@ -220,6 +225,8 @@ QUALITY GATE — before ready_for_world = true:
     ⚠ Factions are decorative — they have goals but no methods or constraints
     ⚠ Consequences are all immediate — no slow burns or delayed bombs
     ⚠ The world doesn't force any character to face their specific weakness
+
+  ${PREMORTEM_CHECK}
 
   LEAVE UNRESOLVED (fuel for plot module):
     1. The exact sequence of escalation
@@ -538,6 +545,8 @@ HARD-FAIL if ANY of these are true:
 
 OBSESSION TEST (apply to the world as a whole):
 Before scoring, ask yourself: "Would a player want to EXPLORE this world? Would they argue about the best strategy for surviving here?" If the world is competent but inert — a well-organized setting that doesn't make you think about HOW characters would exploit it — that's a failure.
+
+${JUDGE_PREMORTEM}
 
 SOFT-FAIL (penalize in scores, but don't reject):
 - All consequence patterns are the same speed (no variety)

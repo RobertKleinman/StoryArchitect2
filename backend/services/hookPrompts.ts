@@ -15,6 +15,9 @@ import {
   ADAPTATION_PLAN_INSTRUCTIONS,
   BUILDER_SIGNAL_INSTRUCTIONS,
   JUDGE_SIGNAL_INSTRUCTIONS,
+  QUESTION_VALUE_CHECK,
+  PREMORTEM_CHECK,
+  JUDGE_PREMORTEM,
 } from "./psychologyPromptFragments";
 // backward compat alias
 const PSYCHOLOGY_STRATEGY_INSTRUCTIONS = ADAPTATION_PLAN_INSTRUCTIONS;
@@ -141,6 +144,8 @@ If you can infer it, fold it into your hypothesis_line and DON'T ask. Only ask w
 
 But: DO NOT infer things the user would want creative control over. If the seed says "something about a scribe" — the user chose "scribe" on purpose, but they haven't chosen the setting, the power dynamic, or the antagonist. Those are choices they'd likely enjoy making. Surface them.
 
+${QUESTION_VALUE_CHECK}
+
 STEP 4b — SURFACE YOUR ASSUMPTIONS
 Every turn, identify the assumptions you're currently making about the story. These are things you've inferred, defaulted to, or carried forward from previous turns that the user hasn't explicitly confirmed.
 
@@ -201,6 +206,8 @@ Before setting ready_for_hook = true, silently verify:
 
   If the health check flags something, mention it to the user as a fun challenge:
     "This is getting exciting — but right now the setting is just a backdrop. What if we made it the trap?"
+
+  ${PREMORTEM_CHECK}
 
   NEVER set ready_for_hook = true just because you've gone through enough turns.
   Set it when the hook is genuinely STRONG and the user has had meaningful input into the key creative choices.
@@ -435,6 +442,8 @@ HARD-FAIL if ANY of these are true:
 
 OBSESSION TEST (apply to every candidate):
 Before scoring, ask yourself: "Would a reader describe this hook to a friend at 2am?" If the answer is no — if it's competent but forgettable — that is itself a failure. A hook that doesn't make someone NEED to know what happens next is not doing its job, regardless of how well-crafted the prose is.
+
+${JUDGE_PREMORTEM}
 
 Score each 0–10: specificity, drawability, page_turn, mechanism, freshness, user_fit.
 Identify the most_generic_part (quote the weakest phrase from the hook).

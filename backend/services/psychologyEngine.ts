@@ -976,4 +976,270 @@ export function formatEngineDialsForPrompt(
   return lines.join("\n");
 }
 
+// ─── Background consolidation (runs during user think-time) ───
+
+import {
+  CONSOLIDATION_SYSTEM,
+  CONSOLIDATION_USER_TEMPLATE,
+  CONSOLIDATION_SCHEMA,
+} from "./consolidationPrompts";
+import type { LLMClient } from "./llmClient";
+import type {
+  ConsolidationResult,
+  ConsolidatedSignal,
+  ConsolidationSnapshot,
+} from "../../shared/types/userPsychology";
+
+/**
+ * Run background psychology consolidation. Called async after each clarifier
+ * response — does NOT block the user-facing response.
+ *
+ * The LLM receives the full signal store + recent reads and decides what
+ * to do: merge, prune, promote, suggest probes, or do nothing.
+ *
+ * Returns the ConsolidationSnapshot, or null if the consolidation was
+ * skipped (too early, no signals, or LLM call failed).
+ */
+export async function runConsolidation(
+  ledger: UserPsychologyLedger,
+  turnNumber: number,
+  module: "hook" | "character" | "character_image" | "world",
+  llm: LLMClient,
+): Promise<ConsolidationSnapshot | null> {
+  // Guard: skip if no signals to consolidate
+  if (!ledger.signalStore || ledger.signalStore.length === 0) {
+    return null;
+  }
+
+  // Guard: skip on first turn — not enough data
+  if (turnNumber <= 1) {
+    return null;
+  }
+
+  // Guard: skip if last consolidation was this same turn (prevent double-fire)
+  if (ledger.lastConsolidation?.afterTurn === turnNumber) {
+    return null;
+  }
+
+  ensureLedgerShape(ledger);
+
+  // Build the prompt
+  const signalStoreJson = JSON.stringify(
+    ledger.signalStore.map(s => ({
+      id: s.id,
+      hypothesis: s.hypothesis,
+      confidence: s.confidence,
+      status: s.status,
+      category: s.category,
+      scope: s.scope,
+      adaptationConsequence: s.adaptationConsequence,
+      contradictionCriteria: s.contradictionCriteria,
+      evidenceCount: s.evidenceEvents.length,
+      supportingCount: s.evidenceEvents.filter(e => e.valence === "supports").length,
+      contradictingCount: s.evidenceEvents.filter(e => e.valence === "contradicts").length,
+      firstSeen: s.firstSeen,
+      lastUpdated: s.lastUpdated,
+      // Include last 2 evidence events for context
+      recentEvidence: s.evidenceEvents.slice(-2).map(e => ({
+        turn: e.turn,
+        action: e.action,
+        valence: e.valence,
+      })),
+    })),
+    null,
+    2
+  );
+
+  // Recent reads (last 2-3)
+  const recentReads = ledger.reads.slice(-3).map(r => ({
+    turnNumber: r.turnNumber,
+    module: r.module,
+    signals: r.signals?.slice(0, 3) ?? [],
+    behaviorSummary: r.behaviorSummary,
+    adaptationPlan: r.adaptationPlan,
+  }));
+
+  const heuristicsJson = JSON.stringify({
+    typeRatio: ledger.heuristics.typeRatio,
+    avgResponseLength: ledger.heuristics.avgResponseLength,
+    deferralRate: ledger.heuristics.deferralRate,
+    changeRate: ledger.heuristics.changeRate,
+    totalInteractions: ledger.heuristics.totalInteractions,
+    engagementTrend: ledger.heuristics.engagementTrend,
+    satisfaction: ledger.heuristics.satisfaction,
+  }, null, 2);
+
+  const userPrompt = CONSOLIDATION_USER_TEMPLATE
+    .replace("{{SIGNAL_STORE_JSON}}", signalStoreJson)
+    .replace("{{RECENT_READS_JSON}}", JSON.stringify(recentReads, null, 2))
+    .replace("{{HEURISTICS_JSON}}", heuristicsJson)
+    .replace("{{MODULE}}", module)
+    .replace("{{TURN_NUMBER}}", String(turnNumber));
+
+  try {
+    const raw = await llm.call("psych_consolidator", CONSOLIDATION_SYSTEM, userPrompt, {
+      temperature: 0.3,  // low temp — this is analytical, not creative
+      maxTokens: 2000,
+      jsonSchema: CONSOLIDATION_SCHEMA,
+    });
+
+    const result: ConsolidationResult = JSON.parse(raw);
+
+    // Apply the consolidation to the ledger
+    applyConsolidation(ledger, result, turnNumber);
+
+    // Store the snapshot
+    const snapshot: ConsolidationSnapshot = {
+      timestamp: new Date().toISOString(),
+      afterTurn: turnNumber,
+      module,
+      result,
+      probeConsumed: false,
+    };
+
+    ledger.lastConsolidation = snapshot;
+
+    console.log(
+      `[PSYCH] Consolidation after turn ${turnNumber}: ` +
+      `${ledger.signalStore.length} signals, ` +
+      `probe=${result.suggestedProbe ? "yes" : "no"}, ` +
+      `reasoning=${result.reasoning?.slice(0, 80) ?? "none"}`
+    );
+
+    return snapshot;
+  } catch (err) {
+    // Consolidation failure is non-fatal — the system works without it
+    console.error(`[PSYCH] Consolidation failed (turn ${turnNumber}):`, err);
+    return null;
+  }
+}
+
+/**
+ * Apply the LLM's consolidation result to the ledger.
+ * Replaces the signal store with the consolidated version,
+ * preserving evidence events from the original signals.
+ */
+function applyConsolidation(
+  ledger: UserPsychologyLedger,
+  result: ConsolidationResult,
+  turnNumber: number,
+): void {
+  if (!result.updatedSignals || result.updatedSignals.length === 0) {
+    return; // LLM returned empty — don't wipe the store
+  }
+
+  // Build a lookup of existing signals by ID for evidence preservation
+  const existingById = new Map<string, BehaviorSignal>();
+  for (const s of ledger.signalStore) {
+    existingById.set(s.id, s);
+  }
+
+  // Build the new signal store
+  const newStore: BehaviorSignal[] = [];
+
+  for (const cs of result.updatedSignals) {
+    // Collect evidence events: from the signal itself + any absorbed signals
+    const allEvidence: EvidenceEvent[] = [];
+
+    // Evidence from the primary signal (if it existed)
+    const primary = existingById.get(cs.id);
+    if (primary) {
+      allEvidence.push(...primary.evidenceEvents);
+    }
+
+    // Evidence from absorbed signals
+    for (const absorbedId of cs.absorbedIds) {
+      const absorbed = existingById.get(absorbedId);
+      if (absorbed) {
+        allEvidence.push(...absorbed.evidenceEvents);
+      }
+    }
+
+    // Deduplicate evidence events by turn + action
+    const seen = new Set<string>();
+    const dedupedEvidence: EvidenceEvent[] = [];
+    for (const ev of allEvidence) {
+      const key = `${ev.turn}:${ev.action.slice(0, 50)}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        dedupedEvidence.push(ev);
+      }
+    }
+
+    // If no existing evidence (new merge ID?), create a synthetic event
+    if (dedupedEvidence.length === 0) {
+      dedupedEvidence.push({
+        turn: turnNumber,
+        module: "hook", // best guess
+        action: "consolidated from prior observations",
+        valence: "supports",
+      });
+    }
+
+    const signal: BehaviorSignal = {
+      id: cs.id,
+      hypothesis: cs.hypothesis,
+      evidenceEvents: dedupedEvidence,
+      confidence: Math.max(0, Math.min(1, cs.confidence)),
+      scope: cs.scope,
+      category: cs.category,
+      status: cs.status,
+      adaptationConsequence: cs.adaptationConsequence,
+      contradictionCriteria: cs.contradictionCriteria,
+      firstSeen: primary?.firstSeen ?? turnNumber,
+      lastUpdated: turnNumber,
+      suppressionReason: cs.status === "suppressed"
+        ? `Suppressed by consolidation at turn ${turnNumber}`
+        : undefined,
+    };
+
+    newStore.push(signal);
+  }
+
+  // Replace the store (cap at 8 as specified in prompt)
+  ledger.signalStore = newStore.slice(0, 8);
+}
+
+/**
+ * Format the suggested probe for injection into the next clarifier prompt.
+ * Returns empty string if no probe is pending or it was already consumed.
+ */
+export function formatSuggestedProbeForPrompt(
+  ledger: UserPsychologyLedger | undefined
+): string {
+  if (!ledger?.lastConsolidation) return "";
+  if (ledger.lastConsolidation.probeConsumed) return "";
+
+  const probe = ledger.lastConsolidation.result.suggestedProbe;
+  if (!probe) return "";
+
+  const ambiguity = ledger.lastConsolidation.result.unresolvedAmbiguity;
+
+  const lines: string[] = [];
+  lines.push("═══ BACKGROUND PSYCHOLOGY ANALYSIS (steering hint — use or ignore) ═══");
+
+  if (ambiguity) {
+    lines.push(`Unresolved: ${ambiguity.description}`);
+    lines.push(`Why it matters: ${ambiguity.whyItMatters}`);
+  }
+
+  lines.push(`Suggested angle: ${probe.angle}`);
+  lines.push(`What responses would tell us: ${probe.interpretationGuide}`);
+  lines.push("");
+  lines.push("This is a HINT from background analysis. If it fits your creative moment,");
+  lines.push("weave it into your question or assumptions naturally. If it doesn't fit, ignore it.");
+  lines.push("Do NOT make it sound like a personality test.");
+
+  return lines.join("\n");
+}
+
+/**
+ * Mark the current probe as consumed so it isn't re-injected.
+ */
+export function markProbeConsumed(ledger: UserPsychologyLedger): void {
+  if (ledger.lastConsolidation) {
+    ledger.lastConsolidation.probeConsumed = true;
+  }
+}
+
 export { createEmptyLedger };

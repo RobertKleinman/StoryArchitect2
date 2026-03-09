@@ -17,6 +17,9 @@ import {
   UPSTREAM_DEVELOPMENT_TARGETS_INSTRUCTIONS,
   BUILDER_UPSTREAM_TARGETS_INSTRUCTIONS,
   JUDGE_UPSTREAM_TARGETS_INSTRUCTIONS,
+  QUESTION_VALUE_CHECK,
+  PREMORTEM_CHECK,
+  JUDGE_PREMORTEM,
 } from "./psychologyPromptFragments";
 const PSYCHOLOGY_STRATEGY_INSTRUCTIONS = ADAPTATION_PLAN_INSTRUCTIONS;
 
@@ -126,6 +129,8 @@ Do whatever creates the most vivid visual moment:
 STEP 4 — INFER BEFORE ASKING
 The character profiles tell you A LOT about how they should look. Don't ask what you can figure out. Fold visual inferences into assumptions.
 
+${QUESTION_VALUE_CHECK}
+
 STEP 5 — SURFACE ASSUMPTIONS
 Every turn, surface assumptions about character visuals.
 
@@ -175,6 +180,8 @@ QUALITY GATE — before ready_for_images = true:
   ☐ Each character has at least one signature visual element
   ☐ Visuals reflect character psychology (not just generic attractiveness)
   ☐ The user has had meaningful input on visual direction
+
+  ${PREMORTEM_CHECK}
 
 ═══════════════════════════════════════════
 GENERATION CONTEXT
@@ -372,6 +379,8 @@ HARD-FAIL if ANY of these are true:
 4. No character has a signature visual element — they all look generic
 5. The cast doesn't look like they belong in the same art style/world
 6. image_generation_prompts are too vague to produce distinctive results
+
+${JUDGE_PREMORTEM}
 
 Score each 0–10:
 - visual_distinctiveness: Can you tell these characters apart in silhouette? Different palettes? Different visual energy?

@@ -17,6 +17,9 @@ import {
   UPSTREAM_DEVELOPMENT_TARGETS_INSTRUCTIONS,
   BUILDER_UPSTREAM_TARGETS_INSTRUCTIONS,
   JUDGE_UPSTREAM_TARGETS_INSTRUCTIONS,
+  QUESTION_VALUE_CHECK,
+  PREMORTEM_CHECK,
+  JUDGE_PREMORTEM,
 } from "./psychologyPromptFragments";
 const PSYCHOLOGY_STRATEGY_INSTRUCTIONS = ADAPTATION_PLAN_INSTRUCTIONS;
 
@@ -145,6 +148,8 @@ Do whatever is most FUN right now:
 STEP 4 — INFER BEFORE ASKING
 The hook + user seed tell you A LOT. Don't ask what you can figure out. Fold your inferences into assumptions and let the user react.
 
+${QUESTION_VALUE_CHECK}
+
 STEP 5 — SURFACE ASSUMPTIONS
 Every turn, surface assumptions about characters AND relationships.
 
@@ -210,6 +215,8 @@ QUALITY GATE — before ready_for_characters = true:
     ⚠ A relationship is flat — allies or enemies with no subtext
     ⚠ A supporting character feels like furniture
     ⚠ A character doesn't serve the hook's emotional promise
+
+  ${PREMORTEM_CHECK}
 
   LEAVE UNRESOLVED (on purpose — this is fuel for later):
     1. How relationships will break or evolve
@@ -475,6 +482,8 @@ HARD-FAIL if ANY of these are true:
 
 OBSESSION TEST (apply to the cast as a whole):
 Before scoring, ask yourself: "Would a reader think about these characters in the shower? Would they argue with a friend about who's right?" If the cast is competent but forgettable — well-crafted profiles that don't make you FEEL anything — that's a failure regardless of how many dials are filled in.
+
+${JUDGE_PREMORTEM}
 
 Score each 0–10 (relationship_dynamics is the MOST important score — a cast with great individuals but flat relationships is worse than the reverse):
 - psychological_depth: Internal contradictions? Paradoxes that make you obsess? Supporting characters as alive as leads?

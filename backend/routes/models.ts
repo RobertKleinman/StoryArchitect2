@@ -10,6 +10,7 @@ const MODEL_CONFIG_KEYS: ReadonlySet<string> = new Set<keyof ModelConfig>([
   "char_clarifier", "char_builder", "char_judge", "char_polish", "char_summary",
   "img_clarifier", "img_builder", "img_judge", "img_summary",
   "world_clarifier", "world_builder", "world_judge", "world_polish", "world_summary",
+  "psych_consolidator",
 ]);
 
 /** GET /api/models — current per-role model config */
