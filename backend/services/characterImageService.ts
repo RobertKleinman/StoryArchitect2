@@ -408,19 +408,24 @@ export class CharacterImageService {
     turnNumber: number,
     module: "hook" | "character" | "character_image" | "world",
   ): Promise<void> {
-    const session = await this.imageStore.get(projectId);
-    if (!session?.psychologyLedger) return;
+    const sessionForConsolidation = await this.imageStore.get(projectId);
+    if (!sessionForConsolidation?.psychologyLedger) return;
 
     const snapshot = await runConsolidation(
-      session.psychologyLedger,
+      sessionForConsolidation.psychologyLedger,
       turnNumber,
       module,
       this.llm,
     );
 
     if (snapshot) {
-      session.lastSavedAt = new Date().toISOString();
-      await this.imageStore.save(session);
+      // Re-read latest session to avoid overwriting concurrent changes
+      const freshSession = await this.imageStore.get(projectId);
+      if (!freshSession) return;
+
+      freshSession.psychologyLedger = sessionForConsolidation.psychologyLedger;
+      freshSession.lastSavedAt = new Date().toISOString();
+      await this.imageStore.save(freshSession);
     }
   }
 

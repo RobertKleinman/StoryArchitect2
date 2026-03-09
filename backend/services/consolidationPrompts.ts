@@ -138,63 +138,64 @@ Look at the signals. Decide what's worth doing. Return your consolidation JSON.`
  * JSON schema for structured output from consolidation LLM call.
  * All fields except updatedSignals are optional to support adaptive behavior.
  */
+/**
+ * Plain JSON Schema for consolidation structured output.
+ * Convention: all schemas are plain objects (type: "object" at top level).
+ * Providers wrap them in their own format (Anthropic: output_format, OpenAI: response_format).
+ */
 export const CONSOLIDATION_SCHEMA = {
-  name: "psychology_consolidation",
-  strict: true,
-  schema: {
-    type: "object",
-    properties: {
-      updatedSignals: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {
-            id: { type: "string" },
-            hypothesis: { type: "string" },
-            absorbedIds: { type: "array", items: { type: "string" } },
-            confidence: { type: "number" },
-            status: { type: "string", enum: ["candidate", "active", "stable", "suppressed"] },
-            category: {
-              type: "string",
-              enum: [
-                "content_preferences", "control_orientation", "power_dynamics",
-                "tonal_risk", "narrative_ownership", "engagement_satisfaction",
-              ],
-            },
-            scope: { type: "string", enum: ["this_story", "this_genre", "global"] },
-            adaptationConsequence: { type: "string" },
-            contradictionCriteria: { type: "string" },
+  type: "object",
+  properties: {
+    updatedSignals: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          hypothesis: { type: "string" },
+          absorbedIds: { type: "array", items: { type: "string" } },
+          confidence: { type: "number" },
+          status: { type: "string", enum: ["candidate", "active", "stable", "suppressed"] },
+          category: {
+            type: "string",
+            enum: [
+              "content_preferences", "control_orientation", "power_dynamics",
+              "tonal_risk", "narrative_ownership", "engagement_satisfaction",
+            ],
           },
-          required: [
-            "id", "hypothesis", "absorbedIds", "confidence", "status",
-            "category", "scope", "adaptationConsequence", "contradictionCriteria",
-          ],
-          additionalProperties: false,
+          scope: { type: "string", enum: ["this_story", "this_genre", "global"] },
+          adaptationConsequence: { type: "string" },
+          contradictionCriteria: { type: "string" },
         },
-      },
-      unresolvedAmbiguity: {
-        type: ["object", "null"],
-        properties: {
-          description: { type: "string" },
-          whyItMatters: { type: "string" },
-          signalIds: { type: "array", items: { type: "string" } },
-        },
-        required: ["description", "whyItMatters", "signalIds"],
+        required: [
+          "id", "hypothesis", "absorbedIds", "confidence", "status",
+          "category", "scope", "adaptationConsequence", "contradictionCriteria",
+        ],
         additionalProperties: false,
       },
-      suggestedProbe: {
-        type: ["object", "null"],
-        properties: {
-          angle: { type: "string" },
-          targetSignalIds: { type: "array", items: { type: "string" } },
-          interpretationGuide: { type: "string" },
-        },
-        required: ["angle", "targetSignalIds", "interpretationGuide"],
-        additionalProperties: false,
-      },
-      reasoning: { type: ["string", "null"] },
     },
-    required: ["updatedSignals", "unresolvedAmbiguity", "suggestedProbe", "reasoning"],
-    additionalProperties: false,
+    unresolvedAmbiguity: {
+      type: ["object", "null"],
+      properties: {
+        description: { type: "string" },
+        whyItMatters: { type: "string" },
+        signalIds: { type: "array", items: { type: "string" } },
+      },
+      required: ["description", "whyItMatters", "signalIds"],
+      additionalProperties: false,
+    },
+    suggestedProbe: {
+      type: ["object", "null"],
+      properties: {
+        angle: { type: "string" },
+        targetSignalIds: { type: "array", items: { type: "string" } },
+        interpretationGuide: { type: "string" },
+      },
+      required: ["angle", "targetSignalIds", "interpretationGuide"],
+      additionalProperties: false,
+    },
+    reasoning: { type: ["string", "null"] },
   },
+  required: ["updatedSignals", "unresolvedAmbiguity", "suggestedProbe", "reasoning"],
+  additionalProperties: false,
 };

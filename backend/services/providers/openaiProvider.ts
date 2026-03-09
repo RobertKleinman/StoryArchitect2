@@ -42,9 +42,16 @@ export class OpenAICompatibleProvider implements LLMProvider {
       throw new Error(`Missing ${this.apiKeyEnvVar} environment variable`);
     }
 
+    // GPT-5+ models require max_completion_tokens instead of max_tokens.
+    // Detect by model name prefix. Grok models still use max_tokens.
+    const useNewTokenParam = model.startsWith("gpt-5") || model.startsWith("o3") || model.startsWith("o4");
+    const maxTokens = options?.maxTokens ?? 1024;
+
     const payload: Record<string, unknown> = {
       model,
-      max_tokens: options?.maxTokens ?? 1024,
+      ...(useNewTokenParam
+        ? { max_completion_tokens: maxTokens }
+        : { max_tokens: maxTokens }),
       temperature: options?.temperature ?? 0.7,
       messages: [
         { role: "system", content: systemPrompt },

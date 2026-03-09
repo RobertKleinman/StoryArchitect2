@@ -376,21 +376,26 @@ export class HookService {
     turnNumber: number,
     module: "hook" | "character" | "character_image" | "world",
   ): Promise<void> {
-    // Re-read session fresh (the main path may have moved on)
-    const session = await this.store.get(projectId);
-    if (!session?.psychologyLedger) return;
+    // Read session for consolidation input
+    const sessionForConsolidation = await this.store.get(projectId);
+    if (!sessionForConsolidation?.psychologyLedger) return;
 
     const snapshot = await runConsolidation(
-      session.psychologyLedger,
+      sessionForConsolidation.psychologyLedger,
       turnNumber,
       module,
       this.llm,
     );
 
     if (snapshot) {
-      // Save the updated ledger back
-      session.lastSavedAt = new Date().toISOString();
-      await this.store.save(session);
+      // Re-read the LATEST session to avoid overwriting concurrent changes.
+      // Only graft the updated psychology ledger onto the fresh read.
+      const freshSession = await this.store.get(projectId);
+      if (!freshSession) return;
+
+      freshSession.psychologyLedger = sessionForConsolidation.psychologyLedger;
+      freshSession.lastSavedAt = new Date().toISOString();
+      await this.store.save(freshSession);
     }
   }
 
