@@ -33,7 +33,7 @@ export interface ModelConfig {
 
 export function detectProvider(model: string): LLMProvider {
   if (model.startsWith("claude-")) return "anthropic";
-  if (model.startsWith("gpt-") || model.startsWith("o4-") || model.startsWith("o3-")) return "openai";
+  if (model.startsWith("gpt-") || model.startsWith("o4-") || model.startsWith("o3-") || model.startsWith("o1-")) return "openai";
   if (model.startsWith("gemini-")) return "gemini";
   if (model.startsWith("grok-")) return "grok";
   // Default to anthropic for unknown models (backwards compat)
@@ -50,26 +50,23 @@ export interface ProviderModelEntry {
 }
 
 export const PROVIDER_MODELS: ProviderModelEntry[] = [
-  // Anthropic (Claude)
+  // Anthropic (Claude) — current as of March 2026
   { id: "claude-sonnet-4-6",              label: "Claude Sonnet 4.6",   provider: "anthropic", tier: "balanced" },
-  { id: "claude-sonnet-4-5-20250929",     label: "Claude Sonnet 4.5",   provider: "anthropic", tier: "balanced" },
-  { id: "claude-sonnet-4-20250514",       label: "Claude Sonnet 4.0",   provider: "anthropic", tier: "balanced" },
   { id: "claude-opus-4-6",                label: "Claude Opus 4.6",     provider: "anthropic", tier: "powerful" },
   { id: "claude-haiku-4-5-20251001",      label: "Claude Haiku 4.5",    provider: "anthropic", tier: "fast" },
 
-  // OpenAI
-  { id: "gpt-4.1",                        label: "GPT-4.1",             provider: "openai", tier: "balanced" },
-  { id: "gpt-4.1-mini",                   label: "GPT-4.1 Mini",        provider: "openai", tier: "fast" },
-  { id: "gpt-4.1-nano",                   label: "GPT-4.1 Nano",        provider: "openai", tier: "fast" },
-  { id: "o4-mini",                        label: "o4-mini (reasoning)",  provider: "openai", tier: "balanced" },
+  // OpenAI — GPT-5 series (GPT-4.1 deprecated Feb 2026)
+  { id: "gpt-5.4",                        label: "GPT-5.4",             provider: "openai", tier: "powerful" },
+  { id: "gpt-5.4-pro",                    label: "GPT-5.4 Pro",         provider: "openai", tier: "powerful" },
 
-  // Google Gemini
-  { id: "gemini-2.5-flash",               label: "Gemini 2.5 Flash",    provider: "gemini", tier: "fast" },
-  { id: "gemini-2.5-pro",                 label: "Gemini 2.5 Pro",      provider: "gemini", tier: "powerful" },
+  // Google Gemini — 3.x series (2.5 generation deprecated)
+  { id: "gemini-3.1-pro-preview",         label: "Gemini 3.1 Pro",      provider: "gemini", tier: "powerful" },
+  { id: "gemini-3-flash-preview",         label: "Gemini 3 Flash",      provider: "gemini", tier: "fast" },
 
-  // Grok (xAI) — uses OpenAI-compatible API
-  { id: "grok-3-beta",                    label: "Grok 3 Beta",         provider: "grok", tier: "powerful" },
-  { id: "grok-3-mini-beta",              label: "Grok 3 Mini Beta",    provider: "grok", tier: "fast" },
+  // Grok (xAI) — Grok 4 series (uses OpenAI-compatible API)
+  { id: "grok-4",                         label: "Grok 4",              provider: "grok", tier: "powerful" },
+  { id: "grok-4-fast",                    label: "Grok 4 Fast",         provider: "grok", tier: "fast" },
+  { id: "grok-4-1-fast-reasoning",        label: "Grok 4.1 Fast",       provider: "grok", tier: "balanced" },
 ];
 
 /** Flat list of model IDs for validation */
@@ -87,6 +84,35 @@ export function modelsByProvider(): Record<LLMProvider, ProviderModelEntry[]> {
     grouped[m.provider].push(m);
   }
   return grouped;
+}
+
+// ── Role classification helpers ─────────────────────────────────────
+
+/** All judge roles across every module */
+export const JUDGE_ROLES: ReadonlyArray<keyof ModelConfig> = [
+  "judge", "char_judge", "img_judge", "world_judge",
+];
+
+/** All non-judge (creative) roles across every module */
+export const CREATIVE_ROLES: ReadonlyArray<keyof ModelConfig> = [
+  "clarifier", "builder", "summary", "polish",
+  "char_clarifier", "char_builder", "char_polish", "char_summary",
+  "img_clarifier", "img_builder", "img_summary",
+  "world_clarifier", "world_builder", "world_polish", "world_summary",
+];
+
+/** Build a partial ModelConfig setting all judge roles to one model */
+export function judgeConfig(modelId: string): Partial<ModelConfig> {
+  const cfg: Partial<ModelConfig> = {};
+  for (const role of JUDGE_ROLES) cfg[role] = modelId;
+  return cfg;
+}
+
+/** Build a partial ModelConfig setting all creative roles to one model */
+export function creativeConfig(modelId: string): Partial<ModelConfig> {
+  const cfg: Partial<ModelConfig> = {};
+  for (const role of CREATIVE_ROLES) cfg[role] = modelId;
+  return cfg;
 }
 
 // ── Default config ──────────────────────────────────────────────────

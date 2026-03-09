@@ -2178,6 +2178,66 @@ button:disabled {
   font-style: italic;
 }
 
+/* ─── Two-Track Model Selector (Creative vs Judge) ─── */
+
+.model-track {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.model-track-header {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.model-track-title {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.creative-track-title {
+  color: #6366f1;
+}
+
+.judge-track-title {
+  color: #d97706;
+}
+
+.model-track-desc {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #9ca3af;
+  line-height: 1.4;
+}
+
+.model-track-desc strong {
+  color: #6b7280;
+}
+
+.model-track-desc em {
+  color: #d97706;
+  font-weight: 500;
+}
+
+.model-track-divider {
+  height: 1px;
+  background: #e5e7eb;
+  margin: 0.3rem 0;
+}
+
+.model-selector-warning {
+  margin: 0.5rem 0 0;
+  font-size: 0.78rem;
+  color: #d97706;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  padding: 0.45rem 0.65rem;
+  line-height: 1.4;
+}
+
 /* ─── Connect Phase: Manual Input Fallback ─── */
 
 .link-btn {

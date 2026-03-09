@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { hookApi } from "../lib/hookApi";
 import type { LLMProvider, ProviderModelEntry, ModelConfig } from "../../shared/modelConfig";
+import { JUDGE_ROLES, CREATIVE_ROLES } from "../../shared/modelConfig";
 
 const PROVIDER_LABELS: Record<LLMProvider, string> = {
   anthropic: "Claude (Anthropic)",
@@ -11,16 +12,22 @@ const PROVIDER_LABELS: Record<LLMProvider, string> = {
 
 const PROVIDER_ORDER: LLMProvider[] = ["anthropic", "openai", "gemini", "grok"];
 
+type Track = "creative" | "judge";
+
 /**
- * Compact model selector shown at the top of each workshop module.
- * Lets the user pick a single model to use for ALL roles in the current module.
- * For testing purposes — swaps the entire pipeline to a different LLM provider/model.
+ * Two-track model selector: lets the user pick separate models for
+ * "Creative" stages (clarifier, builder, polish, summary) and
+ * "Judge" stages across all modules.
+ *
+ * This prevents the "grading its own homework" problem where the same
+ * model generates AND evaluates output.
  */
 export function ModelSelector() {
   const [available, setAvailable] = useState<Record<LLMProvider, ProviderModelEntry[]> | null>(null);
   const [currentConfig, setCurrentConfig] = useState<ModelConfig | null>(null);
-  const [selectedModel, setSelectedModel] = useState<string>("");
-  const [saving, setSaving] = useState(false);
+  const [creativeModel, setCreativeModel] = useState<string>("");
+  const [judgeModel, setJudgeModel] = useState<string>("");
+  const [saving, setSaving] = useState<Track | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(true);
 
@@ -30,53 +37,36 @@ export function ModelSelector() {
       .then(([avail, config]) => {
         setAvailable(avail.byProvider);
         setCurrentConfig(config);
-        // Use the clarifier model as the "active" display model
-        setSelectedModel(config.clarifier);
+        // Derive active selections from config
+        setCreativeModel(config.clarifier);
+        setJudgeModel(config.judge);
       })
       .catch(() => setError("Failed to load model list"));
   }, []);
 
-  const applyModel = async (modelId: string) => {
-    setSaving(true);
+  const applyModel = async (track: Track, modelId: string) => {
+    setSaving(track);
     setError(null);
     try {
-      // Set ALL roles to the same model for easy A/B testing across providers
-      const allRoles: Partial<ModelConfig> = {
-        clarifier: modelId,
-        builder: modelId,
-        judge: modelId,
-        summary: modelId,
-        polish: modelId,
-        char_clarifier: modelId,
-        char_builder: modelId,
-        char_judge: modelId,
-        char_polish: modelId,
-        char_summary: modelId,
-        img_clarifier: modelId,
-        img_builder: modelId,
-        img_judge: modelId,
-        img_summary: modelId,
-      };
-      const updated = await hookApi.setModels(allRoles);
+      const roles = track === "judge" ? JUDGE_ROLES : CREATIVE_ROLES;
+      const partial: Partial<ModelConfig> = {};
+      for (const role of roles) partial[role] = modelId;
+
+      const updated = await hookApi.setModels(partial);
       setCurrentConfig(updated);
-      setSelectedModel(modelId);
+      if (track === "creative") setCreativeModel(modelId);
+      else setJudgeModel(modelId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update model");
     } finally {
-      setSaving(false);
+      setSaving(null);
     }
   };
 
-  if (!available) {
-    return null; // Still loading — don't block the UI
-  }
+  if (!available) return null;
 
-  // Find the label for the currently selected model
   const allModels = Object.values(available).flat();
-  const currentEntry = allModels.find((m) => m.id === selectedModel);
-  const currentLabel = currentEntry
-    ? `${PROVIDER_LABELS[currentEntry.provider]} — ${currentEntry.label}`
-    : selectedModel;
+  const findLabel = (id: string) => allModels.find((m) => m.id === id)?.label ?? id;
 
   return (
     <div className="model-selector">
@@ -87,48 +77,104 @@ export function ModelSelector() {
       >
         <span className="model-selector-icon">{collapsed ? "\u2699\uFE0F" : "\u25BC"}</span>
         <span className="model-selector-current">
-          Model: <strong>{currentEntry?.label ?? selectedModel}</strong>
+          Creative: <strong>{findLabel(creativeModel)}</strong>
+          {" \u00B7 "}
+          Judge: <strong>{findLabel(judgeModel)}</strong>
         </span>
       </button>
 
       {!collapsed && (
         <div className="model-selector-panel">
-          <p className="model-selector-hint">
-            Select a model to use for all pipeline steps in this module.
-            Changing the model applies to all three modules (Hook, Character, Image).
-          </p>
-
           {error && <p className="model-selector-error">{error}</p>}
 
-          <div className="model-selector-providers">
-            {PROVIDER_ORDER.map((provider) => {
-              const models = available[provider];
-              if (!models || models.length === 0) return null;
-              return (
-                <div key={provider} className="model-provider-group">
-                  <h4 className="model-provider-label">{PROVIDER_LABELS[provider]}</h4>
-                  <div className="model-chips">
-                    {models.map((m) => (
-                      <button
-                        key={m.id}
-                        type="button"
-                        className={`model-chip ${m.id === selectedModel ? "active" : ""} tier-${m.tier}`}
-                        disabled={saving}
-                        onClick={() => void applyModel(m.id)}
-                      >
-                        {m.label}
-                        <span className="model-tier-badge">{m.tier}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
+          {/* ── Creative track ───────────────────────────── */}
+          <div className="model-track">
+            <div className="model-track-header">
+              <h3 className="model-track-title creative-track-title">Creative Model</h3>
+              <p className="model-track-desc">
+                Used for <strong>clarifier</strong>, <strong>builder</strong>, <strong>polish</strong>, and <strong>summary</strong> stages across all modules.
+                This model generates the actual creative content.
+              </p>
+            </div>
+            <ModelChipGrid
+              available={available}
+              selectedModel={creativeModel}
+              disabled={saving !== null}
+              onSelect={(id) => void applyModel("creative", id)}
+            />
+            {saving === "creative" && <p className="model-selector-saving">Applying to creative roles...</p>}
           </div>
 
-          {saving && <p className="model-selector-saving">Applying...</p>}
+          <div className="model-track-divider" />
+
+          {/* ── Judge track ──────────────────────────────── */}
+          <div className="model-track">
+            <div className="model-track-header">
+              <h3 className="model-track-title judge-track-title">Judge Model</h3>
+              <p className="model-track-desc">
+                Used for all <strong>judge</strong> stages. Evaluates and scores output from the creative model.
+                Use a <em>different</em> model from your creative model for best results.
+              </p>
+            </div>
+            <ModelChipGrid
+              available={available}
+              selectedModel={judgeModel}
+              disabled={saving !== null}
+              onSelect={(id) => void applyModel("judge", id)}
+            />
+            {saving === "judge" && <p className="model-selector-saving">Applying to judge roles...</p>}
+          </div>
+
+          {/* Same-model warning */}
+          {creativeModel && judgeModel && creativeModel === judgeModel && (
+            <p className="model-selector-warning">
+              Creative and Judge are using the same model. For better quality assessment,
+              consider using different models so the judge isn't grading its own homework.
+            </p>
+          )}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Reusable chip grid — renders provider groups with selectable model chips */
+function ModelChipGrid({
+  available,
+  selectedModel,
+  disabled,
+  onSelect,
+}: {
+  available: Record<LLMProvider, ProviderModelEntry[]>;
+  selectedModel: string;
+  disabled: boolean;
+  onSelect: (modelId: string) => void;
+}) {
+  return (
+    <div className="model-selector-providers">
+      {PROVIDER_ORDER.map((provider) => {
+        const models = available[provider];
+        if (!models || models.length === 0) return null;
+        return (
+          <div key={provider} className="model-provider-group">
+            <h4 className="model-provider-label">{PROVIDER_LABELS[provider]}</h4>
+            <div className="model-chips">
+              {models.map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  className={`model-chip ${m.id === selectedModel ? "active" : ""} tier-${m.tier}`}
+                  disabled={disabled}
+                  onClick={() => onSelect(m.id)}
+                >
+                  {m.label}
+                  <span className="model-tier-badge">{m.tier}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
