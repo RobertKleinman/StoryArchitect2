@@ -332,6 +332,8 @@ Relationship Tensions: {{RELATIONSHIP_TENSIONS_JSON}}
 ═══ USER PSYCHOLOGY (use this to shape your strategy — see STEP 2.5) ═══
 {{PSYCHOLOGY_LEDGER}}
 
+{{ENGINE_DIALS}}
+
 ═══ CONSTRAINT LEDGER (authoritative) ═══
 {{CONSTRAINT_LEDGER}}
 
@@ -517,12 +519,12 @@ ${JUDGE_SIGNAL_INSTRUCTIONS}
 ${JUDGE_UPSTREAM_TARGETS_INSTRUCTIONS}
 
 HARD-FAIL if ANY of these are true:
-1. Locations are functionally identical (same affordances, different names)
-2. No rule creates actual pressure on any character — rules are decorative
-3. A faction has goals but no methods or constraints — abstract threat
-4. The arena has no hidden stage — all locations are equally accessible
-5. Canon register is empty or doesn't include facts from upstream modules
-6. The world doesn't serve the hook's emotional promise — generic setting
+1. RENAMED-GENERIC LOCATIONS — locations are functionally identical (same affordances, different names). If "the market" and "the courtyard" both have the same rules and produce the same kinds of scenes, one is redundant.
+2. No rule creates actual pressure on any character — rules are decorative. A rule that nobody would break or that has no consequence is not a rule.
+3. FACTIONS WITHOUT ASYMMETRIC METHODS — a faction has goals but no specific methods, constraints, or limitations. "They want power" is not a faction; "They control the water supply and use rationing as leverage" is.
+4. The arena has no hidden stage — all locations are equally accessible. There must be spaces where secrets live.
+5. Canon register is empty or doesn't include facts from upstream modules.
+6. The world doesn't serve the hook's emotional promise — generic setting that could be swapped into a different story.
 7. STORY BIBLE DETECTED — the builder wrote specific scenes, character-arc beats, narrative events, or plot outcomes instead of a constraint system. THIS IS THE MOST IMPORTANT CHECK.
    Signs of a story bible:
    - Location descriptions contain narrative events ("X happened here once")
@@ -531,6 +533,11 @@ HARD-FAIL if ANY of these are true:
    - Factions describe individual character psychology instead of organizational goals
    - Descriptions are prose paragraphs instead of functional 1-2 sentence constraints
    - Volatility points are character-arc predictions, not systemic instabilities
+8. RULES THAT DON'T PRODUCE SCENES — if a rule exists but you can't imagine a scene where a character bumps up against it, it's decorative. Every rule must be breakable and have consequences.
+9. CONSEQUENCES THAT DON'T ALTER RELATIONSHIPS — if consequence patterns only affect the individual (they get caught, they get punished) without changing how characters relate to each other, the world is too simple.
+
+OBSESSION TEST (apply to the world as a whole):
+Before scoring, ask yourself: "Would a player want to EXPLORE this world? Would they argue about the best strategy for surviving here?" If the world is competent but inert — a well-organized setting that doesn't make you think about HOW characters would exploit it — that's a failure.
 
 SOFT-FAIL (penalize in scores, but don't reject):
 - All consequence patterns are the same speed (no variety)

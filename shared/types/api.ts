@@ -105,6 +105,7 @@ export interface CharacterGenerateResponse {
     weakest_character: string;
     one_fix_instruction: string;
   } | null;
+  rerollCount: number;
 }
 
 /** POST /api/character/lock */

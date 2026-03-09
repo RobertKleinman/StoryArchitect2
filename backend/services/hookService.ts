@@ -43,6 +43,7 @@ import {
   checkPersistence,
   formatPsychologyLedgerForPrompt,
   formatSignalsForBuilderJudge,
+  formatEngineDialsForPrompt,
 } from "./psychologyEngine";
 import type { RawSignalObservation, BehaviorSummary, AdaptationPlan } from "../../shared/types/userPsychology";
 
@@ -711,6 +712,7 @@ export class HookService {
       .replace("{{PRIOR_TURNS}}", priorTurns)
       .replace("{{CONSTRAINT_LEDGER}}", ledgerText)
       .replace("{{PSYCHOLOGY_LEDGER}}", psychText)
+      .replace("{{ENGINE_DIALS}}", formatEngineDialsForPrompt(session.psychologyLedger))
       .replace("{{CURRENT_STATE_JSON}}", currentStateJson)
       .replace("{{BAN_LIST}}", bans)
       .replace("{{TURN_NUMBER}}", turnNumber);

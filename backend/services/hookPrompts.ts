@@ -321,6 +321,8 @@ Conversation so far:
 ═══ USER PSYCHOLOGY (use this to shape your strategy — see STEP 1.5) ═══
 {{PSYCHOLOGY_LEDGER}}
 
+{{ENGINE_DIALS}}
+
 Accumulated state: {{CURRENT_STATE_JSON}}
 Banned phrases: {{BAN_LIST}}
 Turn: {{TURN_NUMBER}}
@@ -345,11 +347,37 @@ COLLISION METHOD:
 3. AT LEAST TWO of your extracted elements must be mechanisms (a rule, ritual, enforcement system, transaction, or proof system) — not aesthetics, tone, or visual style. Aesthetic-only extractions don't count toward the minimum.
 4. Collide these elements into a premise that is not attributable to any single source.
 
-OUTPUT FIELDS:
-- hook_sentence — A tight 1–2 sentence "What if...?" that makes someone say "I NEED to read that." This is the elevator pitch. It must be specific, vivid, and irresistible. NOT a genre label or setting description.
-- emotional_promise — The core feeling the reader will experience. Not a genre ("romance") but a specific emotional texture ("The guilty thrill of wanting someone you're supposed to destroy" or "The slow, sick realization that you chose this cage yourself"). This is the reason someone keeps reading.
-- premise — The expanded story setup that delivers on the hook.
-- opening_image, page_1_splash_prompt, page_turn_trigger, why_addictive, collision_sources — Production details (see below).
+OUTPUT FIELDS (with HARD length budgets — respect these):
+- hook_sentence — 1–2 sentences, max 40 words. A "What if...?" that makes someone say "I NEED to read that." Specific, vivid, irresistible. NOT a genre label or setting description.
+- emotional_promise — 1–2 sentences, max 30 words. Not a genre ("romance") but a specific emotional texture ("The guilty thrill of wanting someone you're supposed to destroy"). This is the reason someone keeps reading.
+- premise — 150–200 words (HARD CAP: 230). The expanded story setup that delivers on the hook. Signal depth without resolving it. Every sentence must earn its place.
+- opening_image — Max 40 words. A specific visual moment: character + action + place. Not mood. Not theme.
+- page_1_splash_prompt — Max 50 words. A drawable scene description for an artist. Specific enough to sketch from.
+- page_turn_trigger — Max 25 words. A CONCRETE EVENT that happens, not "tension rises."
+- why_addictive — 3–5 items, each max 15 words. Why a reader can't put this down.
+- collision_sources — 3–5 entries. Each source + element_extracted, max 20 words per entry.
+
+═══ FIELD-BY-FIELD GOOD/BAD EXAMPLES ═══
+
+hook_sentence:
+  GOOD: "What if a court scribe survived a bloodthirsty warlord by being the only person who genuinely worships his feet — and a rival warlord just made a formal offer to buy him?"
+  BAD: "What if someone discovered a dark secret that changed everything?" (generic, no mechanism)
+
+emotional_promise:
+  GOOD: "The guilty thrill of wanting someone you're supposed to destroy"
+  BAD: "A psychological thriller with romantic undertones" (genre label, not a feeling)
+
+premise:
+  GOOD: [Contains a specific mechanism/rule, character trapped by situation, stakes are personal and concrete, signals depth without explaining the twist]
+  BAD: [Reads like a genre description, stakes are abstract ("everything changes"), over-explains the theme/moral, no specific mechanism that makes THIS story unique]
+
+opening_image:
+  GOOD: "The protagonist kneels on cold stone, carefully polishing a warlord's boots while counting footsteps in the corridor behind him"
+  BAD: "A dark chamber filled with tension" (mood, not action)
+
+page_turn_trigger:
+  GOOD: "A sealed letter arrives bearing the rival warlord's personal seal — addressed not to the warlord, but to the scribe"
+  BAD: "The tension escalates when a secret is revealed" (generic event)
 
 HARD CONSTRAINTS:
 - hook_sentence must be a specific "what if?" situation, not a genre label or theme statement.
@@ -397,13 +425,18 @@ export const HOOK_JUDGE_SYSTEM = `You are HookJudge. Be mean. Your job is to pre
 ${JUDGE_SIGNAL_INSTRUCTIONS}
 
 HARD-FAIL if ANY of these are true:
-1. Premise is genre-average — it could describe dozens of stories, not just this one.
-2. opening_image or page_1_splash_prompt is not a drawable action scene (no mood boards, no abstractions).
-3. page_turn_trigger is generic: "danger escalates", "a secret is revealed", "everything changes", "they realize the truth."
-4. No concrete mechanism — the story has no specific ritual, rule, object, enforcement system, or transaction that makes it unique.
+1. GENRE-AVERAGE DETECTED — the premise could describe dozens of stories. If you can swap the setting/characters and the premise still works, it's generic. Hard-fail.
+2. opening_image or page_1_splash_prompt is not a drawable action scene (no mood boards, no abstractions, no "a figure stands in shadow").
+3. page_turn_trigger is generic: "danger escalates", "a secret is revealed", "everything changes", "they realize the truth", "tension mounts", "the stakes rise."
+4. No concrete mechanism — the story has no specific ritual, rule, object, enforcement system, or transaction that makes it unique. "There are consequences" is not a mechanism.
 5. collision_sources are a "vibe collage" — if the extracted elements are aesthetics, tones, or visual styles ("inspired by noir," "the loneliness of Blade Runner," "Twin Peaks weirdness") rather than concrete mechanisms (rules, rituals, enforcement systems, transactions, proof systems), hard-fail. At least 2 of the collision sources must extract a mechanism, not a vibe.
+6. EMOTIONAL PROMISE IS A GENRE LABEL — "a dark romance" or "a psychological thriller" is not an emotional promise. It must be a specific FEELING ("the guilty thrill of wanting someone you're supposed to destroy").
+7. WHY_ADDICTIVE IS FILLER — if any item uses buzzwords instead of story-specific reasons ("compelling characters", "high stakes", "unexpected twists"), flag it. Every reason must reference something SPECIFIC to this story.
 
-Score each 0–10: specificity, drawability, page_turn, mechanism, freshness.
+OBSESSION TEST (apply to every candidate):
+Before scoring, ask yourself: "Would a reader describe this hook to a friend at 2am?" If the answer is no — if it's competent but forgettable — that is itself a failure. A hook that doesn't make someone NEED to know what happens next is not doing its job, regardless of how well-crafted the prose is.
+
+Score each 0–10: specificity, drawability, page_turn, mechanism, freshness, user_fit.
 Identify the most_generic_part (quote the weakest phrase from the hook).
 Provide one_fix_instruction (one concrete action to improve it).
 

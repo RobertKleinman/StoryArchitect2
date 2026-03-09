@@ -46,6 +46,7 @@ import {
   checkPersistence,
   formatPsychologyLedgerForPrompt,
   formatSignalsForBuilderJudge,
+  formatEngineDialsForPrompt,
   snapshotBaselineForNewModule,
 } from "./psychologyEngine";
 import type { RawSignalObservation, BehaviorSummary, AdaptationPlan } from "../../shared/types/userPsychology";
@@ -170,6 +171,7 @@ export class CharacterService {
           turns: [],
           constraintLedger: importedLedger,
           status: "clarifying",
+          rerollCount: 0,
           psychologyLedger: importedPsychLedger,
         };
       }
@@ -407,7 +409,7 @@ export class CharacterService {
     };
   }
 
-  // ─── Generate (single pass + judge) ───
+  // ─── Generate (tournament: adaptive multi-candidate + judge) ───
 
   async runGenerate(
     projectId: string,
@@ -419,154 +421,10 @@ export class CharacterService {
       throw new CharacterServiceError("NOT_FOUND", "Character session not found");
     }
 
-    session.status = "generating";
-    session.lastSavedAt = new Date().toISOString();
-    await this.charStore.save(session);
-
-    // Build prompts
-    const builderPrompt = this.buildBuilderPrompt(session);
-    const builderSystem = promptOverrides?.builder?.system ?? builderPrompt.system;
-    const builderUser = promptOverrides?.builder?.user ?? builderPrompt.user;
-
-    // Adaptive maxTokens based on cast size — each character profile is ~1,500-2,000 tokens
-    const uniqueRoles = new Set<string>();
-    for (const turn of session.turns) {
-      for (const ch of turn.clarifierResponse.characters_surfaced ?? []) {
-        uniqueRoles.add(ch.role);
-      }
-    }
-    const castSize = Math.max(uniqueRoles.size, 2); // at least 2
-    const builderMaxTokens = Math.min(4000 + castSize * 1500, 16000);
-
-    // Single builder pass (no tournament for characters)
-    let builderRaw: string;
-    try {
-      builderRaw = await this.llm.call("char_builder", builderSystem, builderUser, {
-        temperature: 0.8,
-        maxTokens: builderMaxTokens,
-        modelOverride,
-        jsonSchema: CHARACTER_BUILDER_SCHEMA,
-      });
-    } catch (err) {
-      console.error("CHAR BUILDER LLM ERROR:", err);
-      session.status = "clarifying";
-      await this.charStore.save(session);
-      throw new CharacterServiceError("LLM_CALL_FAILED", "Character builder call failed");
-    }
-
-    console.log("CHAR BUILDER RAW (first 500):", builderRaw.slice(0, 500));
-
-    let builderResult = this.parseAndValidate<CharacterBuilderOutput>(builderRaw, [
-      "characters", "ensemble_dynamic", "relationship_tensions",
-      "structural_diversity", "collision_sources",
-    ]);
-
-    if (!builderResult) {
-      console.error("CHAR BUILDER PARSE FAILED. Full raw length:", builderRaw.length);
-      console.error("CHAR BUILDER RAW (first 2000):", builderRaw.slice(0, 2000));
-      // Try to parse just to see the error
-      try { JSON.parse(builderRaw); console.log("JSON.parse succeeded but field check failed"); } catch (e) { console.error("JSON.parse failed:", e); }
-    }
-
-    // Convert characters from LLM array format to Record<role, profile>
-    if (builderResult && Array.isArray(builderResult.characters)) {
-      const charsRecord: Record<string, any> = {};
-      for (const profile of builderResult.characters as any[]) {
-        if (profile.role) {
-          charsRecord[profile.role] = profile;
-        }
-      }
-      builderResult.characters = charsRecord;
-    }
-
-    if (!builderResult) {
-      session.status = "clarifying";
-      await this.charStore.save(session);
-      throw new CharacterServiceError("LLM_PARSE_ERROR", "Failed to parse character builder response");
-    }
-
-    // Record builder prompt history
-    this.recordPromptHistory(
-      session, "builder", builderPrompt.system, builderPrompt.user,
-      promptOverrides?.builder,
-      Object.keys(builderResult.characters).join(", ")
-    );
-
-    // Save after builder
-    session.lastSavedAt = new Date().toISOString();
-    await this.charStore.save(session);
-
-    // Judge pass
-    const judgePrompt = this.buildJudgePrompt(builderResult, session);
-    const judgeSystem = promptOverrides?.judge?.system ?? judgePrompt.system;
-    const judgeUser = promptOverrides?.judge?.user ?? judgePrompt.user;
-
-    let judgeRaw: string;
-    try {
-      judgeRaw = await this.llm.call("char_judge", judgeSystem, judgeUser, {
-        temperature: 0.3,
-        maxTokens: 1200,
-        modelOverride,
-        jsonSchema: CHARACTER_JUDGE_SCHEMA,
-      });
-    } catch (err) {
-      console.error("CHAR JUDGE LLM ERROR:", err);
-      // Non-fatal: reveal without judge
-      session.revealedCharacters = builderResult;
-      session.status = "revealed";
-      session.lastSavedAt = new Date().toISOString();
-      await this.charStore.save(session);
-      return {
-        characters: builderResult,
-        judge: null,
-      };
-    }
-
-    const judgeResult = this.parseAndValidate<CharacterJudgeOutput>(judgeRaw, [
-      "pass", "hard_fail_reasons", "scores", "weakest_character", "one_fix_instruction",
-    ]);
-
-    // Record judge prompt history
-    this.recordPromptHistory(
-      session, "judge", judgePrompt.system, judgePrompt.user,
-      promptOverrides?.judge,
-      judgeResult ? `${judgeResult.pass ? "PASS" : "FAIL"} weakest=${judgeResult.weakest_character}` : "PARSE_FAILED"
-    );
-
-    // Polish descriptions
-    try {
-      const polished = await this.polishDescriptions(builderResult, session, modelOverride);
-      if (polished) {
-        for (const [role, desc] of Object.entries(polished)) {
-          if (builderResult.characters[role]) {
-            builderResult.characters[role].description = desc;
-          }
-        }
-      }
-    } catch (err) {
-      console.error("CHAR POLISH ERROR (using raw descriptions):", err);
-    }
-
-    session.revealedCharacters = builderResult;
-    session.revealedJudge = judgeResult ?? undefined;
-    session.status = "revealed";
-    session.lastSavedAt = new Date().toISOString();
-
-    await this.charStore.save(session);
-
-    return {
-      characters: builderResult,
-      judge: judgeResult ? {
-        passed: judgeResult.pass,
-        hard_fail_reasons: judgeResult.hard_fail_reasons,
-        scores: judgeResult.scores,
-        weakest_character: judgeResult.weakest_character,
-        one_fix_instruction: judgeResult.one_fix_instruction,
-      } : null,
-    };
+    return this.executeTournament(session, modelOverride, true, promptOverrides);
   }
 
-  // ─── Reroll (regenerate) ───
+  // ─── Reroll (regenerate via tournament) ───
 
   async reroll(
     projectId: string,
@@ -585,7 +443,263 @@ export class CharacterService {
     session.revealedCharacters = undefined;
     session.revealedJudge = undefined;
 
-    return this.runGenerate(projectId, modelOverride, promptOverrides);
+    return this.executeTournament(session, modelOverride, false, promptOverrides);
+  }
+
+  /**
+   * Tournament: run N builders in parallel at different temperatures, judge each,
+   * select the winner. Adaptive candidate count:
+   *  - 2 candidates when constraints are tight (many confirmed ledger entries)
+   *  - 3 candidates otherwise (more creative exploration)
+   */
+  private async executeTournament(
+    session: CharacterSessionState,
+    modelOverride: string | undefined,
+    resetRerollCount: boolean,
+    promptOverrides?: { builder?: CharacterPromptOverrides; judge?: CharacterPromptOverrides },
+  ): Promise<CharacterGenerateResponse> {
+    session.status = "generating";
+
+    // Initialize tournament progress for crash recovery
+    session.tournamentProgress = {
+      startedAt: new Date().toISOString(),
+      builderResults: [],
+      judgeResults: [],
+      phase: "builders",
+    };
+    session.lastSavedAt = new Date().toISOString();
+    await this.charStore.save(session);
+
+    // Build prompts
+    const builderPrompt = this.buildBuilderPrompt(session);
+    const builderSystem = promptOverrides?.builder?.system ?? builderPrompt.system;
+    const builderUser = promptOverrides?.builder?.user ?? builderPrompt.user;
+
+    // Adaptive maxTokens based on cast size — each character profile is ~1,500-2,000 tokens
+    const uniqueRoles = new Set<string>();
+    for (const turn of session.turns) {
+      for (const ch of turn.clarifierResponse.characters_surfaced ?? []) {
+        uniqueRoles.add(ch.role);
+      }
+    }
+    const castSize = Math.max(uniqueRoles.size, 2); // at least 2
+    const builderMaxTokens = Math.min(4000 + castSize * 1500, 16000);
+
+    // Adaptive candidate count: more confirmed constraints → less ambiguity → fewer candidates needed
+    const confirmedCount = (session.constraintLedger ?? []).filter(
+      e => e.confidence === "confirmed"
+    ).length;
+    const candidateCount = confirmedCount >= 8 ? 2 : 3;
+    const temperatures = candidateCount === 2 ? [0.7, 0.9] : [0.7, 0.85, 1.0];
+
+    // Run all builders concurrently — same prompt, different temps
+    const builderStart = Date.now();
+    const builderPromises = temperatures.map((temp, i) =>
+      this.llm.call("char_builder", builderSystem, builderUser, {
+        temperature: temp,
+        maxTokens: builderMaxTokens,
+        modelOverride,
+        jsonSchema: CHARACTER_BUILDER_SCHEMA,
+      }).then(raw => {
+        let parsed = this.parseAndValidate<CharacterBuilderOutput>(raw, [
+          "characters", "ensemble_dynamic", "relationship_tensions",
+          "structural_diversity", "collision_sources",
+        ]);
+        if (!parsed) {
+          console.error(`CHAR BUILDER CANDIDATE ${i + 1} PARSE FAILED. Raw:`, raw.slice(0, 500));
+        }
+        // Convert characters from LLM array format to Record<role, profile>
+        if (parsed && Array.isArray(parsed.characters)) {
+          const charsRecord: Record<string, any> = {};
+          for (const profile of parsed.characters as any[]) {
+            if (profile.role) {
+              charsRecord[profile.role] = profile;
+            }
+          }
+          parsed.characters = charsRecord;
+        }
+        return { raw, parsed };
+      }).catch(err => {
+        console.error(`CHAR BUILDER CANDIDATE ${i + 1} LLM ERROR:`, err);
+        return { raw: "", parsed: null as CharacterBuilderOutput | null };
+      })
+    );
+    const builderSettled = await Promise.all(builderPromises);
+    session.tournamentProgress!.builderResults = builderSettled;
+    console.log(`[perf] ${candidateCount} char builders completed in ${Date.now() - builderStart}ms (parallel)`);
+
+    // Single checkpoint save after all builders complete
+    session.lastSavedAt = new Date().toISOString();
+    await this.charStore.save(session);
+
+    // Record builder prompt history (one entry covers all candidates)
+    const builderResponseSummary = builderSettled
+      .map((r, i) => `Candidate ${i + 1}: ${r.parsed ? Object.keys(r.parsed.characters).join(",") : "FAILED"}`)
+      .join(" | ");
+    this.recordPromptHistory(
+      session, "builder", builderPrompt.system, builderPrompt.user,
+      promptOverrides?.builder, builderResponseSummary
+    );
+
+    const casts: CharacterBuilderOutput[] = builderSettled
+      .map(r => r.parsed)
+      .filter((p): p is CharacterBuilderOutput => p !== null);
+
+    if (casts.length === 0) {
+      session.tournamentProgress = undefined;
+      session.status = "clarifying";
+      await this.charStore.save(session);
+      throw new CharacterServiceError("LLM_PARSE_ERROR", "All character builder candidates failed to parse");
+    }
+
+    // Move to judge phase
+    session.tournamentProgress!.phase = "judges";
+    session.lastSavedAt = new Date().toISOString();
+    await this.charStore.save(session);
+
+    // Run all judges concurrently — each judges one independent candidate
+    const judgeStart = Date.now();
+    const judgePromises = casts.map((cast, i) => {
+      const judgePrompt = this.buildJudgePrompt(cast, session);
+      const judgeSystem = promptOverrides?.judge?.system ?? judgePrompt.system;
+      const judgeUser = promptOverrides?.judge?.user ?? judgePrompt.user;
+      return this.llm.call("char_judge", judgeSystem, judgeUser, {
+        temperature: 0.3,
+        maxTokens: 1200,
+        modelOverride,
+        jsonSchema: CHARACTER_JUDGE_SCHEMA,
+      }).then(raw => {
+        const parsed = this.parseAndValidate<CharacterJudgeOutput>(raw, [
+          "pass", "hard_fail_reasons", "scores", "weakest_character", "one_fix_instruction",
+        ]);
+        if (!parsed) {
+          console.error(`CHAR JUDGE ${i + 1} PARSE FAILED. Raw:`, raw.slice(0, 500));
+        }
+        return { raw, parsed };
+      }).catch(err => {
+        console.error(`CHAR JUDGE ${i + 1} LLM ERROR:`, err);
+        return { raw: "", parsed: null as CharacterJudgeOutput | null };
+      });
+    });
+    const judgeSettled = await Promise.all(judgePromises);
+    session.tournamentProgress!.judgeResults = judgeSettled;
+    console.log(`[perf] ${casts.length} char judges completed in ${Date.now() - judgeStart}ms (parallel)`);
+
+    // Single checkpoint save after all judges complete
+    session.lastSavedAt = new Date().toISOString();
+    await this.charStore.save(session);
+
+    // Record judge prompt history
+    if (casts.length > 0) {
+      const firstJudgePrompt = this.buildJudgePrompt(casts[0], session);
+      const judgeResponseSummary = judgeSettled
+        .map((r, i) => `Judge ${i + 1}: ${r.parsed ? (r.parsed.pass ? "PASS" : "FAIL") + " avg=" + this.charAvgScore(r.parsed).toFixed(1) : "FAILED"}`)
+        .join(" | ");
+      this.recordPromptHistory(
+        session, "judge", firstJudgePrompt.system, firstJudgePrompt.user,
+        promptOverrides?.judge, judgeResponseSummary
+      );
+    }
+
+    // Select winner
+    session.tournamentProgress!.phase = "selecting";
+
+    const candidates: Array<{ cast: CharacterBuilderOutput; judge: CharacterJudgeOutput }> = [];
+    for (let i = 0; i < judgeSettled.length; i++) {
+      const parsed = judgeSettled[i].parsed;
+      if (parsed) {
+        candidates.push({ cast: casts[i], judge: parsed });
+      }
+    }
+
+    if (candidates.length === 0) {
+      // All judges failed — fall back to first valid builder output without judge
+      const fallbackCast = casts[0];
+      session.revealedCharacters = fallbackCast;
+      session.revealedJudge = undefined;
+      session.status = "revealed";
+      session.rerollCount = resetRerollCount ? 0 : (session.rerollCount ?? 0) + 1;
+      session.tournamentProgress = undefined;
+      session.lastSavedAt = new Date().toISOString();
+      await this.charStore.save(session);
+      return {
+        characters: fallbackCast,
+        judge: null,
+        rerollCount: session.rerollCount,
+      };
+    }
+
+    const winner = this.selectCharacterWinner(candidates);
+
+    // Polish descriptions
+    try {
+      const polished = await this.polishDescriptions(winner.cast, session, modelOverride);
+      if (polished) {
+        for (const [role, desc] of Object.entries(polished)) {
+          if (winner.cast.characters[role]) {
+            winner.cast.characters[role].description = desc;
+          }
+        }
+      }
+    } catch (err) {
+      // Non-fatal: if polish fails, use the raw descriptions
+      console.error("CHAR POLISH ERROR (using raw descriptions):", err);
+    }
+
+    session.revealedCharacters = winner.cast;
+    session.revealedJudge = winner.judge;
+    session.status = "revealed";
+    session.rerollCount = resetRerollCount ? 0 : (session.rerollCount ?? 0) + 1;
+    session.tournamentProgress = undefined;  // Clear progress on success
+    session.lastSavedAt = new Date().toISOString();
+
+    await this.charStore.save(session);
+
+    return {
+      characters: winner.cast,
+      judge: {
+        passed: winner.judge.pass,
+        hard_fail_reasons: winner.judge.hard_fail_reasons,
+        scores: winner.judge.scores,
+        weakest_character: winner.judge.weakest_character,
+        one_fix_instruction: winner.judge.one_fix_instruction,
+      },
+      rerollCount: session.rerollCount,
+    };
+  }
+
+  /**
+   * Select the best cast from tournament candidates.
+   * Prefers passing candidates sorted by average score.
+   * Falls back to fewest hard-fails if none pass.
+   */
+  private selectCharacterWinner(
+    candidates: Array<{ cast: CharacterBuilderOutput; judge: CharacterJudgeOutput }>
+  ): { cast: CharacterBuilderOutput; judge: CharacterJudgeOutput } {
+    const passed = candidates.filter(c => c.judge.pass);
+
+    if (passed.length > 0) {
+      passed.sort((a, b) => this.charAvgScore(b.judge) - this.charAvgScore(a.judge));
+      return passed[0];
+    }
+
+    // None passed — pick the one with fewest hard-fail reasons, break ties by score
+    const sorted = [...candidates].sort((a, b) => {
+      const failDiff = a.judge.hard_fail_reasons.length - b.judge.hard_fail_reasons.length;
+      if (failDiff !== 0) return failDiff;
+      return this.charAvgScore(b.judge) - this.charAvgScore(a.judge);
+    });
+    return sorted[0];
+  }
+
+  /**
+   * Weighted average score — relationship_dynamics counts double (highest weight per judge prompt).
+   * Total weights: 1+2+1+1+1+1 = 7
+   */
+  private charAvgScore(judge: CharacterJudgeOutput): number {
+    const s = judge.scores;
+    return (s.psychological_depth + s.relationship_dynamics * 2 + s.diversity
+      + s.mechanism_clarity + s.specificity + s.user_fit) / 7;
   }
 
   // ─── Lock Characters ───
@@ -756,6 +870,7 @@ export class CharacterService {
       .replace("{{STATE_SUMMARY}}", this.compressStateSummary(hook.state_summary ?? ""))
       .replace("{{PRIOR_TURNS}}", priorTurns)
       .replace("{{PSYCHOLOGY_LEDGER}}", psychText)
+      .replace("{{ENGINE_DIALS}}", formatEngineDialsForPrompt(session.psychologyLedger))
       .replace("{{CONSTRAINT_LEDGER}}", ledgerText)
       .replace("{{CAST_STATE_JSON}}", castStateJson)
       .replace("{{TURN_NUMBER}}", turnNumber)

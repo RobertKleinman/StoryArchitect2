@@ -817,11 +817,11 @@ export function formatSignalsForBuilderJudge(
 
   const lines: string[] = [];
 
-  // Only active + stable signals
+  // Only active + stable signals — top 3 by confidence (focused, not overwhelming)
   const signals = ledger.signalStore
     .filter(s => s.status === "active" || s.status === "stable")
     .sort((a, b) => b.confidence - a.confidence)
-    .slice(0, 5);
+    .slice(0, 3);
 
   if (signals.length === 0) return "(No confirmed behavior signals yet)";
 
@@ -844,6 +844,133 @@ export function formatSignalsForBuilderJudge(
 
   if (h.satisfaction) {
     lines.push(`  Satisfaction: ${Math.round(h.satisfaction.score * 100)}% (${h.satisfaction.trend})`);
+  }
+
+  return lines.join("\n");
+}
+
+// ─── Engine Dials: derive concrete settings from signals ───
+
+/**
+ * Derived settings that directly shape prompt behavior.
+ * Computed from the signal store + heuristics — not from the LLM.
+ * These are injected into prompts as structured directives.
+ */
+export interface EngineDials {
+  /** How many options to offer (2-5). Explorers get more, convergers get fewer. */
+  optionCount: number;
+  /** How bold assumptions should be. "conservative" = safe inferences, "provocative" = challenge the user */
+  assumptionBoldness: "conservative" | "moderate" | "provocative";
+  /** Tone register for questions. "playful" / "direct" / "warm" */
+  questionTone: "playful" | "direct" | "warm";
+  /** How much to lead vs follow. 0 = pure follower, 1 = pure leader */
+  leadingStrength: number;
+  /** Content emphasis — which categories to prioritize in output */
+  contentEmphasis: string[];
+  /** Things to avoid based on signals */
+  avoidances: string[];
+}
+
+/**
+ * Compute engine dials from the psychology ledger.
+ * These are deterministic derivations, not LLM output.
+ */
+export function computeEngineDials(
+  ledger: UserPsychologyLedger | undefined
+): EngineDials {
+  const defaults: EngineDials = {
+    optionCount: 4,
+    assumptionBoldness: "moderate",
+    questionTone: "playful",
+    leadingStrength: 0.5,
+    contentEmphasis: [],
+    avoidances: [],
+  };
+
+  if (!ledger) return defaults;
+  ensureLedgerShape(ledger);
+
+  const h = ledger.heuristics;
+  const activeSignals = ledger.signalStore
+    .filter(s => s.status === "active" || s.status === "stable")
+    .sort((a, b) => b.confidence - a.confidence);
+
+  // ── Option count: explorers get more choices, convergers get fewer
+  if (h.typeRatio < 0.35) {
+    // Clicker — likes guided choices
+    defaults.optionCount = 4;
+  } else if (h.typeRatio > 0.65) {
+    // Typer — has their own vision, fewer preset options
+    defaults.optionCount = 3;
+  }
+
+  // ── Assumption boldness: high change rate + rising satisfaction = they want provocation
+  if (h.changeRate > 0.4 && h.satisfaction?.trend !== "declining") {
+    defaults.assumptionBoldness = "provocative";
+  } else if (h.satisfaction?.trend === "declining") {
+    defaults.assumptionBoldness = "conservative";
+  }
+
+  // ── Question tone: match engagement
+  if (h.engagementTrend === -1 || h.satisfaction?.trend === "declining") {
+    defaults.questionTone = "direct"; // stop being cute, get to the point
+  } else if (h.engagementTrend === 1) {
+    defaults.questionTone = "playful"; // they're having fun, match it
+  }
+
+  // ── Leading strength: high deferrals = they want more leading
+  if (h.deferralRate > 0.3) {
+    defaults.leadingStrength = 0.7;
+  } else if (h.changeRate > 0.5) {
+    defaults.leadingStrength = 0.3; // they're opinionated, follow more
+  }
+
+  // ── Content emphasis: from top signals
+  const emphasisCategories = new Set<string>();
+  for (const s of activeSignals.slice(0, 3)) {
+    if (s.adaptationConsequence) {
+      defaults.contentEmphasis.push(s.adaptationConsequence);
+    }
+    emphasisCategories.add(s.category);
+  }
+
+  // ── Avoidances: from suppressed signals
+  for (const s of ledger.signalStore.filter(s => s.status === "suppressed")) {
+    if (s.adaptationConsequence) {
+      defaults.avoidances.push(`AVOID (contradicted): ${s.adaptationConsequence}`);
+    }
+  }
+
+  return defaults;
+}
+
+/**
+ * Format engine dials as a prompt fragment for injection.
+ */
+export function formatEngineDialsForPrompt(
+  ledger: UserPsychologyLedger | undefined
+): string {
+  const dials = computeEngineDials(ledger);
+
+  const lines: string[] = [];
+  lines.push("═══ ENGINE DIALS (follow these — they're computed from observed behavior) ═══");
+  lines.push(`Options to offer: ${dials.optionCount}`);
+  lines.push(`Assumption boldness: ${dials.assumptionBoldness}`);
+  lines.push(`Question tone: ${dials.questionTone}`);
+  lines.push(`Leading strength: ${dials.leadingStrength.toFixed(1)} (0=follow their vision, 1=lead boldly)`);
+
+  if (dials.contentEmphasis.length > 0) {
+    lines.push("PRIORITIZE in your output:");
+    for (const e of dials.contentEmphasis) {
+      lines.push(`  → ${e}`);
+    }
+  }
+
+  if (dials.avoidances.length > 0) {
+    lines.push("AVOID in your output:");
+    for (const a of dials.avoidances) {
+      lines.push(`  → ${a}`);
+    }
   }
 
   return lines.join("\n");

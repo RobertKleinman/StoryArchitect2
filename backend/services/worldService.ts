@@ -47,6 +47,7 @@ import {
   checkPersistence,
   formatPsychologyLedgerForPrompt,
   formatSignalsForBuilderJudge,
+  formatEngineDialsForPrompt,
   snapshotBaselineForNewModule,
 } from "./psychologyEngine";
 import type { RawSignalObservation, BehaviorSummary, AdaptationPlan } from "../../shared/types/userPsychology";
@@ -764,6 +765,7 @@ export class WorldService {
       .replace("{{UPSTREAM_DEVELOPMENT_TARGETS}}", upstreamTargets)
       .replace("{{PRIOR_TURNS}}", priorTurns)
       .replace("{{PSYCHOLOGY_LEDGER}}", psychText)
+      .replace("{{ENGINE_DIALS}}", formatEngineDialsForPrompt(session.psychologyLedger))
       .replace("{{CONSTRAINT_LEDGER}}", ledgerText)
       .replace("{{TURN_NUMBER}}", turnNumber);
 

@@ -278,6 +278,14 @@ export interface CharacterSessionState {
   lastSavedAt?: string;
   promptHistory?: CharacterPromptHistoryEntry[];
   consecutiveHighReadiness?: number;
+  rerollCount: number;
+  /** Tournament progress for crash recovery */
+  tournamentProgress?: {
+    startedAt: string;
+    builderResults: Array<{ raw: string; parsed: CharacterBuilderOutput | null }>;
+    judgeResults: Array<{ raw: string; parsed: CharacterJudgeOutput | null }>;
+    phase: "builders" | "judges" | "selecting";
+  };
   /** User psychology ledger — imported from hook module + accumulated here */
   psychologyLedger?: import("./userPsychology").UserPsychologyLedger;
 }

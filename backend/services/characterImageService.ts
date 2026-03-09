@@ -43,6 +43,7 @@ import {
   checkPersistence,
   formatPsychologyLedgerForPrompt,
   formatSignalsForBuilderJudge,
+  formatEngineDialsForPrompt,
   snapshotBaselineForNewModule,
 } from "./psychologyEngine";
 import type { RawSignalObservation, BehaviorSummary, AdaptationPlan } from "../../shared/types/userPsychology";

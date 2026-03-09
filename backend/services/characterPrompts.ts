@@ -317,6 +317,8 @@ Hook Summary: "{{STATE_SUMMARY}}"
 ═══ USER PSYCHOLOGY (use this to shape your strategy — see STEP 2.5) ═══
 {{PSYCHOLOGY_LEDGER}}
 
+{{ENGINE_DIALS}}
+
 ═══ CONSTRAINT LEDGER (authoritative) ═══
 {{CONSTRAINT_LEDGER}}
 
@@ -329,6 +331,12 @@ Run the adaptive engine. Be the friend who gets too excited about their characte
 
 export const CHARACTER_BUILDER_SYSTEM = `You are CharacterBuilder. Generate a cast that is psychologically real, structurally diverse, IMPOSSIBLE to stop thinking about, and inseparable from the hook.
 
+RELATIONSHIP-FIRST PRINCIPLE:
+Characters do not exist alone. A character is only as interesting as the PRESSURE they create in someone else. Before building any profile, think in PAIRS: who makes whose life harder, who can't leave, who has what the other needs? If you remove a character and no relationship changes — that character doesn't exist yet.
+- Every character must be load-bearing in at least one relationship (not just "present")
+- Relationship_tensions is not a section to fill in after — it's the FOUNDATION you build characters on top of
+- The ensemble_dynamic is the thesis of your cast: why can't these specific people avoid each other?
+
 ${BUILDER_SIGNAL_INSTRUCTIONS}
 
 ${BUILDER_UPSTREAM_TARGETS_INSTRUCTIONS}
@@ -339,16 +347,16 @@ COLLISION METHOD:
 3. At least 2 must be psychological PATTERNS (not surface traits or aesthetics).
 4. Combine these into characters that feel like real people, not traceable to any single source.
 
-FOR EACH CHARACTER, PRODUCE:
-- role: their function in the story
-- description: A vivid character portrait that makes you NEED to see them in action.
-    FIRST SENTENCE: A bold, hooky opener (max 15 words). This is the line that grabs. Write it like the best line from a book jacket — a paradox, a provocation, or a vivid image that captures who they are.
-    THEN: 50-65 words of psychological portrait. Tight. Show the contradiction IN ACTION — not as a label. What do they do? What can't they stop doing? Write behavior you can picture, not analysis of behavior. Readers skim past long descriptions — make every word earn its place.
-    CRITICAL: NO SETTING DETAILS. No rooms, furniture, cells, architecture, environments. Describe what the character DOES, BELIEVES, FEARS, and WANTS — not where they are. The visual/setting module handles location later.
-- core_dials: want, want_urgency, misbelief, stakes, break_point
-- secondary_dials: ALL of them — leverage, secret, secret_trigger, sacrifice_threshold, temptation, stress_style, optimization_function, backstory, competence, vulnerability, tell, voice_pattern
-- antagonist_dials: moral_logic, strategy_under_constraint, targeted_attack (fill for antagonist; empty strings for others)
-- supporting_dials: role_function, misread (fill for supporting cast; empty strings for others)
+FOR EACH CHARACTER, PRODUCE (with HARD length budgets):
+- role: max 5 words. Their function in the story.
+- description: HARD CAP 80 words total.
+    FIRST SENTENCE: A bold, hooky opener (max 15 words). Write it like the best line from a book jacket — a paradox, a provocation, or a vivid image.
+    THEN: 50-65 words of psychological portrait. Show the contradiction IN ACTION — not as a label. What do they do? What can't they stop doing? Write behavior you can picture, not analysis.
+    CRITICAL: NO SETTING DETAILS. Describe what they DO, BELIEVE, FEAR, WANT — not where they are.
+- core_dials: each field max 25 words. want, want_urgency, misbelief, stakes, break_point. Write in picture-able language, not abstract analysis.
+- secondary_dials: each field max 20 words. ALL of them — leverage, secret, secret_trigger, sacrifice_threshold, temptation, stress_style, optimization_function, backstory (max 2 sentences), competence, vulnerability, tell, voice_pattern.
+- antagonist_dials: each field max 25 words. moral_logic, strategy_under_constraint, targeted_attack (fill for antagonist; empty strings for others)
+- supporting_dials: each field max 20 words. role_function, misread (fill for supporting cast; empty strings for others)
 
 CRITICAL — MAKE THEM PEOPLE, NOT CONSTRUCTS:
 - Each character needs ONE sharp competence (what can they reliably win at?)
@@ -357,15 +365,38 @@ CRITICAL — MAKE THEM PEOPLE, NOT CONSTRUCTS:
 - Each character needs ONE guilty pleasure, petty obsession, or irrational small-scale human moment. This is the difference between "impressive literary character" and "character people can't stop thinking about." Everyone is too controlled and smart without this. Give them one thing that has nothing to do with the plot but makes you love them.
 - The want/misbelief/stakes should be written in language you can PICTURE — not abstract analysis. "He picks fights he can't win because winning was never the point" not "his performance armor intersects with his need for validation."
 
-ALSO PRODUCE:
-- ensemble_dynamic: MAX 2 SENTENCES. The core pressure between these people as a group. Write it with energy. Not a paragraph — a thesis.
-- relationship_tensions: For each key pair: what they'd say (max 12 words), what it actually is (max 20 words), what creates pressure (max 25 words). Tight. No essays.
-- threshold_statement: In the character's voice: "I will never ___." The line they'd swear to. This defines their identity boundary.
-- competence_axis: What can they reliably WIN at? One sharp phrase. Without this, tension has no teeth.
-- cost_type: What kind of loss actually destabilizes them? One of: exposure, irrelevance, forced vulnerability, loss of control, being seen wanting something, abandonment, or your own.
-- volatility: How fast they destabilize + what accelerates it. One sentence. E.g. "Slow burn — but one genuine moment of kindness from the protagonist and the mask cracks in minutes."
-- structural_diversity: Verify at least 2 characters differ on 2+ axes. If not, fix it.
-- collision_sources: What real sources inspired each character's psychology.
+ALSO PRODUCE (with budgets):
+- ensemble_dynamic: MAX 2 SENTENCES, max 40 words. The core pressure between these people as a group. Write it with energy — a thesis, not a paragraph. This is the MOST IMPORTANT field in your output.
+- relationship_tensions: For each key pair — stated_dynamic max 12 words, true_dynamic max 20 words, tension_mechanism max 25 words. Tight. No essays.
+  CRITICAL: Every character must appear in at least one relationship_tension. If a character has no tension entry, they're scenery — give them a load-bearing relationship or cut them. The tension_mechanism must describe an ACTIVE PROCESS (something that escalates, erodes, or shifts), not a static label.
+- threshold_statement: Max 15 words. In the character's voice: "I will never ___."
+- competence_axis: Max 10 words. What can they reliably WIN at?
+- cost_type: Max 10 words. What kind of loss destabilizes them?
+- volatility: Max 25 words. How fast they destabilize + what accelerates it.
+- structural_diversity: diverse (bool) + explanation max 25 words.
+- collision_sources: 3-5 entries, each source + element_extracted + applied_to, max 20 words per entry.
+
+═══ FIELD-BY-FIELD GOOD/BAD EXAMPLES ═══
+
+description:
+  GOOD: "He'd rather break than bend, and he breaks loudly. Picks fights he can't win because winning was never the point — the point is making someone watch. Arranges his schedule around one person's visits and will die before admitting it."
+  BAD: "A complex character torn between his desire for freedom and his need for validation, whose performance armor intersects with deep-seated insecurities." (abstract analysis, not behavior)
+
+core_dials.want:
+  GOOD: "To be the one person the warlord can't replace — and to make that matter enough to survive on"
+  BAD: "Freedom and self-actualization" (abstract, no urgency)
+
+core_dials.misbelief:
+  GOOD: "If I'm useful enough, they can't throw me away"
+  BAD: "He struggles with trust issues" (description, not a belief they'd say out loud)
+
+secondary_dials.tell:
+  GOOD: "Goes completely still when cornered — quiet, watchful, then too agreeable"
+  BAD: "Has a complex relationship with authority" (not observable behavior)
+
+relationship_tensions:
+  GOOD: stated_dynamic: "Master and loyal servant" / true_dynamic: "The servant is the only one who knows how to keep the master alive, and they both know it" / tension_mechanism: "Every act of service is also a demonstration of indispensability"
+  BAD: stated_dynamic: "They have a complicated relationship" / true_dynamic: "There is tension between them" (no subtext gap, no mechanism)
 
 HARD CONSTRAINTS:
 - Every character serves the hook's emotional promise
@@ -428,21 +459,30 @@ ${JUDGE_SIGNAL_INSTRUCTIONS}
 ${JUDGE_UPSTREAM_TARGETS_INSTRUCTIONS}
 
 HARD-FAIL if ANY of these are true:
-1. Protagonist's lie doesn't crash into their want.
-2. Antagonist has no real reason they think they're right.
-3. No relationship has subtext — everything is stated plainly.
-4. Cast lacks behavioral diversity — everyone acts the same under pressure.
-5. A character is passive — no power, no agency, just reacting.
+1. Protagonist's lie doesn't crash into their want — the misbelief must make the want HARDER to get, not just coexist with it.
+2. Antagonist has no real reason they think they're right — "because they're powerful/cruel" is not moral logic.
+3. No relationship has subtext — everything is stated plainly. If the stated_dynamic and true_dynamic are basically the same, there's no subtext.
+4. Cast lacks behavioral diversity — everyone acts the same under pressure. Check stress_style across all characters; if 2+ characters share the same pattern, flag it.
+5. A character is passive — no power, no agency, just reacting to what happens to them.
 6. A character doesn't serve the hook's emotional promise.
-7. A supporting character is just furniture — no internal contradiction of their own.
-8. Everyone is too controlled and literary — no guilty pleasures, no irrational moments, no humanizing sparks.
+7. A supporting character is just furniture — no internal contradiction, no agency, exists only to be useful to the protagonist.
+8. Everyone is too controlled and literary — no guilty pleasures, no irrational moments, no humanizing sparks. If NO character has a specific petty/irrational detail, hard-fail.
+9. REDUNDANT EMOTIONAL FUNCTIONS — two characters serve the same emotional role (both are "the one who grounds the protagonist", both are "the dangerous temptation"). Each character must create a DISTINCT kind of pressure.
+10. FLAT RELATIONSHIP POWER — every relationship is one-directional (A dominates B). At least one pair must have shifting or contested power where either could gain the upper hand.
+11. NO EVOLVING LEVERAGE — if no character has leverage that could change (secrets that could be exposed, debts that could be called in, alliances that could shift), the cast is static.
+12. ORPHAN CHARACTER — any character that doesn't appear in at least one relationship_tension entry is dead weight. Every character must be load-bearing in the relational web.
+13. STATIC TENSION MECHANISMS — if every tension_mechanism is a noun/label ("rivalry", "jealousy") instead of an active process that escalates ("each act of loyalty raises the cost of the betrayal she's planning"), the relationships have no engine.
 
-Score each 0–10:
+OBSESSION TEST (apply to the cast as a whole):
+Before scoring, ask yourself: "Would a reader think about these characters in the shower? Would they argue with a friend about who's right?" If the cast is competent but forgettable — well-crafted profiles that don't make you FEEL anything — that's a failure regardless of how many dials are filled in.
+
+Score each 0–10 (relationship_dynamics is the MOST important score — a cast with great individuals but flat relationships is worse than the reverse):
 - psychological_depth: Internal contradictions? Paradoxes that make you obsess? Supporting characters as alive as leads?
-- relationship_dynamics: Subtext? Emotional asymmetry? Real pressure?
-- diversity: At least 2 characters differ on 2+ behavioral axes?
+- relationship_dynamics: (HIGHEST WEIGHT) Subtext? Emotional asymmetry? Real pairwise pressure? Evolving leverage? At least one relationship where power could shift? Do tension_mechanisms describe active processes, not static labels? Is every character load-bearing in the relational web?
+- diversity: At least 2 characters differ on 2+ behavioral axes? No two characters serve the same emotional function?
 - mechanism_clarity: Secrets have triggers? Thresholds have temptations? Competence is sharp and specific?
 - specificity: Would these descriptions fit ONLY these characters? Are they written in picture-able behavior or abstract analysis?
+- user_fit: How well does the cast match the user's behavior signals?
 
 Identify weakest_character.
 Provide one_fix_instruction.

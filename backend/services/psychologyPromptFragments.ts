@@ -266,11 +266,13 @@ The psychology ledger above contains behavior signals about this user. Each sign
   - An adaptation consequence (what to DO differently)
 
 HOW TO USE SIGNALS IN YOUR OUTPUT:
-  - Read the "adapt:" line for each signal — it tells you what pipeline behavior to change
+  - FOCUS ON THE TOP 2-3 SIGNALS BY CONFIDENCE. These are the ones that should actually shape your output. The rest are context, not directives.
+  - Read the "adapt:" line for your top 2-3 signals — those are your marching orders
   - Signals with confidence >= 0.5 are reliable patterns — follow their adaptation consequences
-  - Signals with confidence < 0.3 are early impressions — consider but don't over-commit
+  - Signals with confidence < 0.3 are early impressions — note but don't let them drive decisions
   - If a signal says "offer more X" or "avoid Y", actually do it in your output
   - If two signals conflict, prefer the one with higher confidence
+  - DO NOT try to satisfy every signal at once. Pick 2-3 that matter most THIS output.
 
 EXAMPLES:
   Signal: "picks morally complex options over simple ones" → adapt: "make antagonist sympathetic, avoid clear villain"
