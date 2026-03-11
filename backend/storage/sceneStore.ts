@@ -1,55 +1,61 @@
 import { promises as fs } from "fs";
 import * as path from "path";
 import {
-  WorldSessionState,
-  WorldPack,
-} from "../../shared/types/world";
+  SceneSessionState,
+  ScenePack,
+} from "../../shared/types/scene";
 
-export interface WorldModuleExport {
+export interface SceneModuleExport {
   exportedAt: string;
-  module: "world";
+  module: "scene";
   projectId: string;
-  hookProjectId: string;
+  plotProjectId: string;
+  worldProjectId: string;
   characterProjectId: string;
   characterImageProjectId?: string;
-  worldPack: WorldPack;
-  constraintLedger: WorldSessionState["constraintLedger"];
+  hookProjectId: string;
+  scenePack: ScenePack;
+  constraintLedger: SceneSessionState["constraintLedger"];
   stats: {
-    totalTurns: number;
+    totalPlanningTurns: number;
+    totalWritingTurns: number;
+    totalScenesBuilt: number;
+    autoPassedScenes: number;
+    steeredScenes: number;
     totalLlmCalls: number;
     editedLlmCalls: number;
   };
 }
 
-export class WorldStore {
+export class SceneStore {
   private dataDir: string;
 
-  constructor(dataDir = "./data/worlds") {
+  constructor(dataDir = "./data/scenes") {
     this.dataDir = dataDir;
     fs.mkdir(this.dataDir, { recursive: true }).catch((e) =>
-      console.error(`[WorldStore] mkdir failed: ${this.dataDir}`, e.message));
+      console.error(`[SceneStore] mkdir failed: ${this.dataDir}`, e.message));
     fs.mkdir(path.join(this.dataDir, "exports"), { recursive: true }).catch((e) =>
-      console.error(`[WorldStore] mkdir failed: exports`, e.message));
+      console.error(`[SceneStore] mkdir failed: exports`, e.message));
   }
 
   private sanitize(id: string): string {
     return id.replace(/[^a-zA-Z0-9_-]/g, "");
   }
 
-  async get(projectId: string): Promise<WorldSessionState | null> {
+  async get(projectId: string): Promise<SceneSessionState | null> {
     const filePath = path.join(this.dataDir, `${this.sanitize(projectId)}.json`);
     try {
       const raw = await fs.readFile(filePath, "utf8");
-      return JSON.parse(raw) as WorldSessionState;
+      return JSON.parse(raw) as SceneSessionState;
     } catch (e: any) {
       if (e.code !== "ENOENT") {
-        console.error(`[WorldStore] get failed: ${filePath}`, e.code === undefined ? "parse error" : e.code, e.message);
+        console.error(`[SceneStore] get failed: ${filePath}`, e.code === undefined ? "parse error" : e.code, e.message);
       }
       return null;
     }
   }
 
-  async save(session: WorldSessionState): Promise<void> {
+  async save(session: SceneSessionState): Promise<void> {
     const filePath = path.join(this.dataDir, `${this.sanitize(session.projectId)}.json`);
     const tmpPath = filePath + ".tmp";
     await fs.writeFile(tmpPath, JSON.stringify(session, null, 2), "utf8");
@@ -62,16 +68,15 @@ export class WorldStore {
       await fs.unlink(filePath);
     } catch (e: any) {
       if (e.code !== "ENOENT") {
-        console.error(`[WorldStore] delete failed: ${filePath}`, e.code, e.message);
+        console.error(`[SceneStore] delete failed: ${filePath}`, e.code, e.message);
       }
     }
   }
 
   async saveExport(
-    session: WorldSessionState,
-    worldPack: WorldPack
-  ): Promise<WorldModuleExport> {
-    // Compute stats
+    session: SceneSessionState,
+    scenePack: ScenePack
+  ): Promise<SceneModuleExport> {
     let totalLlmCalls = 0;
     let editedLlmCalls = 0;
     if (session.promptHistory) {
@@ -79,17 +84,28 @@ export class WorldStore {
       editedLlmCalls = session.promptHistory.filter((e) => e.wasEdited).length;
     }
 
-    const moduleExport: WorldModuleExport = {
+    const autoPassedScenes = session.writingTurns.filter(
+      (t) => t.userSelection?.type === "auto_pass"
+    ).length;
+    const steeredScenes = session.builtScenes.length - autoPassedScenes;
+
+    const moduleExport: SceneModuleExport = {
       exportedAt: new Date().toISOString(),
-      module: "world",
+      module: "scene",
       projectId: session.projectId,
-      hookProjectId: session.hookProjectId,
+      plotProjectId: session.plotProjectId,
+      worldProjectId: session.worldProjectId,
       characterProjectId: session.characterProjectId,
       characterImageProjectId: session.characterImageProjectId,
-      worldPack,
+      hookProjectId: session.hookProjectId,
+      scenePack,
       constraintLedger: session.constraintLedger,
       stats: {
-        totalTurns: session.turns.length,
+        totalPlanningTurns: session.planningTurns.length,
+        totalWritingTurns: session.writingTurns.length,
+        totalScenesBuilt: session.builtScenes.length,
+        autoPassedScenes,
+        steeredScenes,
         totalLlmCalls,
         editedLlmCalls,
       },
@@ -107,7 +123,7 @@ export class WorldStore {
     return moduleExport;
   }
 
-  async getExport(projectId: string): Promise<WorldModuleExport | null> {
+  async getExport(projectId: string): Promise<SceneModuleExport | null> {
     const filePath = path.join(
       this.dataDir,
       "exports",
@@ -115,10 +131,10 @@ export class WorldStore {
     );
     try {
       const raw = await fs.readFile(filePath, "utf8");
-      return JSON.parse(raw) as WorldModuleExport;
+      return JSON.parse(raw) as SceneModuleExport;
     } catch (e: any) {
       if (e.code !== "ENOENT") {
-        console.error(`[WorldStore] getExport failed: ${filePath}`, e.code === undefined ? "parse error" : e.code, e.message);
+        console.error(`[SceneStore] getExport failed: ${filePath}`, e.code === undefined ? "parse error" : e.code, e.message);
       }
       return null;
     }

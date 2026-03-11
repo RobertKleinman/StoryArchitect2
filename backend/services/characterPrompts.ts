@@ -20,6 +20,7 @@ import {
   QUESTION_VALUE_CHECK,
   PREMORTEM_CHECK,
   JUDGE_PREMORTEM,
+  DIVERGENCE_SELF_CHECK,
 } from "./psychologyPromptFragments";
 const PSYCHOLOGY_STRATEGY_INSTRUCTIONS = ADAPTATION_PLAN_INSTRUCTIONS;
 
@@ -241,6 +242,8 @@ OUTPUT FORMAT
 
 3. options — 3-5 chips. Vivid, concrete, max 8 words each. At least ONE must be a curveball — a direction the user probably hasn't considered that would make the characters more interesting, unexpected, or original. Label it in a way that's intriguing, not random.
 
+   ${DIVERGENCE_SELF_CHECK}
+
 4. allow_free_text — ALWAYS true.
 
 5. character_focus — Which character or relationship you're shaping. null if general.
@@ -276,6 +279,7 @@ NEVER:
 - Process characters in a fixed order
 - Ask survey questions ("What's their backstory?", "What's their flaw?")
 - Invent character names
+- Invent proper nouns for world elements (drug names, place names, faction names, titles, technologies). Use descriptive placeholders: "the drug", "the empire", "the ritual". Naming belongs to downstream modules. You may use proper nouns that already appear confirmed in the constraint ledger.
 - Use: "complex character", "multifaceted", "nuanced", "compelling", "rich backstory", "dark past"
 - Skip user choices by inferring everything
 - Re-ask confirmed assumptions
@@ -408,6 +412,7 @@ relationship_tensions:
 HARD CONSTRAINTS:
 - Every character serves the hook's emotional promise
 - No character names — roles only
+- NO PROPER NOUNS for world elements — do not invent names for drugs, places, factions, titles, rituals, or technologies. Use descriptive placeholders: "the drug", "the empire", "the ritual", "the compound". Naming is a downstream module's job. If a proper noun was confirmed in the constraint ledger (user-originated), you may use it. Otherwise, describe — don't name.
 - Protagonist's lie must crash into their want
 - Antagonist must have coherent moral logic
 - Supporting cast: each creates a DISTINCT kind of pressure AND has their own internal contradiction. They are not furniture for the protagonist.
@@ -415,6 +420,15 @@ HARD CONSTRAINTS:
 - NO SETTING DETAILS in descriptions. Psychology and behavior ONLY.
 - Ban list must be respected
 - CAST SIZE: Generate ALL characters discussed during clarification. Do not default to 3. Most stories need 4-6 characters minimum. If the clarification explored crew members, faction leaders, mentors, rivals, etc., they ALL get full profiles. Only omit a character if it was explicitly dropped by the user.
+
+PSYCHOLOGY vs PLOT BOUNDARY:
+Your job is to describe who these characters ARE — not what will happen to them. Write psychological POTENTIAL, not narrative trajectory. Stay grounded and behavioral.
+- GOOD: "His break point is tenderness arriving without warning" (describes a vulnerability — concrete, picture-able, but doesn't script a scene)
+- GOOD: "The truth arriving as tenderness would finish him" (still grounded — describes what would crack him, not what will happen in chapter 12)
+- BAD: "This escalates toward the moment he asks with full knowledge" (this is a plot beat, not a character trait — it belongs in the plot module)
+- BAD: "The story reaches its climax when she finally speaks his name" (narrative trajectory, not psychology)
+- The test: if you removed it from the character profile and put it in a plot outline, would it fit better there? If yes, it's plot, not character. Rewrite as psychological potential.
+- Relationship tensions should describe the ACTIVE PRESSURE between characters, not where the relationship is headed. "Every act of service is also a demonstration of indispensability" = character pressure. "This builds toward the moment she betrays him" = plot.
 
 USER AUTHORSHIP RULE:
 - Characters MUST be built from what the user discussed, confirmed, or chose.

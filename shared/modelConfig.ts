@@ -6,7 +6,10 @@ export type HookRole = "clarifier" | "builder" | "judge" | "summary" | "polish"
   | "char_clarifier" | "char_builder" | "char_judge" | "char_polish" | "char_summary"
   | "img_clarifier" | "img_builder" | "img_judge" | "img_summary"
   | "world_clarifier" | "world_builder" | "world_judge" | "world_polish" | "world_summary"
-  | "psych_consolidator";
+  | "plot_clarifier" | "plot_builder" | "plot_judge" | "plot_polish" | "plot_summary"
+  | "scene_planner" | "scene_clarifier" | "scene_builder" | "scene_minor_judge" | "scene_final_judge" | "scene_divergence"
+  | "psych_consolidator"
+  | "divergence_explorer";
 
 export interface ModelConfig {
   clarifier: string;
@@ -28,8 +31,22 @@ export interface ModelConfig {
   world_judge: string;
   world_polish: string;
   world_summary: string;
+  plot_clarifier: string;
+  plot_builder: string;
+  plot_judge: string;
+  plot_polish: string;
+  plot_summary: string;
+  scene_planner: string;
+  scene_clarifier: string;
+  scene_builder: string;
+  scene_minor_judge: string;
+  scene_final_judge: string;
+  /** Scene-specific divergence — focused staging alternatives, not full 15-20 futures */
+  scene_divergence: string;
   /** Background psychology consolidation — runs during user think-time */
   psych_consolidator: string;
+  /** Background divergence explorer — generates direction map during user think-time */
+  divergence_explorer: string;
 }
 
 // ── Provider detection from model string ────────────────────────────
@@ -93,7 +110,7 @@ export function modelsByProvider(): Record<LLMProvider, ProviderModelEntry[]> {
 
 /** All judge roles across every module */
 export const JUDGE_ROLES: ReadonlyArray<keyof ModelConfig> = [
-  "judge", "char_judge", "img_judge", "world_judge",
+  "judge", "char_judge", "img_judge", "world_judge", "plot_judge", "scene_minor_judge", "scene_final_judge",
 ];
 
 /** All non-judge (creative) roles across every module */
@@ -102,7 +119,10 @@ export const CREATIVE_ROLES: ReadonlyArray<keyof ModelConfig> = [
   "char_clarifier", "char_builder", "char_polish", "char_summary",
   "img_clarifier", "img_builder", "img_summary",
   "world_clarifier", "world_builder", "world_polish", "world_summary",
+  "plot_clarifier", "plot_builder", "plot_polish", "plot_summary",
+  "scene_planner", "scene_clarifier", "scene_builder", "scene_divergence",
   "psych_consolidator",
+  "divergence_explorer",
 ];
 
 /** Build a partial ModelConfig setting all judge roles to one model */
@@ -141,5 +161,17 @@ export const DEFAULT_MODEL_CONFIG: ModelConfig = {
   world_judge: "claude-sonnet-4-6",
   world_polish: "claude-sonnet-4-6",
   world_summary: "claude-sonnet-4-6",
+  plot_clarifier: "claude-sonnet-4-6",
+  plot_builder: "claude-sonnet-4-6",
+  plot_judge: "claude-sonnet-4-6",
+  plot_polish: "claude-sonnet-4-6",
+  plot_summary: "claude-sonnet-4-6",
+  scene_planner: "claude-sonnet-4-6",
+  scene_clarifier: "claude-sonnet-4-6",
+  scene_builder: "claude-sonnet-4-6",
+  scene_minor_judge: "claude-sonnet-4-6",
+  scene_final_judge: "claude-sonnet-4-6",
+  scene_divergence: "claude-sonnet-4-6",
   psych_consolidator: "claude-sonnet-4-6",
+  divergence_explorer: "claude-sonnet-4-6",
 };

@@ -50,6 +50,11 @@ import {
   markProbeConsumed,
 } from "./psychologyEngine";
 import type { RawSignalObservation, BehaviorSummary, AdaptationPlan } from "../../shared/types/userPsychology";
+import {
+  runDivergenceExploration,
+  extractDivergenceContext,
+  formatDirectionMapForPrompt,
+} from "./divergenceExplorer";
 
 // ─── API response types ───
 
@@ -382,7 +387,7 @@ export class CharacterImageService {
 
     // Mark any pending probe as consumed
     if (session.psychologyLedger) {
-      markProbeConsumed(session.psychologyLedger);
+      markProbeConsumed(session.psychologyLedger, turn.turnNumber);
     }
 
     await this.imageStore.save(session);
@@ -391,6 +396,12 @@ export class CharacterImageService {
     if (session.psychologyLedger && session.psychologyLedger.signalStore.length > 0) {
       this.fireBackgroundConsolidation(session.projectId, turn.turnNumber, "character_image")
         .catch(err => console.error("[PSYCH] CharImage consolidation fire failed:", err));
+    }
+
+    // ─── Fire background divergence exploration (non-blocking) ───
+    if (turn.turnNumber >= 2) {
+      this.fireBackgroundDivergence(session, turn.turnNumber, "character_image")
+        .catch(err => console.error("[DIVERGENCE] CharImage exploration fire failed:", err));
     }
 
     return {
@@ -419,11 +430,60 @@ export class CharacterImageService {
     );
 
     if (snapshot) {
-      // Re-read latest session to avoid overwriting concurrent changes
+      // Re-read the LATEST session to avoid overwriting concurrent changes.
+      // IMPORTANT: Only graft consolidation-owned fields — NOT the entire ledger.
+      // Divergence explorer may have saved lastDirectionMap concurrently;
+      // replacing the whole ledger would clobber it (and vice versa).
       const freshSession = await this.imageStore.get(projectId);
       if (!freshSession) return;
 
-      freshSession.psychologyLedger = sessionForConsolidation.psychologyLedger;
+      if (!freshSession.psychologyLedger) freshSession.psychologyLedger = sessionForConsolidation.psychologyLedger;
+      else {
+        freshSession.psychologyLedger.signalStore = sessionForConsolidation.psychologyLedger.signalStore;
+        freshSession.psychologyLedger.lastConsolidation = sessionForConsolidation.psychologyLedger.lastConsolidation;
+      }
+      freshSession.lastSavedAt = new Date().toISOString();
+      await this.imageStore.save(freshSession);
+    }
+  }
+
+  /**
+   * Fire-and-forget background divergence exploration for character image module.
+   */
+  private async fireBackgroundDivergence(
+    session: CharacterImageSessionState,
+    turnNumber: number,
+    module: "hook" | "character" | "character_image" | "world",
+  ): Promise<void> {
+    const psychSummary = formatPsychologyLedgerForPrompt(session.psychologyLedger);
+    // Build a state snapshot from character-image fields for divergence explorer
+    const imageState: Record<string, unknown> = {};
+    if (session.revealedSpecs) imageState.revealedSpecs = session.revealedSpecs;
+    if (session.artStylePreference) imageState.artStyle = session.artStylePreference;
+    if (session.visualSeed) imageState.visualSeed = session.visualSeed;
+    const seedInput = session.sourceCharacterPack?.locked?.characters
+      ? Object.values(session.sourceCharacterPack.locked.characters).map(c => (c as any).description ?? "").join("; ")
+      : "";
+    const previousFamilyNames = session.psychologyLedger?.lastDirectionMap?.directionMap?.families
+      ?.map(f => f.name) ?? [];
+    const context = extractDivergenceContext(
+      seedInput,
+      session.constraintLedger,
+      imageState,
+      psychSummary,
+      turnNumber,
+      module,
+      previousFamilyNames,
+    );
+
+    const snapshot = await runDivergenceExploration(context, this.llm);
+
+    if (snapshot) {
+      const freshSession = await this.imageStore.get(session.projectId);
+      if (!freshSession) return;
+
+      if (!freshSession.psychologyLedger) freshSession.psychologyLedger = createEmptyLedger();
+      freshSession.psychologyLedger.lastDirectionMap = snapshot;
       freshSession.lastSavedAt = new Date().toISOString();
       await this.imageStore.save(freshSession);
     }
@@ -880,6 +940,257 @@ export class CharacterImageService {
     return pack;
   }
 
+  // ─── Skip Module (for testing — bypasses all LLM and image generation) ───
+
+  async skipModule(
+    projectId: string,
+    characterProjectId: string,
+  ): Promise<CharacterImagePack> {
+    // Load the character export
+    const charExport = await this.charStore.getExport(characterProjectId);
+    if (!charExport || !charExport.characterPack) {
+      throw new CharacterImageServiceError(
+        "NOT_FOUND",
+        "Character export not found or characters not locked. Complete the character module first."
+      );
+    }
+
+    const sourceCharacterPack = charExport.characterPack;
+
+    // Import psychology ledger for passthrough
+    let importedPsychLedger = createEmptyLedger();
+    if (charExport.psychologyLedger) {
+      importedPsychLedger = charExport.psychologyLedger;
+    }
+    snapshotBaselineForNewModule(importedPsychLedger);
+
+    // Build a minimal passthrough pack with empty visual descriptions
+    const roles = Object.keys(sourceCharacterPack.locked.characters);
+    const lockedCharacters: CharacterImagePack["locked"]["characters"] = {};
+    for (const role of roles) {
+      const charProfile = sourceCharacterPack.locked.characters[role];
+      lockedCharacters[role] = {
+        role: charProfile.role,
+        visual_description: {
+          role: charProfile.role,
+          full_body_description: "(skipped — no visual design generated)",
+          visual_anchors: {
+            hair_description: "",
+            eyes_description: "",
+            signature_garment: "",
+            distinguishing_marks: "",
+            body_type: "",
+            pose_baseline: "",
+            expression_baseline: "",
+            color_palette: [],
+            visual_vibe: "",
+          },
+          image_generation_prompt: "",
+        },
+        image_base64: "",
+        enhanced_prompt: "",
+      };
+    }
+
+    const pack: CharacterImagePack = {
+      module: "character_image",
+      skipped: true,
+      locked: {
+        characters: lockedCharacters,
+        ensemble_cohesion_note: "(skipped)",
+        cast_count: roles.length,
+      },
+      generation_settings: {
+        checkpoint: "none",
+        lora: null,
+        quality: "none",
+      },
+      style_used: "(skipped)",
+      preferences: {
+        tone_chips: sourceCharacterPack.preferences?.tone_chips ?? [],
+        bans: sourceCharacterPack.preferences?.bans ?? [],
+      },
+      user_style: {
+        control_preference: sourceCharacterPack.user_style?.control_preference ?? "mixed",
+        typed_vs_clicked: sourceCharacterPack.user_style?.typed_vs_clicked ?? "mixed",
+        total_turns: 0,
+      },
+      state_summary: "(Character image module skipped — no visual design performed)",
+      characterpack_reference: { characterProjectId },
+      psychologyLedger: importedPsychLedger,
+    };
+
+    // Create a minimal session so the export can be saved
+    const session: CharacterImageSessionState = {
+      projectId,
+      characterProjectId,
+      sourceCharacterPack,
+      turns: [],
+      constraintLedger: [],
+      generatedImages: {},
+      status: "locked",
+      psychologyLedger: importedPsychLedger,
+    };
+
+    await this.imageStore.save(session);
+    await this.imageStore.saveExport(session, pack);
+
+    return pack;
+  }
+
+  // ─── Skip Module (skip image gen but still produce visual descriptions) ───
+
+  async skipModule(
+    projectId: string,
+    characterProjectId: string,
+  ): Promise<CharacterImagePack> {
+    const charExport = await this.charStore.getExport(characterProjectId);
+    if (!charExport || !charExport.characterPack) {
+      throw new CharacterImageServiceError(
+        "NOT_FOUND",
+        "Character export not found — lock the character module first",
+      );
+    }
+    const sourceCharacterPack = charExport.characterPack;
+
+    // Import constraint ledger from character module (same as normal first-turn)
+    const importedLedger: CharacterImageLedgerEntry[] = [];
+    if (charExport.constraintLedger) {
+      for (const entry of charExport.constraintLedger) {
+        importedLedger.push({
+          key: `char.${entry.key}`,
+          value: entry.value,
+          source: "character_imported",
+          confidence: "imported",
+          turnNumber: 0,
+        });
+      }
+    }
+
+    // Import psychology ledger from character module
+    let importedPsychLedger = createEmptyLedger();
+    if (charExport.psychologyLedger) {
+      importedPsychLedger = JSON.parse(JSON.stringify(charExport.psychologyLedger));
+    }
+    snapshotBaselineForNewModule(importedPsychLedger);
+
+    // Build a session so buildBuilderPrompt has the context it needs
+    const session: CharacterImageSessionState = {
+      projectId,
+      characterProjectId,
+      sourceCharacterPack,
+      turns: [],
+      constraintLedger: importedLedger,
+      generatedImages: {},
+      status: "generating",
+      lastSavedAt: new Date().toISOString(),
+      psychologyLedger: importedPsychLedger,
+    };
+
+    // Run a single builder LLM call to produce visual descriptions + image prompts
+    const builderPrompt = this.buildBuilderPrompt(session);
+    let builderResult: CharacterImageBuilderOutput | null = null;
+
+    try {
+      const builderRaw = await this.llm.call("img_builder", builderPrompt.system, builderPrompt.user, {
+        temperature: 0.8,
+        maxTokens: 12000,
+        jsonSchema: CHARACTER_IMAGE_BUILDER_SCHEMA,
+      });
+
+      builderResult = this.parseAndValidate<CharacterImageBuilderOutput>(builderRaw, [
+        "characters", "ensemble_cohesion_note", "style_recommendation", "style_reasoning",
+      ]);
+
+      // Convert characters from LLM array format to Record<role, VisualDescription>
+      if (builderResult && Array.isArray(builderResult.characters)) {
+        const charsRecord: Record<string, VisualDescription> = {};
+        for (const desc of builderResult.characters as any[]) {
+          if (desc.role) {
+            charsRecord[desc.role] = desc;
+          }
+        }
+        builderResult.characters = charsRecord;
+      }
+    } catch (err) {
+      console.error("SKIP MODULE BUILDER LLM ERROR:", err);
+      // Fall through — builderResult stays null, we'll use empty descriptions
+    }
+
+    // Build the locked characters from builder output (or empty fallback)
+    const characters: Record<string, {
+      role: string;
+      visual_description: VisualDescription;
+      image_base64: string;
+      enhanced_prompt: string;
+    }> = {};
+
+    const castRoles = Object.keys(sourceCharacterPack.locked.characters);
+    for (const role of castRoles) {
+      const builtDesc = builderResult?.characters?.[role];
+      characters[role] = {
+        role,
+        visual_description: builtDesc ?? {
+          role,
+          full_body_description: "(builder failed — no visual description generated)",
+          visual_anchors: {
+            hair_description: "",
+            eyes_description: "",
+            signature_garment: "",
+            distinguishing_marks: "",
+            body_type: "",
+            pose_baseline: "",
+            expression_baseline: "",
+            color_palette: [],
+            visual_vibe: "",
+          },
+          image_generation_prompt: "",
+        },
+        image_base64: "",    // no actual image generated
+        enhanced_prompt: "",  // no anime-gen tag expansion
+      };
+    }
+
+    const pack: CharacterImagePack = {
+      module: "character_image",
+      skipped: true,
+      locked: {
+        characters,
+        ensemble_cohesion_note: builderResult?.ensemble_cohesion_note ?? "(builder not run)",
+        cast_count: castRoles.length,
+      },
+      generation_settings: {
+        checkpoint: "none",
+        lora: null,
+        quality: "none",
+      },
+      style_used: builderResult?.style_recommendation ?? "none",
+      preferences: {
+        tone_chips: sourceCharacterPack.preferences?.tone_chips ?? [],
+        bans: sourceCharacterPack.preferences?.bans ?? [],
+      },
+      user_style: {
+        control_preference: sourceCharacterPack.user_style?.control_preference ?? "mixed",
+        typed_vs_clicked: sourceCharacterPack.user_style?.typed_vs_clicked ?? "mixed",
+        total_turns: 0,
+      },
+      state_summary: builderResult
+        ? "Character image module skipped image generation — visual descriptions produced by builder."
+        : "Character image module skipped — builder call failed, empty visual descriptions.",
+      characterpack_reference: { characterProjectId },
+      psychologyLedger: importedPsychLedger,
+    };
+
+    // Save session as locked and create export
+    session.status = "locked";
+    session.revealedSpecs = builderResult ?? undefined;
+    session.lastSavedAt = new Date().toISOString();
+    await this.imageStore.save(session);
+    await this.imageStore.saveExport(session, pack);
+
+    return pack;
+  }
+
   // ─── Session Management ───
 
   async getSession(projectId: string): Promise<CharacterImageSessionState | null> {
@@ -1052,7 +1363,11 @@ export class CharacterImageService {
       .replace("{{UPSTREAM_DEVELOPMENT_TARGETS}}", upstreamTargets)
       + (probeText ? "\n\n" + probeText : "");
 
-    return { system: CHARACTER_IMAGE_CLARIFIER_SYSTEM, user };
+    const currentTurn = session.turns.length + 1;
+    const directionMapText = formatDirectionMapForPrompt(session.psychologyLedger, currentTurn);
+    const finalUser = directionMapText ? user + "\n\n" + directionMapText : user;
+
+    return { system: CHARACTER_IMAGE_CLARIFIER_SYSTEM, user: finalUser };
   }
 
   private buildBuilderPrompt(session: CharacterImageSessionState): {

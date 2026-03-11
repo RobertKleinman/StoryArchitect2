@@ -20,6 +20,7 @@ import {
   QUESTION_VALUE_CHECK,
   PREMORTEM_CHECK,
   JUDGE_PREMORTEM,
+  DIVERGENCE_SELF_CHECK,
 } from "./psychologyPromptFragments";
 const PSYCHOLOGY_STRATEGY_INSTRUCTIONS = ADAPTATION_PLAN_INSTRUCTIONS;
 
@@ -260,6 +261,8 @@ BAD: "How do you want the setting to feel?" (this is a Hook question, not a Worl
 
 GOOD: ["Only the manager has keys", "Everyone has a master key", "Keys were copied months ago", "No locks — honor system"]
 BAD: ["Strict security", "Moderate security", "Loose security", "No security"]
+
+   ${DIVERGENCE_SELF_CHECK}
 
 4. allow_free_text — ALWAYS true.
 

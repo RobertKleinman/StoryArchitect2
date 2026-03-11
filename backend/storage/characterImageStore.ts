@@ -36,8 +36,10 @@ export class CharacterImageStore {
   constructor(dataDir = "./data/characterImages") {
     this.dataDir = dataDir;
     this.exportDir = path.join(dataDir, "exports");
-    fs.mkdir(dataDir, { recursive: true }).catch(() => {});
-    fs.mkdir(this.exportDir, { recursive: true }).catch(() => {});
+    fs.mkdir(dataDir, { recursive: true }).catch((e) =>
+      console.error(`[CharacterImageStore] mkdir failed: ${dataDir}`, e.message));
+    fs.mkdir(this.exportDir, { recursive: true }).catch((e) =>
+      console.error(`[CharacterImageStore] mkdir failed: ${this.exportDir}`, e.message));
   }
 
   private filePath(projectId: string): string {
@@ -51,10 +53,14 @@ export class CharacterImageStore {
   }
 
   async get(projectId: string): Promise<CharacterImageSessionState | null> {
+    const fp = this.filePath(projectId);
     try {
-      const raw = await fs.readFile(this.filePath(projectId), "utf-8");
+      const raw = await fs.readFile(fp, "utf-8");
       return JSON.parse(raw);
-    } catch {
+    } catch (e: any) {
+      if (e.code !== "ENOENT") {
+        console.error(`[CharacterImageStore] get failed: ${fp}`, e.code === undefined ? "parse error" : e.code, e.message);
+      }
       return null;
     }
   }
@@ -69,8 +75,10 @@ export class CharacterImageStore {
   async delete(projectId: string): Promise<void> {
     try {
       await fs.unlink(this.filePath(projectId));
-    } catch {
-      // already gone
+    } catch (e: any) {
+      if (e.code !== "ENOENT") {
+        console.error(`[CharacterImageStore] delete failed: ${this.filePath(projectId)}`, e.code, e.message);
+      }
     }
   }
 
@@ -107,10 +115,14 @@ export class CharacterImageStore {
 
   /** Get a previously saved export */
   async getExport(projectId: string): Promise<CharacterImageModuleExport | null> {
+    const fp = this.exportPath(projectId);
     try {
-      const raw = await fs.readFile(this.exportPath(projectId), "utf-8");
+      const raw = await fs.readFile(fp, "utf-8");
       return JSON.parse(raw);
-    } catch {
+    } catch (e: any) {
+      if (e.code !== "ENOENT") {
+        console.error(`[CharacterImageStore] getExport failed: ${fp}`, e.code === undefined ? "parse error" : e.code, e.message);
+      }
       return null;
     }
   }

@@ -35,6 +35,7 @@ export function ensureLedgerShape(ledger: UserPsychologyLedger): UserPsychologyL
   if (!ledger.signalStore) ledger.signalStore = ledger.hypothesisStore ?? [];
   if (!ledger.reads) ledger.reads = [];
   if (!ledger.assumptionDeltas) ledger.assumptionDeltas = [];
+  if (!ledger.probeHistory) ledger.probeHistory = [];
   if (!ledger.heuristics) {
     ledger.heuristics = {
       typeRatio: 0.5,
@@ -156,7 +157,7 @@ function computeStatus(
 export function recordSignals(
   ledger: UserPsychologyLedger,
   turnNumber: number,
-  module: "hook" | "character" | "character_image" | "world",
+  module: "hook" | "character" | "character_image" | "world" | "plot",
   rawSignals: RawSignalObservation[],
   behaviorSummary: BehaviorSummary,
   adaptationPlan: AdaptationPlan,
@@ -210,7 +211,7 @@ export function recordSignals(
 export function recordHypotheses(
   ledger: UserPsychologyLedger,
   turnNumber: number,
-  module: "hook" | "character" | "character_image" | "world",
+  module: "hook" | "character" | "character_image" | "world" | "plot",
   hypotheses: {
     hypothesis: string;
     evidence: string;
@@ -249,7 +250,7 @@ export function recordHypotheses(
 function processRawSignal(
   ledger: UserPsychologyLedger,
   turnNumber: number,
-  module: "hook" | "character" | "character_image" | "world",
+  module: "hook" | "character" | "character_image" | "world" | "plot",
   raw: RawSignalObservation,
 ): void {
   const store = ledger.signalStore;
@@ -277,7 +278,27 @@ function processRawSignal(
     }
   }
 
-  // Find similar existing signal (by keyword overlap)
+  // Handle explicit reinforcement of a named signal (preferred path —
+  // avoids relying on keyword overlap for signal deduplication)
+  if (raw.reinforcesSignalId) {
+    const target = store.find(s => s.id === raw.reinforcesSignalId);
+    if (target && target.status !== "suppressed") {
+      target.evidenceEvents.push(event);
+      target.lastUpdated = turnNumber;
+      target.confidence = computeConfidence(target.evidenceEvents, turnNumber);
+      target.status = computeStatus(target.confidence, target.evidenceEvents, turnNumber);
+      if (raw.adaptationConsequence) {
+        target.adaptationConsequence = raw.adaptationConsequence;
+      }
+      if (raw.contradictionCriteria) {
+        target.contradictionCriteria = raw.contradictionCriteria;
+      }
+      return;
+    }
+    // If the named signal doesn't exist (stale ID), fall through to keyword match
+  }
+
+  // Fallback: find similar existing signal (by keyword overlap)
   const existing = findSimilarSignal(store, raw.hypothesis);
 
   if (existing && existing.status !== "suppressed") {
@@ -584,6 +605,13 @@ export function updateHeuristics(
 }
 
 export function snapshotBaselineForNewModule(ledger: UserPsychologyLedger): void {
+  // Mark any unconsumed probe as consumed so it doesn't leak into the new module.
+  // The probe was generated for the previous module's context and would confuse the
+  // new module's clarifier if injected.
+  if (ledger.lastConsolidation && !ledger.lastConsolidation.probeConsumed) {
+    ledger.lastConsolidation.probeConsumed = true;
+  }
+
   const h = ledger.heuristics;
   if (h._rawStats) {
     h._importedBaseline = { ...h._rawStats };
@@ -895,7 +923,9 @@ export function computeEngineDials(
     .filter(s => s.status === "active" || s.status === "stable")
     .sort((a, b) => b.confidence - a.confidence);
 
-  // ── Option count: explorers get more choices, convergers get fewer
+  // ── STEP 1: Heuristic-based defaults (from interaction metrics) ──
+
+  // Option count: explorers get more choices, convergers get fewer
   if (h.typeRatio < 0.35) {
     // Clicker — likes guided choices
     defaults.optionCount = 4;
@@ -904,28 +934,81 @@ export function computeEngineDials(
     defaults.optionCount = 3;
   }
 
-  // ── Assumption boldness: high change rate + rising satisfaction = they want provocation
+  // Assumption boldness: high change rate + rising satisfaction = they want provocation
   if (h.changeRate > 0.4 && h.satisfaction?.trend !== "declining") {
     defaults.assumptionBoldness = "provocative";
   } else if (h.satisfaction?.trend === "declining") {
     defaults.assumptionBoldness = "conservative";
   }
 
-  // ── Question tone: match engagement
+  // Question tone: match engagement
   if (h.engagementTrend === -1 || h.satisfaction?.trend === "declining") {
     defaults.questionTone = "direct"; // stop being cute, get to the point
   } else if (h.engagementTrend === 1) {
     defaults.questionTone = "playful"; // they're having fun, match it
   }
 
-  // ── Leading strength: high deferrals = they want more leading
+  // Leading strength: high deferrals = they want more leading
   if (h.deferralRate > 0.3) {
     defaults.leadingStrength = 0.7;
   } else if (h.changeRate > 0.5) {
     defaults.leadingStrength = 0.3; // they're opinionated, follow more
   }
 
-  // ── Content emphasis: from top signals
+  // ── STEP 2: Engagement mode modulation (from most recent behaviorSummary) ──
+  // The engagement mode is a structured field — more contextual than raw heuristics.
+  // When it contradicts the heuristic, the engagement mode wins.
+  const lastRead = ledger.reads.length > 0 ? ledger.reads[ledger.reads.length - 1] : null;
+  const engagementMode = lastRead?.behaviorSummary?.engagementMode;
+
+  if (engagementMode === "exploring") {
+    // User is exploring — give them more options even if they type a lot
+    defaults.optionCount = Math.max(defaults.optionCount, 4);
+  } else if (engagementMode === "converging") {
+    // User is narrowing — fewer options, more focused
+    defaults.optionCount = Math.min(defaults.optionCount, 3);
+  } else if (engagementMode === "stuck") {
+    // User is stuck — be bolder and lead harder to break the loop
+    defaults.assumptionBoldness = "provocative";
+    defaults.leadingStrength = Math.max(defaults.leadingStrength, 0.7);
+  } else if (engagementMode === "disengaged") {
+    // User is losing interest — switch to direct tone, be more provocative
+    defaults.questionTone = "direct";
+    defaults.assumptionBoldness = "provocative";
+    defaults.leadingStrength = Math.max(defaults.leadingStrength, 0.6);
+  }
+
+  // ── STEP 3: Signal-aware overrides (high-confidence signals trump heuristics) ──
+  // Scan the top signals for adaptation consequences that directly conflict with
+  // dial settings. Only override when confidence >= 0.5 (reliable pattern).
+  for (const s of activeSignals) {
+    if (s.confidence < 0.5) break; // sorted by confidence, so we can stop early
+
+    const conseq = s.adaptationConsequence.toLowerCase();
+
+    // Option count overrides
+    if (/\bmore\s+(options|choices|chips)\b/.test(conseq)) {
+      defaults.optionCount = Math.max(defaults.optionCount, 5);
+    } else if (/\bfewer\s+(options|choices|chips)\b/.test(conseq)) {
+      defaults.optionCount = Math.min(defaults.optionCount, 3);
+    }
+
+    // Boldness overrides
+    if (/\bbolder\b|\bmore\s+provocat/.test(conseq)) {
+      defaults.assumptionBoldness = "provocative";
+    } else if (/\bsafer\b|\bmore\s+conservat|\bgentle/.test(conseq)) {
+      defaults.assumptionBoldness = "conservative";
+    }
+
+    // Leading strength overrides
+    if (/\blead\s+more\b|\bmore\s+leading\b|\bstronger\s+proposals\b/.test(conseq)) {
+      defaults.leadingStrength = Math.max(defaults.leadingStrength, 0.7);
+    } else if (/\bfollow\b|\btheir\s+vision\b|\bless\s+leading\b|\bmore\s+space\b/.test(conseq)) {
+      defaults.leadingStrength = Math.min(defaults.leadingStrength, 0.3);
+    }
+  }
+
+  // ── Content emphasis: from top signals ──
   const emphasisCategories = new Set<string>();
   for (const s of activeSignals.slice(0, 3)) {
     if (s.adaptationConsequence) {
@@ -934,7 +1017,7 @@ export function computeEngineDials(
     emphasisCategories.add(s.category);
   }
 
-  // ── Avoidances: from suppressed signals
+  // ── Avoidances: from suppressed signals ──
   for (const s of ledger.signalStore.filter(s => s.status === "suppressed")) {
     if (s.adaptationConsequence) {
       defaults.avoidances.push(`AVOID (contradicted): ${s.adaptationConsequence}`);
@@ -1003,7 +1086,7 @@ import type {
 export async function runConsolidation(
   ledger: UserPsychologyLedger,
   turnNumber: number,
-  module: "hook" | "character" | "character_image" | "world",
+  module: "hook" | "character" | "character_image" | "world" | "plot",
   llm: LLMClient,
 ): Promise<ConsolidationSnapshot | null> {
   // Guard: skip if no signals to consolidate
@@ -1022,6 +1105,9 @@ export async function runConsolidation(
   }
 
   ensureLedgerShape(ledger);
+
+  // Evaluate the outcome of any previously injected probe before this consolidation
+  evaluateProbeOutcome(ledger);
 
   // Build the prompt
   const signalStoreJson = JSON.stringify(
@@ -1069,10 +1155,26 @@ export async function runConsolidation(
     satisfaction: ledger.heuristics.satisfaction,
   }, null, 2);
 
+  // Build probe outcome section if available
+  let probeOutcomeSection = "";
+  if (ledger.lastConsolidation?.probeOutcome) {
+    const po = ledger.lastConsolidation.probeOutcome;
+    const probe = ledger.lastConsolidation.result.suggestedProbe;
+    probeOutcomeSection = `═══ LAST PROBE OUTCOME ═══
+Probe injected on turn ${po.injectedOnTurn}: "${probe?.angle ?? "(unknown)"}"
+Targeted signals: ${probe?.targetSignalIds?.join(", ") ?? "(unknown)"}
+Outcome: ${po.outcome}${po.answeredOnTurn ? ` (user responded on turn ${po.answeredOnTurn})` : ""}
+${po.outcome === "confirmed" ? "→ The probe worked. Consider probing a different ambiguity this time." :
+  po.outcome === "contradicted" ? "→ The probe surfaced a contradiction. Check if related signals need updating." :
+  po.outcome === "ignored" ? "→ The probe was ignored. Try a different angle or don't probe this turn." :
+  "→ Inconclusive. The user responded but it didn't clearly resolve the ambiguity."}`;
+  }
+
   const userPrompt = CONSOLIDATION_USER_TEMPLATE
     .replace("{{SIGNAL_STORE_JSON}}", signalStoreJson)
     .replace("{{RECENT_READS_JSON}}", JSON.stringify(recentReads, null, 2))
     .replace("{{HEURISTICS_JSON}}", heuristicsJson)
+    .replace("{{PROBE_OUTCOME_SECTION}}", probeOutcomeSection)
     .replace("{{MODULE}}", module)
     .replace("{{TURN_NUMBER}}", String(turnNumber));
 
@@ -1202,7 +1304,8 @@ function applyConsolidation(
 
 /**
  * Format the suggested probe for injection into the next clarifier prompt.
- * Returns empty string if no probe is pending or it was already consumed.
+ * Returns empty string if no probe is pending, already consumed, or if
+ * the probe targets signals that were recently ignored (re-probe block).
  */
 export function formatSuggestedProbeForPrompt(
   ledger: UserPsychologyLedger | undefined
@@ -1212,6 +1315,31 @@ export function formatSuggestedProbeForPrompt(
 
   const probe = ledger.lastConsolidation.result.suggestedProbe;
   if (!probe) return "";
+
+  // ── Re-probe block: skip if these targets were probed and ignored recently ──
+  if (probe.targetSignalIds && probe.targetSignalIds.length > 0 && ledger.probeHistory) {
+    const targetSet = new Set(probe.targetSignalIds);
+    const recentIgnored = ledger.probeHistory.filter(ph => {
+      if (ph.outcome !== "ignored") return false;
+      // "Recently" = within last 3 turns
+      const snap = ledger.lastConsolidation;
+      if (!snap) return false;
+      const turnsSinceProbe = snap.afterTurn - ph.injectedOnTurn;
+      return turnsSinceProbe <= 3;
+    });
+
+    // If ANY of the target signals were in a recently-ignored probe, skip
+    for (const ignored of recentIgnored) {
+      const overlap = ignored.targetSignalIds.some(id => targetSet.has(id));
+      if (overlap) {
+        console.log(
+          `[PSYCH] Re-probe blocked: targets ${probe.targetSignalIds.join(",")} overlap with ` +
+          `ignored probe from turn ${ignored.injectedOnTurn}`
+        );
+        return "";
+      }
+    }
+  }
 
   const ambiguity = ledger.lastConsolidation.result.unresolvedAmbiguity;
 
@@ -1235,10 +1363,97 @@ export function formatSuggestedProbeForPrompt(
 
 /**
  * Mark the current probe as consumed so it isn't re-injected.
+ * Also records the turn it was injected on for outcome tracking.
  */
-export function markProbeConsumed(ledger: UserPsychologyLedger): void {
+export function markProbeConsumed(ledger: UserPsychologyLedger, injectedOnTurn?: number): void {
   if (ledger.lastConsolidation) {
     ledger.lastConsolidation.probeConsumed = true;
+    // Initialize probe outcome tracking if there's a probe and we know the turn
+    if (ledger.lastConsolidation.result.suggestedProbe && injectedOnTurn !== undefined) {
+      if (!ledger.lastConsolidation.probeOutcome) {
+        ledger.lastConsolidation.probeOutcome = {
+          injectedOnTurn,
+          outcome: "ignored", // default; updated by next consolidation
+        };
+      }
+    }
+  }
+}
+
+/**
+ * Evaluate the outcome of a previously injected probe.
+ * Called during the NEXT consolidation after the probe was consumed.
+ * Checks if any of the target signals changed since probe injection.
+ * Records the result in probeHistory for re-probe blocking.
+ */
+export function evaluateProbeOutcome(ledger: UserPsychologyLedger): void {
+  const snap = ledger.lastConsolidation;
+  if (!snap?.probeOutcome || !snap.result.suggestedProbe) return;
+  // Already evaluated (has a final outcome AND has been recorded in history)
+  if (snap.probeOutcome.outcome !== "ignored" && snap.probeOutcome.answeredOnTurn) return;
+
+  const probe = snap.result.suggestedProbe;
+  const injectedTurn = snap.probeOutcome.injectedOnTurn;
+
+  // Check if any target signals got new evidence after the probe was injected
+  const targetIds = new Set(probe.targetSignalIds ?? []);
+  if (targetIds.size === 0) return;
+
+  let anyUpdated = false;
+  let anyContradicted = false;
+
+  for (const signal of ledger.signalStore) {
+    if (!targetIds.has(signal.id)) continue;
+    // Evidence added after probe injection?
+    const postProbeEvidence = signal.evidenceEvents.filter(e => e.turn > injectedTurn);
+    if (postProbeEvidence.length > 0) {
+      anyUpdated = true;
+      if (postProbeEvidence.some(e => e.valence === "contradicts")) {
+        anyContradicted = true;
+      }
+    }
+  }
+
+  let finalOutcome: "confirmed" | "contradicted" | "inconclusive" | "ignored";
+
+  if (anyContradicted) {
+    finalOutcome = "contradicted";
+    snap.probeOutcome.outcome = "contradicted";
+    snap.probeOutcome.answeredOnTurn = injectedTurn + 1;
+  } else if (anyUpdated) {
+    finalOutcome = "confirmed";
+    snap.probeOutcome.outcome = "confirmed";
+    snap.probeOutcome.answeredOnTurn = injectedTurn + 1;
+  } else {
+    // Check if user responded at all on the next turn (via reads)
+    const postProbeReads = ledger.reads.filter(r => r.turnNumber > injectedTurn);
+    if (postProbeReads.length > 0) {
+      finalOutcome = "inconclusive";
+      snap.probeOutcome.outcome = "inconclusive";
+      snap.probeOutcome.answeredOnTurn = injectedTurn + 1;
+    } else {
+      finalOutcome = "ignored";
+      // Leave as "ignored"
+    }
+  }
+
+  // Record in probe history for re-probe blocking
+  if (!ledger.probeHistory) ledger.probeHistory = [];
+  // Avoid duplicate entries for the same probe
+  const alreadyRecorded = ledger.probeHistory.some(
+    ph => ph.injectedOnTurn === injectedTurn &&
+      ph.targetSignalIds.length === (probe.targetSignalIds?.length ?? 0)
+  );
+  if (!alreadyRecorded) {
+    ledger.probeHistory.push({
+      targetSignalIds: probe.targetSignalIds ?? [],
+      injectedOnTurn: injectedTurn,
+      outcome: finalOutcome,
+    });
+    // Cap history at 10 entries (keep most recent)
+    if (ledger.probeHistory.length > 10) {
+      ledger.probeHistory = ledger.probeHistory.slice(-10);
+    }
   }
 }
 

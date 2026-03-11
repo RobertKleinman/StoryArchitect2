@@ -30,6 +30,9 @@ export interface CallOptions {
   modelOverride?: string;
   /** If provided, enables structured outputs — response is guaranteed valid JSON */
   jsonSchema?: Record<string, unknown>;
+  /** Static prefix of user prompt — cached separately by Anthropic for faster TTFT.
+   *  Other providers prepend it to the user prompt string. */
+  cacheableUserPrefix?: string;
 }
 
 // ── LLMClient ───────────────────────────────────────────────────────
@@ -75,6 +78,7 @@ export class LLMClient {
       temperature: options?.temperature,
       maxTokens: options?.maxTokens,
       jsonSchema: options?.jsonSchema,
+      cacheableUserPrefix: options?.cacheableUserPrefix,
     };
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {

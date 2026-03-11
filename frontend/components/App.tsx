@@ -3,9 +3,11 @@ import { HookWorkshop } from "./HookWorkshop";
 import { CharacterWorkshop } from "./CharacterWorkshop";
 import { CharacterImageWorkshop } from "./CharacterImageWorkshop";
 import { WorldWorkshop } from "./WorldWorkshop";
+import { PlotWorkshop } from "./PlotWorkshop";
+import { SceneWorkshop } from "./SceneWorkshop";
 import { ModelSettings } from "./ModelSettings";
 
-type Module = "hook" | "character" | "character_image" | "world";
+type Module = "hook" | "character" | "character_image" | "world" | "plot" | "scene";
 
 export function App() {
   const [activeModule, setActiveModule] = useState<Module>("hook");
@@ -44,6 +46,20 @@ export function App() {
         </button>
         <button
           type="button"
+          className={`module-tab${activeModule === "plot" ? " module-tab-active" : ""}`}
+          onClick={() => setActiveModule("plot")}
+        >
+          5. Plot
+        </button>
+        <button
+          type="button"
+          className={`module-tab${activeModule === "scene" ? " module-tab-active" : ""}`}
+          onClick={() => setActiveModule("scene")}
+        >
+          6. Scenes
+        </button>
+        <button
+          type="button"
           className="module-tab"
           onClick={() => setShowSettings(true)}
           title="Model Settings"
@@ -57,6 +73,8 @@ export function App() {
       {activeModule === "character" && <CharacterWorkshop />}
       {activeModule === "character_image" && <CharacterImageWorkshop />}
       {activeModule === "world" && <WorldWorkshop />}
+      {activeModule === "plot" && <PlotWorkshop />}
+      {activeModule === "scene" && <SceneWorkshop />}
 
       {showSettings && <ModelSettings onClose={() => setShowSettings(false)} />}
     </div>

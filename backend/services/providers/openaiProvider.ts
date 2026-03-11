@@ -55,7 +55,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
       temperature: options?.temperature ?? 0.7,
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
+        { role: "user", content: (options?.cacheableUserPrefix ?? "") + userPrompt },
       ],
     };
 

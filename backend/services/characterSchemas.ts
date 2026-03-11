@@ -115,6 +115,7 @@ export const CHARACTER_CLARIFIER_SCHEMA = {
               adaptationConsequence: { type: "string" },
               contradictionCriteria: { type: "string" },
               contradictsSignalId: { type: "string" },
+              reinforcesSignalId: { type: "string" },
             },
             required: ["hypothesis", "action", "valence", "scope", "category", "adaptationConsequence", "contradictionCriteria"],
             additionalProperties: false,

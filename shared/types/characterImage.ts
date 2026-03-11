@@ -122,6 +122,9 @@ export interface GeneratedCharacterImage {
 
 export interface CharacterImagePack {
   module: "character_image";
+  /** When true, the character image module was skipped (no visual design or images generated).
+   *  Downstream modules should treat this pack as a passthrough from the character module. */
+  skipped?: boolean;
   locked: {
     characters: Record<string, {
       role: string;

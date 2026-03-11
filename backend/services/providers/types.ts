@@ -8,6 +8,9 @@ export interface ProviderCallOptions {
   maxTokens?: number;
   /** If provided, response is guaranteed valid JSON matching this schema */
   jsonSchema?: Record<string, unknown>;
+  /** Static prefix of the user prompt — cached separately for Anthropic prompt caching.
+   *  Other providers prepend it to the user prompt string. */
+  cacheableUserPrefix?: string;
 }
 
 export interface ProviderResponse {

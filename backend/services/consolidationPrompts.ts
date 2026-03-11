@@ -129,15 +129,13 @@ export const CONSOLIDATION_USER_TEMPLATE = `Consolidate the psychology signal st
 ═══ INTERACTION HEURISTICS ═══
 {{HEURISTICS_JSON}}
 
+{{PROBE_OUTCOME_SECTION}}
+
 Module: {{MODULE}}
 Turn: {{TURN_NUMBER}}
 
 Look at the signals. Decide what's worth doing. Return your consolidation JSON.`;
 
-/**
- * JSON schema for structured output from consolidation LLM call.
- * All fields except updatedSignals are optional to support adaptive behavior.
- */
 /**
  * Plain JSON Schema for consolidation structured output.
  * Convention: all schemas are plain objects (type: "object" at top level).

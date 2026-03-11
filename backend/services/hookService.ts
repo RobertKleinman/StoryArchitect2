@@ -49,6 +49,11 @@ import {
   markProbeConsumed,
 } from "./psychologyEngine";
 import type { RawSignalObservation, BehaviorSummary, AdaptationPlan } from "../../shared/types/userPsychology";
+import {
+  runDivergenceExploration,
+  extractDivergenceContext,
+  formatDirectionMapForPrompt,
+} from "./divergenceExplorer";
 
 export class HookServiceError extends Error {
   code: "NOT_FOUND" | "INVALID_INPUT" | "LLM_PARSE_ERROR" | "LLM_CALL_FAILED";
@@ -345,7 +350,7 @@ export class HookService {
 
     // Mark any pending probe as consumed (the clarifier had access to it this turn)
     if (session.psychologyLedger) {
-      markProbeConsumed(session.psychologyLedger);
+      markProbeConsumed(session.psychologyLedger, turn.turnNumber);
     }
 
     await this.store.save(session);
@@ -359,11 +364,57 @@ export class HookService {
         .catch(err => console.error("[PSYCH] Background consolidation fire failed:", err));
     }
 
+    // ─── Fire background divergence exploration (non-blocking) ───
+    // Runs in parallel with consolidation during user think-time.
+    // Generates a direction map of unexplored story possibilities.
+    // Only fires after turn 1 (need at least seed + 1 interaction).
+    if (turn.turnNumber >= 2) {
+      this.fireBackgroundDivergence(session, turn.turnNumber, "hook")
+        .catch(err => console.error("[DIVERGENCE] Background exploration fire failed:", err));
+    }
+
     return {
       clarifier: turn.clarifierResponse,
       turnNumber: turn.turnNumber,
       totalTurns: session.turns.length,
     };
+  }
+
+  /**
+   * Fire-and-forget background divergence exploration. Reads the session,
+   * runs the divergence explorer LLM call, and saves the direction map.
+   * Non-blocking — failures are logged and swallowed.
+   */
+  private async fireBackgroundDivergence(
+    session: HookSessionState,
+    turnNumber: number,
+    module: "hook" | "character" | "character_image" | "world",
+  ): Promise<void> {
+    const psychSummary = formatPsychologyLedgerForPrompt(session.psychologyLedger);
+    const previousFamilyNames = session.psychologyLedger?.lastDirectionMap?.directionMap?.families
+      ?.map(f => f.name) ?? [];
+    const context = extractDivergenceContext(
+      session.seedInput,
+      session.constraintLedger,
+      session.currentState,
+      psychSummary,
+      turnNumber,
+      module,
+      previousFamilyNames,
+    );
+
+    const snapshot = await runDivergenceExploration(context, this.llm);
+
+    if (snapshot) {
+      // Re-read the LATEST session to avoid overwriting concurrent changes.
+      const freshSession = await this.store.get(session.projectId);
+      if (!freshSession) return;
+
+      if (!freshSession.psychologyLedger) freshSession.psychologyLedger = createEmptyLedger();
+      freshSession.psychologyLedger.lastDirectionMap = snapshot;
+      freshSession.lastSavedAt = new Date().toISOString();
+      await this.store.save(freshSession);
+    }
   }
 
   /**
@@ -389,11 +440,18 @@ export class HookService {
 
     if (snapshot) {
       // Re-read the LATEST session to avoid overwriting concurrent changes.
-      // Only graft the updated psychology ledger onto the fresh read.
+      // IMPORTANT: Only graft consolidation-owned fields — NOT the entire ledger.
+      // Divergence explorer may have saved lastDirectionMap concurrently;
+      // replacing the whole ledger would clobber it (and vice versa).
       const freshSession = await this.store.get(projectId);
       if (!freshSession) return;
 
-      freshSession.psychologyLedger = sessionForConsolidation.psychologyLedger;
+      if (!freshSession.psychologyLedger) freshSession.psychologyLedger = sessionForConsolidation.psychologyLedger;
+      else {
+        // Graft only what consolidation owns
+        freshSession.psychologyLedger.signalStore = sessionForConsolidation.psychologyLedger.signalStore;
+        freshSession.psychologyLedger.lastConsolidation = sessionForConsolidation.psychologyLedger.lastConsolidation;
+      }
       freshSession.lastSavedAt = new Date().toISOString();
       await this.store.save(freshSession);
     }
@@ -757,6 +815,8 @@ export class HookService {
 
     const psychText = formatPsychologyLedgerForPrompt(session.psychologyLedger);
     const probeText = formatSuggestedProbeForPrompt(session.psychologyLedger);
+    const currentTurn = session.turns.length + 1;
+    const directionMapText = formatDirectionMapForPrompt(session.psychologyLedger, currentTurn);
 
     const user = HOOK_CLARIFIER_USER_TEMPLATE
       .replace("{{USER_SEED}}", session.seedInput)
@@ -767,7 +827,8 @@ export class HookService {
       .replace("{{CURRENT_STATE_JSON}}", currentStateJson)
       .replace("{{BAN_LIST}}", bans)
       .replace("{{TURN_NUMBER}}", turnNumber)
-      + (probeText ? "\n\n" + probeText : "");
+      + (probeText ? "\n\n" + probeText : "")
+      + (directionMapText ? "\n\n" + directionMapText : "");
 
     return { system: HOOK_CLARIFIER_SYSTEM, user };
   }

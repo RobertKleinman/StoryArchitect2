@@ -18,4 +18,12 @@ export const FEATURE_FLAGS: FeatureFlags = {
     process.env.WORLD_MODULE_ENABLED !== undefined
       ? process.env.WORLD_MODULE_ENABLED !== "false"
       : DEFAULT_FEATURE_FLAGS.WORLD_MODULE_ENABLED,
+  PLOT_MODULE_ENABLED:
+    process.env.PLOT_MODULE_ENABLED !== undefined
+      ? process.env.PLOT_MODULE_ENABLED !== "false"
+      : DEFAULT_FEATURE_FLAGS.PLOT_MODULE_ENABLED,
+  SCENE_MODULE_ENABLED:
+    process.env.SCENE_MODULE_ENABLED !== undefined
+      ? process.env.SCENE_MODULE_ENABLED !== "false"
+      : DEFAULT_FEATURE_FLAGS.SCENE_MODULE_ENABLED,
 };

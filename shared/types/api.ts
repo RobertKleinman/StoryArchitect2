@@ -34,6 +34,29 @@ import {
   DevelopmentTarget,
 } from "./world";
 
+import {
+  PlotClarifierResponse,
+  PlotBuilderOutput,
+  PlotJudgeScores,
+  PlotPack,
+  PlotSessionState,
+  PlotDevelopmentTarget,
+} from "./plot";
+
+import {
+  SceneClarifierResponse,
+  SceneBuilderOutput,
+  SceneMinorJudgeOutput,
+  FinalJudgeOutput,
+  ScenePack,
+  SceneSessionState,
+  ScenePlannerOutput,
+  NarrativePreview,
+  SceneDevelopmentTarget,
+  BuiltScene,
+  ReadableScene,
+} from "./scene";
+
 /** Standard error shape for all endpoints */
 export interface ApiError {
   error: true;
@@ -181,3 +204,91 @@ export type WorldLockResponse = WorldPack;
 
 /** GET /api/world/:projectId */
 export type WorldSessionResponse = WorldSessionState;
+
+// ─── Plot Module API ───
+
+/** POST /api/plot/clarify */
+export interface PlotClarifyResponse {
+  clarifier: PlotClarifierResponse;
+  turnNumber: number;
+  totalTurns: number;
+}
+
+/** POST /api/plot/generate and /reroll */
+export interface PlotGenerateResponse {
+  plot: PlotBuilderOutput;
+  judge: {
+    passed: boolean;
+    hard_fail_reasons: string[];
+    scores: PlotJudgeScores;
+    weakest_element: string;
+    one_fix_instruction: string;
+  } | null;
+  rerollCount: number;
+  /** Development targets tracked across modules — shows what weaknesses have been addressed */
+  developmentTargets?: PlotDevelopmentTarget[];
+  /** Judge weaknesses specific to this plot build */
+  weaknesses?: Array<{
+    area: string;
+    weakness: string;
+    development_opportunity: string;
+  }>;
+}
+
+/** POST /api/plot/lock */
+export type PlotLockResponse = PlotPack;
+
+/** GET /api/plot/:projectId */
+export type PlotSessionResponse = PlotSessionState;
+
+// ─── Scene Module API ───
+
+/** POST /api/scene/plan — initial planning phase */
+export interface ScenePlanResponse {
+  planner: ScenePlannerOutput;
+  clarifier: SceneClarifierResponse;
+  turnNumber: number;
+}
+
+/** POST /api/scene/plan-clarify — refine the plan */
+export interface ScenePlanClarifyResponse {
+  clarifier: SceneClarifierResponse;
+  turnNumber: number;
+  planConfirmed: boolean;
+}
+
+/** POST /api/scene/clarify — per-scene steering */
+export interface SceneClarifyResponse {
+  clarifier: SceneClarifierResponse;
+  sceneId: string;
+  sceneIndex: number;
+  totalScenes: number;
+  autoPassApplied: boolean;
+}
+
+/** POST /api/scene/build — background build result (polled) */
+export interface SceneBuildResponse {
+  scene: BuiltScene;
+  sceneIndex: number;
+  totalScenes: number;
+}
+
+/** POST /api/scene/final-judge */
+export interface SceneFinalJudgeResponse {
+  judge: FinalJudgeOutput;
+}
+
+/** POST /api/scene/complete */
+export type SceneCompleteResponse = ScenePack;
+
+/** GET /api/scene/:projectId */
+export type SceneSessionResponse = SceneSessionState;
+
+/** GET /api/scene/debug/scenes/:projectId — testing sidebar */
+export interface SceneDebugResponse {
+  builtScenes: BuiltScene[];
+  readableScenes: ReadableScene[];
+  scenePlan: ScenePlannerOutput["scenes"] | null;
+  narrativePreview: NarrativePreview | null;
+  rhythmSnapshot: SceneSessionState["rhythmSnapshot"] | null;
+}

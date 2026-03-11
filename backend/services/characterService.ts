@@ -53,6 +53,11 @@ import {
   markProbeConsumed,
 } from "./psychologyEngine";
 import type { RawSignalObservation, BehaviorSummary, AdaptationPlan } from "../../shared/types/userPsychology";
+import {
+  runDivergenceExploration,
+  extractDivergenceContext,
+  formatDirectionMapForPrompt,
+} from "./divergenceExplorer";
 
 export class CharacterServiceError extends Error {
   code: "NOT_FOUND" | "INVALID_INPUT" | "LLM_PARSE_ERROR" | "LLM_CALL_FAILED";
@@ -405,7 +410,7 @@ export class CharacterService {
 
     // Mark any pending probe as consumed
     if (session.psychologyLedger) {
-      markProbeConsumed(session.psychologyLedger);
+      markProbeConsumed(session.psychologyLedger, turn.turnNumber);
     }
 
     await this.charStore.save(session);
@@ -414,6 +419,12 @@ export class CharacterService {
     if (session.psychologyLedger && session.psychologyLedger.signalStore.length > 0) {
       this.fireBackgroundConsolidation(session.projectId, turn.turnNumber, "character")
         .catch(err => console.error("[PSYCH] Character consolidation fire failed:", err));
+    }
+
+    // ─── Fire background divergence exploration (non-blocking) ───
+    if (turn.turnNumber >= 2) {
+      this.fireBackgroundDivergence(session, turn.turnNumber, "character")
+        .catch(err => console.error("[DIVERGENCE] Character exploration fire failed:", err));
     }
 
     return {
@@ -442,11 +453,60 @@ export class CharacterService {
     );
 
     if (snapshot) {
-      // Re-read latest session to avoid overwriting concurrent changes
+      // Re-read the LATEST session to avoid overwriting concurrent changes.
+      // IMPORTANT: Only graft consolidation-owned fields — NOT the entire ledger.
+      // Divergence explorer may have saved lastDirectionMap concurrently;
+      // replacing the whole ledger would clobber it (and vice versa).
       const freshSession = await this.charStore.get(projectId);
       if (!freshSession) return;
 
-      freshSession.psychologyLedger = sessionForConsolidation.psychologyLedger;
+      if (!freshSession.psychologyLedger) freshSession.psychologyLedger = sessionForConsolidation.psychologyLedger;
+      else {
+        freshSession.psychologyLedger.signalStore = sessionForConsolidation.psychologyLedger.signalStore;
+        freshSession.psychologyLedger.lastConsolidation = sessionForConsolidation.psychologyLedger.lastConsolidation;
+      }
+      freshSession.lastSavedAt = new Date().toISOString();
+      await this.charStore.save(freshSession);
+    }
+  }
+
+  /**
+   * Fire-and-forget background divergence exploration for character module.
+   */
+  private async fireBackgroundDivergence(
+    session: CharacterSessionState,
+    turnNumber: number,
+    module: "hook" | "character" | "character_image" | "world",
+  ): Promise<void> {
+    const psychSummary = formatPsychologyLedgerForPrompt(session.psychologyLedger);
+    // Build a state snapshot from character-module fields for divergence explorer
+    const characterState: Record<string, unknown> = {};
+    if (session.characters) {
+      for (const [role, state] of Object.entries(session.characters)) {
+        characterState[role] = state;
+      }
+    }
+    if (session.activeFocus) characterState._activeFocus = session.activeFocus;
+    const previousFamilyNames = session.psychologyLedger?.lastDirectionMap?.directionMap?.families
+      ?.map(f => f.name) ?? [];
+    const context = extractDivergenceContext(
+      session.seedInput ?? session.sourceHook?.locked?.premise ?? "",
+      session.constraintLedger,
+      characterState,
+      psychSummary,
+      turnNumber,
+      module,
+      previousFamilyNames,
+    );
+
+    const snapshot = await runDivergenceExploration(context, this.llm);
+
+    if (snapshot) {
+      const freshSession = await this.charStore.get(session.projectId);
+      if (!freshSession) return;
+
+      if (!freshSession.psychologyLedger) freshSession.psychologyLedger = createEmptyLedger();
+      freshSession.psychologyLedger.lastDirectionMap = snapshot;
       freshSession.lastSavedAt = new Date().toISOString();
       await this.charStore.save(freshSession);
     }
@@ -922,7 +982,11 @@ export class CharacterService {
       .replace("{{UPSTREAM_DEVELOPMENT_TARGETS}}", upstreamTargets)
       + (probeText ? "\n\n" + probeText : "");
 
-    return { system: CHARACTER_CLARIFIER_SYSTEM, user };
+    const currentTurn = session.turns.length + 1;
+    const directionMapText = formatDirectionMapForPrompt(session.psychologyLedger, currentTurn);
+    const finalUser = directionMapText ? user + "\n\n" + directionMapText : user;
+
+    return { system: CHARACTER_CLARIFIER_SYSTEM, user: finalUser };
   }
 
   private buildBuilderPrompt(session: CharacterSessionState): {

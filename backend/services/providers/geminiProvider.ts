@@ -39,7 +39,7 @@ export class GeminiProvider implements LLMProvider {
       contents: [
         {
           role: "user",
-          parts: [{ text: userPrompt }],
+          parts: [{ text: (options?.cacheableUserPrefix ?? "") + userPrompt }],
         },
       ],
       generationConfig: {

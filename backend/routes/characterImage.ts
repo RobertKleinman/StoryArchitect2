@@ -216,6 +216,24 @@ characterImageRoutes.get("/anime-gen-presets", async (_req, res) => {
 
 // ─── Session endpoints (/:projectId MUST be last) ───
 
+characterImageRoutes.post("/skip", async (req, res) => {
+  const { projectId, characterProjectId } = req.body ?? {};
+
+  if (!projectId || typeof projectId !== "string") {
+    return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "projectId is required" });
+  }
+  if (!characterProjectId || typeof characterProjectId !== "string") {
+    return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "characterProjectId is required" });
+  }
+
+  try {
+    const result = await characterImageService.skipModule(projectId, characterProjectId);
+    return res.json(result);
+  } catch (err) {
+    return handleError(res, err);
+  }
+});
+
 characterImageRoutes.post("/set-art-style", async (req, res) => {
   const { projectId, style, customNote } = req.body ?? {};
   if (!projectId || !style) {

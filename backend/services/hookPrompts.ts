@@ -18,6 +18,7 @@ import {
   QUESTION_VALUE_CHECK,
   PREMORTEM_CHECK,
   JUDGE_PREMORTEM,
+  DIVERGENCE_SELF_CHECK,
 } from "./psychologyPromptFragments";
 // backward compat alias
 const PSYCHOLOGY_STRATEGY_INSTRUCTIONS = ADAPTATION_PLAN_INSTRUCTIONS;
@@ -238,6 +239,8 @@ OUTPUT FORMAT
    - When proposing hooks: each chip is a different "what if?"
    - When asking constraints: each chip is a vivid, concrete option (not abstract labels)
    - Keep them short enough to scan but specific enough to excite
+
+   ${DIVERGENCE_SELF_CHECK}
 
 4. allow_free_text — ALWAYS true. The user can always type their own answer.
 

@@ -43,7 +43,7 @@ export interface EvidenceEvent {
   /** Turn number where the evidence occurred */
   turn: number;
   /** Module where observed */
-  module: "hook" | "character" | "character_image" | "world";
+  module: "hook" | "character" | "character_image" | "world" | "plot";
   /** What the user actually did */
   action: string;   // e.g. "chose 'dark romance' chip", "typed 'I want the villain to be sympathetic'"
   /** Whether this supports or contradicts the signal */
@@ -114,6 +114,9 @@ export interface RawSignalObservation {
   adaptationConsequence: string;
   /** What would contradict this signal? */
   contradictionCriteria: string;
+  /** If this REINFORCES an existing signal with new evidence, its ID.
+   *  Preferred over creating a duplicate signal — keeps the store clean. */
+  reinforcesSignalId?: string;
   /** If contradicting a prior signal, which signal ID? */
   contradictsSignalId?: string;
 }
@@ -192,7 +195,7 @@ export interface StructuredUserRead {
 
 export interface UserPsychologyRead {
   turnNumber: number;
-  module: "hook" | "character" | "character_image" | "world";
+  module: "hook" | "character" | "character_image" | "world" | "plot";
   /** Raw signal observations from this turn */
   signals: RawSignalObservation[];
   /** Structured behavior summary */
@@ -361,14 +364,98 @@ export interface ConsolidationSnapshot {
   /** Which turn it ran after */
   afterTurn: number;
   /** Which module was active */
-  module: "hook" | "character" | "character_image" | "world";
+  module: "hook" | "character" | "character_image" | "world" | "plot";
   /** The full result */
   result: ConsolidationResult;
   /** Whether the suggestedProbe was consumed by the next clarifier turn */
   probeConsumed: boolean;
+  /** Probe outcome tracking — filled in after the turn following probe injection */
+  probeOutcome?: {
+    /** Turn when the probe was injected into the clarifier */
+    injectedOnTurn: number;
+    /** Turn when the user responded (if they did) */
+    answeredOnTurn?: number;
+    /** What happened: did the user's response clarify the targeted ambiguity? */
+    outcome: "confirmed" | "contradicted" | "inconclusive" | "ignored";
+    /** Brief note on what was learned (set by next consolidation) */
+    note?: string;
+  };
+}
+
+// ─── Divergence Explorer (background direction map) ───
+
+/**
+ * A single story future — one possible direction the story could go.
+ * Generated in bulk (15-20) by the divergence explorer, then clustered.
+ */
+export interface StoryFuture {
+  /** Short label, max ~10 words */
+  label: string;
+  /** 1-sentence premise sketch — vivid and specific */
+  sketch: string;
+  /** Primary emotional payoff */
+  emotionalPayoff: string;
+  /** Dominant conflict pattern */
+  conflictPattern: "internal" | "external" | "relational" | "institutional" | "cosmic";
+  /** Power dynamic at play */
+  powerDynamic: "dominance" | "equality" | "vulnerability" | "reversal" | "escalation";
+  /** Why this direction is interesting — 1 sentence max */
+  hook: string;
+}
+
+/**
+ * A cluster of related story futures — a "direction family."
+ * The divergence explorer groups similar futures and names the family.
+ */
+export interface DirectionFamily {
+  /** Short name for this family, max ~5 words (e.g. "Slow Burn Betrayal") */
+  name: string;
+  /** What defines this family — the shared emotional/structural DNA */
+  signature: string;
+  /** The 2-4 futures in this cluster */
+  futures: StoryFuture[];
+  /** How different this family is from what the clarifier is currently exploring (0-1, higher = more divergent) */
+  novelty: number;
+}
+
+/**
+ * The direction map — a compact summary of unexplored story space.
+ * Stored on the session, injected into the clarifier prompt as inspiration.
+ */
+export interface DirectionMap {
+  /** 4-6 direction families spanning the possibility space */
+  families: DirectionFamily[];
+  /** The single most underexplored direction — a nudge for the clarifier */
+  blindSpot: string;
+  /** Brief reasoning about what the current conversation is converging toward (for context) */
+  convergenceNote: string;
+}
+
+/**
+ * Stored on the ledger: the last direction map + metadata.
+ */
+export interface DirectionMapSnapshot {
+  /** When this exploration ran */
+  timestamp: string;
+  /** Which turn it ran after */
+  afterTurn: number;
+  /** Which module was active */
+  module: "hook" | "character" | "character_image" | "world" | "plot";
+  /** The direction map */
+  directionMap: DirectionMap;
 }
 
 // ─── The full ledger ───
+
+/** Record of a probe that was injected and its outcome. Used to prevent re-probing. */
+export interface ProbeHistoryEntry {
+  /** Signal IDs that were targeted by the probe */
+  targetSignalIds: string[];
+  /** Turn the probe was injected on */
+  injectedOnTurn: number;
+  /** Outcome of the probe */
+  outcome: "confirmed" | "contradicted" | "inconclusive" | "ignored";
+}
 
 export interface UserPsychologyLedger {
   /** LLM reads accumulated across turns. Most recent last. */
@@ -381,6 +468,10 @@ export interface UserPsychologyLedger {
   assumptionDeltas: AssumptionDelta[];
   /** Last background consolidation result. Updated async during user think-time. */
   lastConsolidation?: ConsolidationSnapshot;
+  /** Last background direction map. Updated async during user think-time. */
+  lastDirectionMap?: DirectionMapSnapshot;
+  /** History of probe injections and outcomes — used to prevent re-probing ignored targets */
+  probeHistory?: ProbeHistoryEntry[];
 
   // ─── Backward compat ───
   /** @deprecated Use signalStore */

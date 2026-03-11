@@ -1,13 +1,11 @@
 import { Router } from "express";
-import fs from "fs/promises";
-import nodePath from "path";
-import { worldFeatureFlagGuard } from "../middleware/worldFeatureFlagGuard";
-import { worldService } from "../services/runtime";
-import { WorldServiceError } from "../services/worldService";
+import { plotFeatureFlagGuard } from "../middleware/plotFeatureFlagGuard";
+import { plotService } from "../services/runtime";
+import { PlotServiceError } from "../services/plotService";
 
-export const worldRoutes = Router();
+export const plotRoutes = Router();
 
-worldRoutes.use(worldFeatureFlagGuard);
+plotRoutes.use(plotFeatureFlagGuard);
 
 function getModelOverride(header: string | string[] | undefined): string | undefined {
   if (Array.isArray(header)) return header[0];
@@ -15,8 +13,8 @@ function getModelOverride(header: string | string[] | undefined): string | undef
 }
 
 function handleError(res: any, err: unknown) {
-  console.error("WORLD ROUTE ERROR:", err);
-  if (err instanceof WorldServiceError) {
+  console.error("PLOT ROUTE ERROR:", err);
+  if (err instanceof PlotServiceError) {
     const status = err.code === "NOT_FOUND" ? 404
       : err.code === "INVALID_INPUT" ? 400
       : err.code === "LLM_PARSE_ERROR" ? 422
@@ -29,7 +27,7 @@ function handleError(res: any, err: unknown) {
 
 // ─── Preview Prompt ───
 
-worldRoutes.post("/preview-prompt", async (req, res) => {
+plotRoutes.post("/preview-prompt", async (req, res) => {
   const { projectId, stage } = req.body ?? {};
 
   if (!projectId || typeof projectId !== "string") {
@@ -40,7 +38,7 @@ worldRoutes.post("/preview-prompt", async (req, res) => {
   }
 
   try {
-    const result = await worldService.previewPrompt(projectId, stage);
+    const result = await plotService.previewPrompt(projectId, stage);
     return res.json(result);
   } catch (err) {
     return handleError(res, err);
@@ -49,21 +47,25 @@ worldRoutes.post("/preview-prompt", async (req, res) => {
 
 // ─── Clarify ───
 
-worldRoutes.post("/clarify", async (req, res) => {
+plotRoutes.post("/clarify", async (req, res) => {
   const modelOverride = getModelOverride(req.header("X-Model-Override"));
   const {
     projectId,
+    worldProjectId,
     characterImageProjectId,
     characterProjectId,
     hookProjectId,
     userSelection,
     promptOverrides,
     assumptionResponses,
-    worldSeed,
+    plotSeed,
   } = req.body ?? {};
 
   if (!projectId || typeof projectId !== "string") {
     return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "projectId is required" });
+  }
+  if (!worldProjectId || typeof worldProjectId !== "string") {
+    return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "worldProjectId is required" });
   }
   if (characterImageProjectId !== undefined && typeof characterImageProjectId !== "string") {
     return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "characterImageProjectId must be a string if provided" });
@@ -76,8 +78,9 @@ worldRoutes.post("/clarify", async (req, res) => {
   }
 
   try {
-    const result = await worldService.runClarifierTurn(
+    const result = await plotService.runClarifierTurn(
       projectId,
+      worldProjectId,
       characterImageProjectId,
       characterProjectId,
       hookProjectId,
@@ -85,7 +88,7 @@ worldRoutes.post("/clarify", async (req, res) => {
       modelOverride,
       promptOverrides,
       assumptionResponses,
-      worldSeed,
+      plotSeed,
     );
     return res.json(result);
   } catch (err) {
@@ -95,7 +98,7 @@ worldRoutes.post("/clarify", async (req, res) => {
 
 // ─── Generate (builder + judge) ───
 
-worldRoutes.post("/generate", async (req, res) => {
+plotRoutes.post("/generate", async (req, res) => {
   const modelOverride = getModelOverride(req.header("X-Model-Override"));
   const { projectId, promptOverrides } = req.body ?? {};
 
@@ -104,7 +107,7 @@ worldRoutes.post("/generate", async (req, res) => {
   }
 
   try {
-    const result = await worldService.runGenerate(projectId, modelOverride, promptOverrides);
+    const result = await plotService.runGenerate(projectId, modelOverride, promptOverrides);
     return res.json(result);
   } catch (err) {
     return handleError(res, err);
@@ -113,7 +116,7 @@ worldRoutes.post("/generate", async (req, res) => {
 
 // ─── Reroll ───
 
-worldRoutes.post("/reroll", async (req, res) => {
+plotRoutes.post("/reroll", async (req, res) => {
   const modelOverride = getModelOverride(req.header("X-Model-Override"));
   const { projectId, promptOverrides } = req.body ?? {};
 
@@ -122,7 +125,7 @@ worldRoutes.post("/reroll", async (req, res) => {
   }
 
   try {
-    const result = await worldService.reroll(projectId, modelOverride, promptOverrides);
+    const result = await plotService.reroll(projectId, modelOverride, promptOverrides);
     return res.json(result);
   } catch (err) {
     return handleError(res, err);
@@ -131,7 +134,7 @@ worldRoutes.post("/reroll", async (req, res) => {
 
 // ─── Lock ───
 
-worldRoutes.post("/lock", async (req, res) => {
+plotRoutes.post("/lock", async (req, res) => {
   const modelOverride = getModelOverride(req.header("X-Model-Override"));
   const { projectId } = req.body ?? {};
 
@@ -140,7 +143,7 @@ worldRoutes.post("/lock", async (req, res) => {
   }
 
   try {
-    const result = await worldService.lockWorld(projectId, modelOverride);
+    const result = await plotService.lockPlot(projectId, modelOverride);
     return res.json(result);
   } catch (err) {
     return handleError(res, err);
@@ -149,11 +152,11 @@ worldRoutes.post("/lock", async (req, res) => {
 
 // ─── Export Session ───
 
-worldRoutes.get("/export-session/:projectId", async (req, res) => {
+plotRoutes.get("/export-session/:projectId", async (req, res) => {
   try {
-    const session = await worldService.getSession(req.params.projectId);
+    const session = await plotService.getSession(req.params.projectId);
     if (!session) {
-      return res.status(404).json({ error: true, code: "NOT_FOUND", message: "World session not found" });
+      return res.status(404).json({ error: true, code: "NOT_FOUND", message: "Plot session not found" });
     }
     return res.json(session);
   } catch (err) {
@@ -163,9 +166,9 @@ worldRoutes.get("/export-session/:projectId", async (req, res) => {
 
 // ─── Debug Psychology ───
 
-worldRoutes.get("/debug/psychology/:projectId", async (req, res) => {
+plotRoutes.get("/debug/psychology/:projectId", async (req, res) => {
   try {
-    const session = await worldService.getSession(req.params.projectId);
+    const session = await plotService.getSession(req.params.projectId);
     if (!session?.psychologyLedger) {
       return res.json({ psychologyLedger: null });
     }
@@ -175,65 +178,13 @@ worldRoutes.get("/debug/psychology/:projectId", async (req, res) => {
   }
 });
 
-/** List all available world sessions (for the Plot module to discover) */
-worldRoutes.get("/list-sessions", async (_req, res) => {
-  try {
-    const dataDir = "./data/worlds";
-    const exportDir = nodePath.join(dataDir, "exports");
-
-    let sessionFiles: string[] = [];
-    try {
-      const allFiles: string[] = await fs.readdir(dataDir);
-      sessionFiles = allFiles.filter((f: string) => f.endsWith(".json"));
-    } catch { /* empty dir */ }
-
-    const sessions: Array<{
-      projectId: string;
-      characterImageProjectId?: string;
-      characterProjectId: string;
-      hookProjectId: string;
-      status: string;
-      turnCount: number;
-      hasExport: boolean;
-    }> = [];
-
-    for (const file of sessionFiles) {
-      try {
-        const raw = await fs.readFile(nodePath.join(dataDir, file), "utf-8");
-        const session = JSON.parse(raw);
-
-        // Check if export exists
-        let hasExport = false;
-        try {
-          await fs.readFile(nodePath.join(exportDir, file), "utf-8");
-          hasExport = true;
-        } catch {}
-
-        sessions.push({
-          projectId: session.projectId,
-          characterImageProjectId: session.characterImageProjectId,
-          characterProjectId: session.characterProjectId ?? "",
-          hookProjectId: session.hookProjectId ?? "",
-          status: session.status,
-          turnCount: session.turns?.length ?? 0,
-          hasExport,
-        });
-      } catch { /* skip corrupt files */ }
-    }
-
-    return res.json({ sessions });
-  } catch (err) {
-    return handleError(res, err);
-  }
-});
-
 // ─── Session endpoints (/:projectId MUST be last) ───
 
-worldRoutes.get("/:projectId", async (req, res) => {
+plotRoutes.get("/:projectId", async (req, res) => {
   try {
-    const session = await worldService.getSession(req.params.projectId);
+    const session = await plotService.getSession(req.params.projectId);
     if (!session) {
-      return res.status(404).json({ error: true, code: "NOT_FOUND", message: "World session not found" });
+      return res.status(404).json({ error: true, code: "NOT_FOUND", message: "Plot session not found" });
     }
     return res.json(session);
   } catch (err) {
@@ -241,9 +192,9 @@ worldRoutes.get("/:projectId", async (req, res) => {
   }
 });
 
-worldRoutes.delete("/:projectId", async (req, res) => {
+plotRoutes.delete("/:projectId", async (req, res) => {
   try {
-    await worldService.resetSession(req.params.projectId);
+    await plotService.resetSession(req.params.projectId);
     return res.json({ deleted: true });
   } catch (err) {
     return handleError(res, err);

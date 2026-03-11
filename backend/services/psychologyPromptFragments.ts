@@ -27,6 +27,7 @@ export const SHARED_USER_READ_INSTRUCTIONS = `Output as STRUCTURED JSON (not fre
         category: "content_preferences" | "control_orientation" | "power_dynamics" | "tonal_risk" | "narrative_ownership" | "engagement_satisfaction",
         adaptationConsequence: "what the pipeline should DO differently — concrete action, not vibe",
         contradictionCriteria: "what user action would prove this wrong — specific and testable",
+        reinforcesSignalId: "s2",  // optional: if this SUPPORTS a prior signal, name it — avoids duplicates
         contradictsSignalId: "s3"  // optional: if this contradicts a prior signal, name it
       }
     ],
@@ -92,10 +93,13 @@ SIGNAL RULES — READ THESE CAREFULLY:
    "changed their mind about X after seeing Y", "spent the most words on Z"
 
 6. CHECK PRIOR SIGNALS in the psychology section above. Reference them by ID.
-   - If you see supporting evidence → output valence: "supports" with the signal's observation
+   - If you see supporting evidence for an EXISTING signal → set reinforcesSignalId to that signal's ID.
+     This is PREFERRED over creating a new signal. Example: prior signal [s2] says "picks complex
+     antagonists" and user just chose "morally ambiguous villain" → output reinforcesSignalId: "s2".
    - If you see contradicting evidence → output valence: "contradicts" with contradictsSignalId
-   - If it's genuinely new → just output it as a new signal
-   - DO NOT restate prior signals with different words. Either add new evidence or don't.
+   - ONLY create a genuinely new signal (no reinforcesSignalId) when the observation doesn't
+     fit any existing signal. New signals are expensive — the store caps at 12.
+   - DO NOT restate prior signals with different words. Either reinforce with new evidence or don't.
 
 7. DEEPENING RULE (after turn 2):
    After turn 2, new signals MUST add information, not restate.
@@ -440,3 +444,28 @@ Name the single most likely failure mode — the weakness that would make this f
   - "Where was this going?" — no genuine urgency pulling the reader forward
 
 Factor this into your scoring. If the candidate already addresses its most likely failure mode, that's a significant strength worth noting.`;
+
+// ─────────────────────────────────────────────────────────────────
+// FRAGMENT: DIVERGENCE SELF-CHECK — option diversity
+// Used in: all clarifier system prompts (near option generation)
+// Purpose: Ensure visible options open genuinely different story spaces
+// ─────────────────────────────────────────────────────────────────
+export const DIVERGENCE_SELF_CHECK = `DIVERGENCE CHECK (when generating options):
+After drafting your options, run this self-check before finalizing:
+
+For each option, privately ask: "If the user picks THIS one, what kind of story does it lead to?"
+Then compare: do your options lead to genuinely different stories, or do they all funnel to roughly the same place?
+
+CHECK THESE AXES:
+  - Different emotional payoff? (shame vs thrill vs tenderness vs dread)
+  - Different conflict pattern? (internal vs external vs relational vs institutional)
+  - Different power dynamic? (dominance vs equality vs vulnerability vs reversal)
+  - Different scene types? (intimate confrontation vs public exposure vs quiet erosion vs explosive reveal)
+
+If two options share 3+ of those axes, they're secretly the same option in different words. Replace the weaker one with something that opens a genuinely different story space.
+
+ALSO APPLY TO ASSUMPTIONS:
+  - At least one assumption per turn should push toward an unexpected direction — not the obvious continuation
+  - The alternatives for each assumption should lead to different KINDS of stories, not just different details within the same kind
+
+This is not about being weird for the sake of weird. Every option should be plausible and emotionally charged. But if a user could pick any of your options and end up in basically the same story, you've failed at the one thing that makes this experience addictive: the feeling that every choice MATTERS.`;

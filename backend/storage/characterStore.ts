@@ -38,8 +38,10 @@ export class CharacterStore {
   constructor(dataDir = "./data/characters") {
     this.dataDir = dataDir;
     this.exportDir = path.join(dataDir, "exports");
-    fs.mkdir(dataDir, { recursive: true }).catch(() => {});
-    fs.mkdir(this.exportDir, { recursive: true }).catch(() => {});
+    fs.mkdir(dataDir, { recursive: true }).catch((e) =>
+      console.error(`[CharacterStore] mkdir failed: ${dataDir}`, e.message));
+    fs.mkdir(this.exportDir, { recursive: true }).catch((e) =>
+      console.error(`[CharacterStore] mkdir failed: ${this.exportDir}`, e.message));
   }
 
   private filePath(projectId: string): string {
@@ -53,10 +55,14 @@ export class CharacterStore {
   }
 
   async get(projectId: string): Promise<CharacterSessionState | null> {
+    const fp = this.filePath(projectId);
     try {
-      const raw = await fs.readFile(this.filePath(projectId), "utf-8");
+      const raw = await fs.readFile(fp, "utf-8");
       return JSON.parse(raw);
-    } catch {
+    } catch (e: any) {
+      if (e.code !== "ENOENT") {
+        console.error(`[CharacterStore] get failed: ${fp}`, e.code === undefined ? "parse error" : e.code, e.message);
+      }
       return null;
     }
   }
@@ -71,8 +77,10 @@ export class CharacterStore {
   async delete(projectId: string): Promise<void> {
     try {
       await fs.unlink(this.filePath(projectId));
-    } catch {
-      // already gone
+    } catch (e: any) {
+      if (e.code !== "ENOENT") {
+        console.error(`[CharacterStore] delete failed: ${this.filePath(projectId)}`, e.code, e.message);
+      }
     }
   }
 
@@ -107,10 +115,14 @@ export class CharacterStore {
 
   /** Get a previously saved export */
   async getExport(projectId: string): Promise<CharacterModuleExport | null> {
+    const fp = this.exportPath(projectId);
     try {
-      const raw = await fs.readFile(this.exportPath(projectId), "utf-8");
+      const raw = await fs.readFile(fp, "utf-8");
       return JSON.parse(raw);
-    } catch {
+    } catch (e: any) {
+      if (e.code !== "ENOENT") {
+        console.error(`[CharacterStore] getExport failed: ${fp}`, e.code === undefined ? "parse error" : e.code, e.message);
+      }
       return null;
     }
   }

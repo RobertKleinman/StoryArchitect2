@@ -1,42 +1,46 @@
 import {
-  WorldAssumptionResponse,
-  WorldBuilderOutput,
-  WorldClarifierResponse,
-  WorldJudgeOutput,
-  WorldLedgerEntry,
-  WorldPack,
-  WorldSessionState,
-  WorldTurn,
-  WorldPromptHistoryEntry,
-  WorldPromptOverrides,
-  WorldPromptPreview,
-  DevelopmentTarget,
-} from "../../shared/types/world";
+  PlotAssumptionResponse,
+  PlotBuilderOutput,
+  PlotClarifierResponse,
+  PlotJudgeOutput,
+  PlotLedgerEntry,
+  PlotPack,
+  PlotSessionState,
+  PlotTurn,
+  PlotPromptHistoryEntry,
+  PlotPromptOverrides,
+  PlotPromptPreview,
+  PlotDevelopmentTarget,
+} from "../../shared/types/plot";
+import { WorldPack } from "../../shared/types/world";
 import { CharacterPack } from "../../shared/types/character";
 import { CharacterImagePack } from "../../shared/types/characterImage";
 import { HookPack } from "../../shared/types/hook";
+import { PlotStore } from "../storage/plotStore";
 import { WorldStore } from "../storage/worldStore";
 import { CharacterStore } from "../storage/characterStore";
 import { CharacterImageStore } from "../storage/characterImageStore";
 import { ProjectStore } from "../storage/projectStore";
 import { LLMClient } from "./llmClient";
 import {
-  WORLD_BUILDER_SYSTEM,
-  WORLD_BUILDER_USER_TEMPLATE,
-  WORLD_CLARIFIER_SYSTEM,
-  WORLD_CLARIFIER_USER_TEMPLATE,
-  WORLD_JUDGE_SYSTEM,
-  WORLD_JUDGE_USER_TEMPLATE,
-  WORLD_POLISH_SYSTEM,
-  WORLD_POLISH_USER_TEMPLATE,
-  WORLD_SUMMARY_SYSTEM,
-  WORLD_SUMMARY_USER_TEMPLATE,
-} from "./worldPrompts";
+  PLOT_BUILDER_SYSTEM,
+  PLOT_BUILDER_USER_PREFIX,
+  PLOT_BUILDER_USER_DYNAMIC,
+  PLOT_BUILDER_USER_TEMPLATE,
+  PLOT_CLARIFIER_SYSTEM,
+  PLOT_CLARIFIER_USER_PREFIX,
+  PLOT_CLARIFIER_USER_DYNAMIC,
+  PLOT_CLARIFIER_USER_TEMPLATE,
+  PLOT_JUDGE_SYSTEM,
+  PLOT_JUDGE_USER_TEMPLATE,
+  PLOT_SUMMARY_SYSTEM,
+  PLOT_SUMMARY_USER_TEMPLATE,
+} from "./plotPrompts";
 import {
-  WORLD_BUILDER_SCHEMA,
-  WORLD_CLARIFIER_SCHEMA,
-  WORLD_JUDGE_SCHEMA,
-} from "./worldSchemas";
+  PLOT_BUILDER_SCHEMA,
+  PLOT_CLARIFIER_SCHEMA,
+  PLOT_JUDGE_SCHEMA,
+} from "./plotSchemas";
 import {
   createEmptyLedger,
   ensureLedgerShape,
@@ -62,22 +66,23 @@ import {
 
 // ─── API response types ───
 
-export interface WorldClarifyResponse {
-  clarifier: WorldClarifierResponse;
+export interface PlotClarifyResponse {
+  clarifier: PlotClarifierResponse;
   turnNumber: number;
   totalTurns: number;
 }
 
-export interface WorldGenerateResponse {
-  world: WorldBuilderOutput;
+export interface PlotGenerateResponse {
+  plot: PlotBuilderOutput;
   judge: {
     passed: boolean;
     hard_fail_reasons: string[];
-    scores: WorldJudgeOutput["scores"];
+    scores: PlotJudgeOutput["scores"];
     weakest_element: string;
     one_fix_instruction: string;
   } | null;
-  developmentTargets?: DevelopmentTarget[];
+  rerollCount: number;
+  developmentTargets?: PlotDevelopmentTarget[];
   weaknesses?: Array<{
     area: string;
     weakness: string;
@@ -85,7 +90,7 @@ export interface WorldGenerateResponse {
   }>;
 }
 
-export class WorldServiceError extends Error {
+export class PlotServiceError extends Error {
   code: "NOT_FOUND" | "INVALID_INPUT" | "LLM_PARSE_ERROR" | "LLM_CALL_FAILED";
 
   constructor(
@@ -97,8 +102,9 @@ export class WorldServiceError extends Error {
   }
 }
 
-export class WorldService {
+export class PlotService {
   constructor(
+    private plotStore: PlotStore,
     private worldStore: WorldStore,
     private charImageStore: CharacterImageStore,
     private charStore: CharacterStore,
@@ -111,10 +117,10 @@ export class WorldService {
   async previewPrompt(
     projectId: string,
     stage: "clarifier" | "builder" | "judge" | "summary",
-  ): Promise<WorldPromptPreview> {
-    const session = await this.worldStore.get(projectId);
+  ): Promise<PlotPromptPreview> {
+    const session = await this.plotStore.get(projectId);
     if (!session) {
-      throw new WorldServiceError("NOT_FOUND", "World session not found");
+      throw new PlotServiceError("NOT_FOUND", "Plot session not found");
     }
 
     switch (stage) {
@@ -127,13 +133,13 @@ export class WorldService {
         return { stage, system: prompt.system, user: prompt.user };
       }
       case "judge": {
-        if (session.revealedWorld) {
-          const prompt = this.buildJudgePrompt(session.revealedWorld, session);
+        if (session.revealedPlot) {
+          const prompt = this.buildJudgePrompt(session.revealedPlot, session);
           return { stage, system: prompt.system, user: prompt.user };
         }
         return {
           stage,
-          system: WORLD_JUDGE_SYSTEM,
+          system: PLOT_JUDGE_SYSTEM,
           user: "(generated at runtime after builder runs)",
         };
       }
@@ -148,37 +154,39 @@ export class WorldService {
 
   async runClarifierTurn(
     projectId: string,
+    worldProjectId: string,
     characterImageProjectId: string | undefined,
     characterProjectId: string,
     hookProjectId: string,
     userSelection?: { type: "option" | "free_text" | "surprise_me"; optionId?: string; label: string },
     modelOverride?: string,
-    promptOverrides?: WorldPromptOverrides,
-    assumptionResponses?: WorldAssumptionResponse[],
-    worldSeed?: string,
-  ): Promise<WorldClarifyResponse> {
-    let session = await this.worldStore.get(projectId);
+    promptOverrides?: PlotPromptOverrides,
+    assumptionResponses?: PlotAssumptionResponse[],
+    plotSeed?: string,
+  ): Promise<PlotClarifyResponse> {
+    let session = await this.plotStore.get(projectId);
     const isFirstTurn = !session || session.turns.length === 0;
 
     if (isFirstTurn) {
       if (userSelection) {
-        throw new WorldServiceError("INVALID_INPUT", "First turn cannot have userSelection");
+        throw new PlotServiceError("INVALID_INPUT", "First turn cannot have userSelection");
       }
 
       if (!session) {
         // Load upstream packs — parallel for speed
-        const [charImageExport, charExport, hookExport] = await Promise.all([
+        const [charImageExport, charExport, hookExport, worldExport] = await Promise.all([
           characterImageProjectId
             ? this.charImageStore.getExport(characterImageProjectId)
             : Promise.resolve(undefined),
           this.charStore.getExport(characterProjectId),
           this.hookStore.getExport(hookProjectId),
+          this.worldStore.getExport(worldProjectId),
         ]);
 
         let sourceCharacterImagePack: CharacterImagePack | undefined;
         if (characterImageProjectId) {
           if (!charImageExport || !charImageExport.characterImagePack) {
-            throw new WorldServiceError(
+            throw new PlotServiceError(
               "NOT_FOUND",
               "Character image export not found. Complete the character image module first."
             );
@@ -187,53 +195,88 @@ export class WorldService {
         }
 
         if (!charExport || !charExport.characterPack) {
-          throw new WorldServiceError(
+          throw new PlotServiceError(
             "NOT_FOUND",
             "Character export not found. Complete the character module first."
           );
         }
 
         if (!hookExport || !hookExport.hookPack) {
-          throw new WorldServiceError(
+          throw new PlotServiceError(
             "NOT_FOUND",
             "Hook export not found. Complete the hook module first."
           );
         }
 
+        if (!worldExport || !worldExport.worldPack) {
+          throw new PlotServiceError(
+            "NOT_FOUND",
+            "World export not found. Complete the world module first."
+          );
+        }
+
         const sourceCharPack = charExport.characterPack;
         const sourceHookPack = hookExport.hookPack;
+        const sourceWorldPack = worldExport.worldPack;
 
-        // Import constraint ledgers from all upstream modules
-        const importedLedger: WorldLedgerEntry[] = [];
+        // Import constraint ledger — FLATTENED approach.
+        // Only import from the immediate upstream module (world), which already
+        // contains all hook and character constraints in its own ledger.
+        // This prevents the 3-4x duplication where the same fact appears as
+        // hook.X, char.hook.X, world.hook.X, world.char.hook.X.
+        const importedLedger: PlotLedgerEntry[] = [];
 
-        // Hook ledger entries
+        // World ledger entries (already contains all upstream constraints)
+        if (worldExport.constraintLedger) {
+          for (const entry of worldExport.constraintLedger) {
+            importedLedger.push({
+              key: entry.key,              // keep original key — no re-prefixing
+              value: entry.value,
+              source: "world_imported",
+              confidence: "imported",
+              turnNumber: 0,
+            });
+          }
+        }
+
+        // Only add hook/character entries that are NOT already in the world ledger
+        // (i.e., entries the world module didn't carry forward — shouldn't happen
+        // normally, but safety net for edge cases)
+        const worldKeys = new Set(importedLedger.map(e => e.key));
+
         if (hookExport.constraintLedger) {
           for (const entry of hookExport.constraintLedger) {
-            importedLedger.push({
-              key: `hook.${entry.key}`,
-              value: entry.value,
-              source: "hook_imported",
-              confidence: "imported",
-              turnNumber: 0,
-            });
+            const hookKey = `hook.${entry.key}`;
+            if (!worldKeys.has(hookKey) && !worldKeys.has(entry.key)) {
+              importedLedger.push({
+                key: `hook.${entry.key}`,
+                value: entry.value,
+                source: "hook_imported",
+                confidence: "imported",
+                turnNumber: 0,
+              });
+            }
           }
         }
 
-        // Character ledger entries
         if (charExport.constraintLedger) {
           for (const entry of charExport.constraintLedger) {
-            importedLedger.push({
-              key: `char.${entry.key}`,
-              value: entry.value,
-              source: "character_imported",
-              confidence: "imported",
-              turnNumber: 0,
-            });
+            const charKey = `char.${entry.key}`;
+            if (!worldKeys.has(charKey) && !worldKeys.has(entry.key)) {
+              importedLedger.push({
+                key: `char.${entry.key}`,
+                value: entry.value,
+                source: "character_imported",
+                confidence: "imported",
+                turnNumber: 0,
+              });
+            }
           }
         }
 
-        // Import psychology ledger (prefer charImage > char > hook — most recent)
+        // Import psychology ledger (prefer worldPack > charImagePack > charPack > hookPack — most recent)
         const importedPsychLedger = ensureLedgerShape(
+          sourceWorldPack?.psychologyLedger ??
           sourceCharacterImagePack?.psychologyLedger ??
           sourceCharPack.psychologyLedger ??
           sourceHookPack.psychologyLedger ??
@@ -242,7 +285,7 @@ export class WorldService {
         snapshotBaselineForNewModule(importedPsychLedger);
 
         // Build development targets from upstream weaknesses
-        const devTargets: DevelopmentTarget[] = [];
+        const devTargets: PlotDevelopmentTarget[] = [];
 
         // Hook open threads
         if (sourceHookPack.open_threads) {
@@ -270,7 +313,21 @@ export class WorldService {
           }
         }
 
-        // Strip base64 image data from CharacterImagePack — World only needs text descriptions
+        // World weaknesses
+        if (sourceWorldPack.weaknesses) {
+          for (let i = 0; i < sourceWorldPack.weaknesses.length; i++) {
+            const w = sourceWorldPack.weaknesses[i];
+            devTargets.push({
+              id: `dt_world_${i}`,
+              source_module: "world",
+              target: `[${w.area}] ${w.weakness}`,
+              status: "unaddressed",
+              notes: w.development_opportunity,
+            });
+          }
+        }
+
+        // Strip base64 image data from CharacterImagePack — Plot only needs text descriptions
         const lightCharImagePack = sourceCharacterImagePack
           ? {
               ...sourceCharacterImagePack,
@@ -281,7 +338,7 @@ export class WorldService {
                     ([role, char]) => [role, {
                       role: char.role,
                       visual_description: char.visual_description,
-                      image_base64: "", // stripped — not needed for world module
+                      image_base64: "", // stripped — not needed for plot module
                       enhanced_prompt: char.enhanced_prompt,
                     }]
                   )
@@ -292,40 +349,43 @@ export class WorldService {
 
         session = {
           projectId,
+          worldProjectId,
           characterImageProjectId,
           characterProjectId,
           hookProjectId,
           sourceCharacterImagePack: lightCharImagePack,
           sourceCharacterPack: sourceCharPack,
           sourceHookPack: sourceHookPack,
-          worldSeed: worldSeed ?? undefined,
+          sourceWorldPack: sourceWorldPack,
+          plotSeed: plotSeed ?? undefined,
           turns: [],
           constraintLedger: importedLedger,
           developmentTargets: devTargets,
           status: "clarifying",
+          rerollCount: 0,
           psychologyLedger: importedPsychLedger,
         };
       }
 
-      if (session && worldSeed) {
-        session.worldSeed = worldSeed;
+      if (session && plotSeed) {
+        session.plotSeed = plotSeed;
       }
     } else {
       if (!session) {
-        throw new WorldServiceError("NOT_FOUND", "World session not found");
+        throw new PlotServiceError("NOT_FOUND", "Plot session not found");
       }
 
       if (session.status === "revealed" || session.status === "locked") {
-        throw new WorldServiceError("INVALID_INPUT", "Session already progressed; reset first");
+        throw new PlotServiceError("INVALID_INPUT", "Session already progressed; reset first");
       }
 
       if (!userSelection) {
-        throw new WorldServiceError("INVALID_INPUT", "Subsequent turns require userSelection");
+        throw new PlotServiceError("INVALID_INPUT", "Subsequent turns require userSelection");
       }
 
       const previousTurn = session.turns[session.turns.length - 1];
       if (!previousTurn) {
-        throw new WorldServiceError("INVALID_INPUT", "No clarifier turn to attach selection to");
+        throw new PlotServiceError("INVALID_INPUT", "No clarifier turn to attach selection to");
       }
 
       if (userSelection.type === "option") {
@@ -333,7 +393,7 @@ export class WorldService {
           (opt) => opt.id === userSelection.optionId
         );
         if (!userSelection.optionId || !isValid) {
-          throw new WorldServiceError("INVALID_INPUT", "optionId must exist in previous turn options");
+          throw new PlotServiceError("INVALID_INPUT", "optionId must exist in previous turn options");
         }
       }
 
@@ -370,15 +430,17 @@ export class WorldService {
 
     let raw: string;
     try {
-      raw = await this.llm.call("world_clarifier", system, user, {
+      raw = await this.llm.call("plot_clarifier", system, user, {
         temperature: 0.7,
         maxTokens: 4000,
         modelOverride,
-        jsonSchema: WORLD_CLARIFIER_SCHEMA,
+        jsonSchema: PLOT_CLARIFIER_SCHEMA,
+        // Only use cached prefix when not using prompt overrides
+        cacheableUserPrefix: promptOverrides?.user ? undefined : prompt.cacheableUserPrefix,
       });
     } catch (err) {
-      console.error("WORLD CLARIFIER LLM ERROR:", err);
-      throw new WorldServiceError("LLM_CALL_FAILED", "World clarifier LLM call failed");
+      console.error("PLOT CLARIFIER LLM ERROR:", err);
+      throw new PlotServiceError("LLM_CALL_FAILED", "Plot clarifier LLM call failed");
     }
 
     // Record prompt history
@@ -387,13 +449,13 @@ export class WorldService {
       promptOverrides, raw.slice(0, 200)
     );
 
-    const clarifier = this.parseAndValidate<WorldClarifierResponse>(raw, [
+    const clarifier = this.parseAndValidate<PlotClarifierResponse>(raw, [
       "psychology_strategy", "hypothesis_line", "question", "options",
-      "allow_free_text", "ready_for_world", "readiness_pct", "assumptions", "user_read"
+      "allow_free_text", "ready_for_plot", "readiness_pct", "assumptions", "user_read"
     ]);
 
     if (!clarifier) {
-      throw new WorldServiceError("LLM_PARSE_ERROR", "Failed to parse world clarifier output");
+      throw new PlotServiceError("LLM_PARSE_ERROR", "Failed to parse plot clarifier output");
     }
 
     // Ensure defaults
@@ -408,7 +470,7 @@ export class WorldService {
         recordSignals(
           session!.psychologyLedger,
           session!.turns.length + 1,
-          "world",
+          "plot",
           ur.signals as RawSignalObservation[],
           ur.behaviorSummary as BehaviorSummary,
           (ur.adaptationPlan as AdaptationPlan) ?? { dominantNeed: "", moves: [] },
@@ -417,7 +479,7 @@ export class WorldService {
         recordHypotheses(
           session!.psychologyLedger,
           session!.turns.length + 1,
-          "world",
+          "plot",
           (ur as any).hypotheses ?? [],
           (ur as any).overall_read ?? "",
           (ur as any).satisfaction
@@ -426,15 +488,15 @@ export class WorldService {
     }
     this.updatePsychologyHeuristics(session!);
 
-    const turn: WorldTurn = {
+    const turn: PlotTurn = {
       turnNumber: session!.turns.length + 1,
       clarifierResponse: clarifier,
       userSelection: null,
     };
 
     // Suppress readiness on the very first turn
-    if (session!.turns.length < 1 && turn.clarifierResponse.ready_for_world) {
-      turn.clarifierResponse.ready_for_world = false;
+    if (session!.turns.length < 1 && turn.clarifierResponse.ready_for_plot) {
+      turn.clarifierResponse.ready_for_plot = false;
     }
 
     // Readiness convergence safety net
@@ -446,12 +508,12 @@ export class WorldService {
 
     if (
       session!.consecutiveHighReadiness! >= 2 &&
-      !turn.clarifierResponse.ready_for_world &&
+      !turn.clarifierResponse.ready_for_plot &&
       session!.turns.length >= 3
     ) {
-      turn.clarifierResponse.ready_for_world = true;
+      turn.clarifierResponse.ready_for_plot = true;
       turn.clarifierResponse.readiness_note =
-        turn.clarifierResponse.readiness_note || "Your world is taking shape nicely — ready to build it!";
+        turn.clarifierResponse.readiness_note || "Your plot is taking shape nicely — ready to build it!";
     }
 
     session!.turns.push(turn);
@@ -463,18 +525,18 @@ export class WorldService {
       markProbeConsumed(session!.psychologyLedger, turn.turnNumber);
     }
 
-    await this.worldStore.save(session!);
+    await this.plotStore.save(session!);
 
     // ─── Fire background consolidation (non-blocking) ───
     if (session!.psychologyLedger && session!.psychologyLedger.signalStore.length > 0) {
-      this.fireBackgroundConsolidation(session!.projectId, turn.turnNumber, "world")
-        .catch(err => console.error("[PSYCH] World consolidation fire failed:", err));
+      this.fireBackgroundConsolidation(session!.projectId, turn.turnNumber, "plot")
+        .catch(err => console.error("[PSYCH] Plot consolidation fire failed:", err));
     }
 
     // ─── Fire background divergence exploration (non-blocking) ───
     if (turn.turnNumber >= 2) {
-      this.fireBackgroundDivergence(session!, turn.turnNumber, "world")
-        .catch(err => console.error("[DIVERGENCE] World exploration fire failed:", err));
+      this.fireBackgroundDivergence(session!, turn.turnNumber, "plot")
+        .catch(err => console.error("[DIVERGENCE] Plot exploration fire failed:", err));
     }
 
     return {
@@ -485,14 +547,14 @@ export class WorldService {
   }
 
   /**
-   * Fire-and-forget background consolidation for world module.
+   * Fire-and-forget background consolidation for plot module.
    */
   private async fireBackgroundConsolidation(
     projectId: string,
     turnNumber: number,
-    module: "hook" | "character" | "character_image" | "world",
+    module: "plot",
   ): Promise<void> {
-    const sessionForConsolidation = await this.worldStore.get(projectId);
+    const sessionForConsolidation = await this.plotStore.get(projectId);
     if (!sessionForConsolidation?.psychologyLedger) return;
 
     const snapshot = await runConsolidation(
@@ -507,7 +569,7 @@ export class WorldService {
       // IMPORTANT: Only graft consolidation-owned fields — NOT the entire ledger.
       // Divergence explorer may have saved lastDirectionMap concurrently;
       // replacing the whole ledger would clobber it (and vice versa).
-      const freshSession = await this.worldStore.get(projectId);
+      const freshSession = await this.plotStore.get(projectId);
       if (!freshSession) return;
 
       if (!freshSession.psychologyLedger) freshSession.psychologyLedger = sessionForConsolidation.psychologyLedger;
@@ -516,33 +578,32 @@ export class WorldService {
         freshSession.psychologyLedger.lastConsolidation = sessionForConsolidation.psychologyLedger.lastConsolidation;
       }
       freshSession.lastSavedAt = new Date().toISOString();
-      await this.worldStore.save(freshSession);
+      await this.plotStore.save(freshSession);
     }
   }
 
   /**
-   * Fire-and-forget background divergence exploration for world module.
+   * Fire-and-forget background divergence exploration for plot module.
    */
   private async fireBackgroundDivergence(
-    session: WorldSessionState,
+    session: PlotSessionState,
     turnNumber: number,
-    module: "hook" | "character" | "character_image" | "world",
+    module: "plot",
   ): Promise<void> {
     const psychSummary = formatPsychologyLedgerForPrompt(session.psychologyLedger);
-    // Build a state snapshot from world-module fields for divergence explorer
-    const worldState: Record<string, unknown> = {};
-    if (session.revealedWorld) {
-      worldState.world_thesis = session.revealedWorld.world_thesis;
-      worldState.arena = session.revealedWorld.arena;
-      worldState.rules = session.revealedWorld.rules;
-    }
-    if (session.worldSeed) worldState.worldSeed = session.worldSeed;
+    // Build a lightweight "current state" snapshot for the divergence explorer
+    const currentState: Record<string, unknown> = {
+      plot_seed: session.plotSeed ?? "",
+      turn_count: session.turns.length,
+      latest_hypothesis: session.turns[session.turns.length - 1]?.clarifierResponse?.hypothesis_line ?? "",
+      constraint_count: session.constraintLedger?.length ?? 0,
+    };
     const previousFamilyNames = session.psychologyLedger?.lastDirectionMap?.directionMap?.families
       ?.map(f => f.name) ?? [];
     const context = extractDivergenceContext(
-      session.sourceHookPack?.locked?.premise ?? session.worldSeed ?? "",
-      session.constraintLedger,
-      worldState,
+      session.sourceHookPack.state_summary ?? "",
+      session.constraintLedger as any,
+      currentState,
       psychSummary,
       turnNumber,
       module,
@@ -552,13 +613,13 @@ export class WorldService {
     const snapshot = await runDivergenceExploration(context, this.llm);
 
     if (snapshot) {
-      const freshSession = await this.worldStore.get(session.projectId);
+      const freshSession = await this.plotStore.get(session.projectId);
       if (!freshSession) return;
 
       if (!freshSession.psychologyLedger) freshSession.psychologyLedger = createEmptyLedger();
       freshSession.psychologyLedger.lastDirectionMap = snapshot;
       freshSession.lastSavedAt = new Date().toISOString();
-      await this.worldStore.save(freshSession);
+      await this.plotStore.save(freshSession);
     }
   }
 
@@ -567,18 +628,18 @@ export class WorldService {
   async runGenerate(
     projectId: string,
     modelOverride?: string,
-    promptOverrides?: { builder?: WorldPromptOverrides; judge?: WorldPromptOverrides },
-  ): Promise<WorldGenerateResponse> {
-    const session = await this.worldStore.get(projectId);
+    promptOverrides?: { builder?: PlotPromptOverrides; judge?: PlotPromptOverrides },
+  ): Promise<PlotGenerateResponse> {
+    const session = await this.plotStore.get(projectId);
     if (!session) {
-      throw new WorldServiceError("NOT_FOUND", "World session not found");
+      throw new PlotServiceError("NOT_FOUND", "Plot session not found");
     }
     if (session.turns.length === 0) {
-      throw new WorldServiceError("INVALID_INPUT", "Must have at least 1 clarifier turn before generating");
+      throw new PlotServiceError("INVALID_INPUT", "Must have at least 1 clarifier turn before generating");
     }
 
     session.status = "generating";
-    await this.worldStore.save(session);
+    await this.plotStore.save(session);
 
     // ─── Builder ───
     const builderPrompt = this.buildBuilderPrompt(session);
@@ -587,15 +648,16 @@ export class WorldService {
 
     let builderRaw: string;
     try {
-      builderRaw = await this.llm.call("world_builder", builderSystem, builderUser, {
+      builderRaw = await this.llm.call("plot_builder", builderSystem, builderUser, {
         temperature: 0.6,
         maxTokens: 12000,
         modelOverride,
-        jsonSchema: WORLD_BUILDER_SCHEMA,
+        jsonSchema: PLOT_BUILDER_SCHEMA,
+        cacheableUserPrefix: promptOverrides?.builder?.user ? undefined : builderPrompt.cacheableUserPrefix,
       });
     } catch (err) {
-      console.error("WORLD BUILDER LLM ERROR:", err);
-      throw new WorldServiceError("LLM_CALL_FAILED", "World builder LLM call failed");
+      console.error("PLOT BUILDER LLM ERROR:", err);
+      throw new PlotServiceError("LLM_CALL_FAILED", "Plot builder LLM call failed");
     }
 
     this.recordPromptHistory(
@@ -603,19 +665,13 @@ export class WorldService {
       promptOverrides?.builder, builderRaw.slice(0, 200)
     );
 
-    const builderResult = this.parseAndValidate<WorldBuilderOutput>(builderRaw, [
-      "scope", "arena", "rules", "factions", "consequence_patterns", "canon_register",
-      "world_thesis", "pressure_summary"
+    const builderResult = this.parseAndValidate<PlotBuilderOutput>(builderRaw, [
+      "core_conflict", "tension_chain", "turning_points", "climax",
+      "resolution", "theme_cluster", "addiction_engine", "collision_sources"
     ]);
 
-    // Defensive defaults for optional array fields (schema doesn't require these)
-    if (builderResult) {
-      if (!Array.isArray(builderResult.information_access)) builderResult.information_access = [];
-      if (!Array.isArray(builderResult.volatility)) builderResult.volatility = [];
-    }
-
     if (!builderResult) {
-      throw new WorldServiceError("LLM_PARSE_ERROR", "Failed to parse world builder output");
+      throw new PlotServiceError("LLM_PARSE_ERROR", "Failed to parse plot builder output");
     }
 
     // ─── Judge ───
@@ -625,30 +681,36 @@ export class WorldService {
 
     let judgeRaw: string;
     try {
-      judgeRaw = await this.llm.call("world_judge", judgeSystem, judgeUser, {
+      judgeRaw = await this.llm.call("plot_judge", judgeSystem, judgeUser, {
         temperature: 0.3,
         maxTokens: 1500,
         modelOverride,
-        jsonSchema: WORLD_JUDGE_SCHEMA,
+        jsonSchema: PLOT_JUDGE_SCHEMA,
       });
     } catch (err) {
-      console.error("WORLD JUDGE LLM ERROR:", err);
+      console.error("PLOT JUDGE LLM ERROR:", err);
       // Non-fatal: reveal without judge
-      session.revealedWorld = builderResult;
+      session.revealedPlot = builderResult;
       session.status = "revealed";
       session.lastSavedAt = new Date().toISOString();
-      await this.worldStore.save(session);
-      return { world: builderResult, judge: null };
+      await this.plotStore.save(session);
+      return { plot: builderResult, judge: null, rerollCount: session.rerollCount ?? 0 };
     }
 
-    const judgeResult = this.parseAndValidate<WorldJudgeOutput>(judgeRaw, [
+    const judgeResult = this.parseAndValidate<PlotJudgeOutput>(judgeRaw, [
       "pass", "hard_fail_reasons", "scores", "weakest_element", "one_fix_instruction",
     ]);
 
-    // Defensive defaults for new score dimensions
+    // Defensive defaults for score dimensions
     if (judgeResult?.scores) {
-      if (typeof judgeResult.scores.scene_variety !== "number") judgeResult.scores.scene_variety = 5;
-      if (typeof judgeResult.scores.information_asymmetry !== "number") judgeResult.scores.information_asymmetry = 5;
+      if (typeof judgeResult.scores.tension_escalation !== "number") judgeResult.scores.tension_escalation = 5;
+      if (typeof judgeResult.scores.causal_integrity !== "number") judgeResult.scores.causal_integrity = 5;
+      if (typeof judgeResult.scores.twist_quality !== "number") judgeResult.scores.twist_quality = 5;
+      if (typeof judgeResult.scores.mystery_hook_density !== "number") judgeResult.scores.mystery_hook_density = 5;
+      if (typeof judgeResult.scores.dramatic_irony_payoff !== "number") judgeResult.scores.dramatic_irony_payoff = 5;
+      if (typeof judgeResult.scores.climax_earned !== "number") judgeResult.scores.climax_earned = 5;
+      if (typeof judgeResult.scores.ending_satisfaction !== "number") judgeResult.scores.ending_satisfaction = 5;
+      if (typeof judgeResult.scores.user_fit !== "number") judgeResult.scores.user_fit = 5;
     }
 
     this.recordPromptHistory(
@@ -658,37 +720,26 @@ export class WorldService {
     );
 
     // Update development targets based on judge assessment
-    if (judgeResult?.upstream_target_assessment) {
+    if (judgeResult?.upstream_target_assessment && session.developmentTargets) {
       for (const assessment of judgeResult.upstream_target_assessment) {
         const target = session.developmentTargets.find(t => t.id === assessment.target_id);
         if (target) {
           target.status = assessment.status;
           if (assessment.notes) target.notes = assessment.notes;
-          if (assessment.status === "addressed") target.addressed_by = "world";
+          if (assessment.status === "addressed") target.addressed_by = "plot";
         }
       }
     }
 
-    // Polish world thesis and pressure summary
-    try {
-      const polished = await this.polishDescriptions(builderResult, session, modelOverride);
-      if (polished) {
-        if (polished.world_thesis) builderResult.world_thesis = polished.world_thesis;
-        if (polished.pressure_summary) builderResult.pressure_summary = polished.pressure_summary;
-      }
-    } catch (err) {
-      console.error("WORLD POLISH ERROR (using raw descriptions):", err);
-    }
-
-    session.revealedWorld = builderResult;
+    session.revealedPlot = builderResult;
     session.revealedJudge = judgeResult ?? undefined;
     session.status = "revealed";
     session.lastSavedAt = new Date().toISOString();
 
-    await this.worldStore.save(session);
+    await this.plotStore.save(session);
 
     return {
-      world: builderResult,
+      plot: builderResult,
       judge: judgeResult ? {
         passed: judgeResult.pass,
         hard_fail_reasons: judgeResult.hard_fail_reasons,
@@ -696,6 +747,7 @@ export class WorldService {
         weakest_element: judgeResult.weakest_element,
         one_fix_instruction: judgeResult.one_fix_instruction,
       } : null,
+      rerollCount: session.rerollCount ?? 0,
       developmentTargets: session.developmentTargets,
       weaknesses: judgeResult?.weaknesses,
     };
@@ -706,51 +758,53 @@ export class WorldService {
   async reroll(
     projectId: string,
     modelOverride?: string,
-    promptOverrides?: { builder?: WorldPromptOverrides; judge?: WorldPromptOverrides },
-  ): Promise<WorldGenerateResponse> {
-    const session = await this.worldStore.get(projectId);
+    promptOverrides?: { builder?: PlotPromptOverrides; judge?: PlotPromptOverrides },
+  ): Promise<PlotGenerateResponse> {
+    const session = await this.plotStore.get(projectId);
     if (!session) {
-      throw new WorldServiceError("NOT_FOUND", "World session not found");
+      throw new PlotServiceError("NOT_FOUND", "Plot session not found");
     }
     if (session.status !== "revealed") {
-      throw new WorldServiceError("INVALID_INPUT", "Must be in revealed status to reroll");
+      throw new PlotServiceError("INVALID_INPUT", "Must be in revealed status to reroll");
     }
 
-    session.revealedWorld = undefined;
+    session.rerollCount = (session.rerollCount ?? 0) + 1;
+    session.revealedPlot = undefined;
     session.revealedJudge = undefined;
+    await this.plotStore.save(session);
 
     return this.runGenerate(projectId, modelOverride, promptOverrides);
   }
 
-  // ─── Lock World ───
+  // ─── Lock Plot ───
 
-  async lockWorld(
+  async lockPlot(
     projectId: string,
     modelOverride?: string,
-  ): Promise<WorldPack> {
-    const session = await this.worldStore.get(projectId);
+  ): Promise<PlotPack> {
+    const session = await this.plotStore.get(projectId);
     if (!session) {
-      throw new WorldServiceError("NOT_FOUND", "World session not found");
+      throw new PlotServiceError("NOT_FOUND", "Plot session not found");
     }
-    if (session.status !== "revealed" || !session.revealedWorld) {
-      throw new WorldServiceError("INVALID_INPUT", "Must be in revealed status to lock");
+    if (session.status !== "revealed" || !session.revealedPlot) {
+      throw new PlotServiceError("INVALID_INPUT", "Must be in revealed status to lock");
     }
 
     session.lastSavedAt = new Date().toISOString();
-    await this.worldStore.save(session);
+    await this.plotStore.save(session);
 
     // Generate summary
     const summaryPrompt = this.buildSummaryPrompt(session);
     let summary = "";
     try {
-      summary = await this.llm.call("world_summary", summaryPrompt.system, summaryPrompt.user, {
+      summary = await this.llm.call("plot_summary", summaryPrompt.system, summaryPrompt.user, {
         temperature: 0.5,
         maxTokens: 800,
         modelOverride,
       });
     } catch (err) {
-      console.error("WORLD SUMMARY LLM ERROR:", err);
-      throw new WorldServiceError("LLM_CALL_FAILED", "World summary generation failed");
+      console.error("PLOT SUMMARY LLM ERROR:", err);
+      throw new PlotServiceError("LLM_CALL_FAILED", "Plot summary generation failed");
     }
 
     // Analyze user behavior
@@ -771,15 +825,16 @@ export class WorldService {
       : typedVsClicked === "mostly_clicked" ? "explorer" as const
       : "mixed" as const;
 
-    const world = session.revealedWorld;
+    const plot = session.revealedPlot;
 
-    // Add world weaknesses to development targets
+    // Add plot weaknesses to development targets
+    if (!session.developmentTargets) session.developmentTargets = [];
     if (session.revealedJudge?.weaknesses) {
       for (let i = 0; i < session.revealedJudge.weaknesses.length; i++) {
         const w = session.revealedJudge.weaknesses[i];
         session.developmentTargets.push({
-          id: `dt_world_${i}`,
-          source_module: "world",
+          id: `dt_plot_${i}`,
+          source_module: "plot",
           target: `[${w.area}] ${w.weakness}`,
           status: "unaddressed",
           notes: w.development_opportunity,
@@ -787,19 +842,21 @@ export class WorldService {
       }
     }
 
-    const worldPack: WorldPack = {
-      module: "world",
+    const plotPack: PlotPack = {
+      module: "plot",
       locked: {
-        scope: world.scope,
-        arena: world.arena,
-        rules: world.rules,
-        factions: world.factions,
-        consequence_patterns: world.consequence_patterns,
-        canon_register: world.canon_register,
-        information_access: world.information_access ?? [],
-        volatility: world.volatility ?? [],
-        world_thesis: world.world_thesis,
-        pressure_summary: world.pressure_summary,
+        core_conflict: plot.core_conflict,
+        tension_chain: plot.tension_chain,
+        turning_points: plot.turning_points,
+        climax: plot.climax,
+        resolution: plot.resolution,
+        dramatic_irony_points: plot.dramatic_irony_points,
+        theme_cluster: plot.theme_cluster,
+        theme_beats: plot.theme_beats,
+        motifs: plot.motifs,
+        mystery_hooks: plot.mystery_hooks,
+        addiction_engine: plot.addiction_engine,
+        collision_sources: plot.collision_sources,
       },
       preferences: {
         tone_chips: session.sourceCharacterPack.preferences?.tone_chips ?? [],
@@ -815,38 +872,41 @@ export class WorldService {
       state_summary: summary.trim(),
       ...(session.characterImageProjectId && { characterImagePack_reference: { characterImageProjectId: session.characterImageProjectId } }),
       characterPack_reference: { characterProjectId: session.characterProjectId },
+      worldPack_reference: { worldProjectId: session.worldProjectId },
       hookPack_reference: { hookProjectId: session.hookProjectId },
       psychologyLedger: session.psychologyLedger,
     };
 
-    await this.worldStore.saveExport(session, worldPack);
+    await this.plotStore.saveExport(session, plotPack);
 
     session.status = "locked";
     session.lastSavedAt = new Date().toISOString();
-    await this.worldStore.save(session);
+    await this.plotStore.save(session);
 
-    return worldPack;
+    return plotPack;
   }
 
   // ─── Session Management ───
 
-  async getSession(projectId: string): Promise<WorldSessionState | null> {
-    return this.worldStore.get(projectId);
+  async getSession(projectId: string): Promise<PlotSessionState | null> {
+    return this.plotStore.get(projectId);
   }
 
   async resetSession(projectId: string): Promise<void> {
-    await this.worldStore.delete(projectId);
+    await this.plotStore.delete(projectId);
   }
 
   // ─── Prompt Builders (private) ───
 
-  private buildClarifierPrompt(session: WorldSessionState): {
+  private buildClarifierPrompt(session: PlotSessionState): {
     system: string;
     user: string;
+    cacheableUserPrefix?: string;
   } {
     const hook = session.sourceHookPack;
     const charPack = session.sourceCharacterPack;
     const charImagePack = session.sourceCharacterImagePack;
+    const world = session.sourceWorldPack;
     const priorTurns = this.formatPriorTurns(session.turns);
     const ledgerText = this.formatLedgerForPrompt(session.constraintLedger ?? []);
     const turnNumber = String(session.turns.length + 1);
@@ -857,7 +917,8 @@ export class WorldService {
     const relationshipTensionsJson = JSON.stringify(charPack.locked.relationship_tensions ?? []);
     const visualSummary = this.formatCharacterVisualsSummary(charImagePack);
 
-    const user = WORLD_CLARIFIER_USER_TEMPLATE
+    // Static upstream context — cacheable (doesn't change between turns)
+    const prefix = PLOT_CLARIFIER_USER_PREFIX
       .replace("{{PREMISE}}", hook.locked.premise)
       .replace("{{HOOK_SENTENCE}}", hook.locked.hook_sentence)
       .replace("{{EMOTIONAL_PROMISE}}", hook.locked.emotional_promise)
@@ -869,8 +930,19 @@ export class WorldService {
       .replace("{{ENSEMBLE_DYNAMIC}}", charPack.locked.ensemble_dynamic ?? "")
       .replace("{{RELATIONSHIP_TENSIONS_JSON}}", relationshipTensionsJson)
       .replace("{{CHARACTER_VISUALS_SUMMARY}}", visualSummary)
-      .replace("{{WORLD_SEED}}", session.worldSeed ?? "(none provided)")
-      .replace("{{UPSTREAM_DEVELOPMENT_TARGETS}}", upstreamTargets)
+      .replace("{{WORLD_THESIS}}", world.locked.world_thesis)
+      .replace("{{PRESSURE_SUMMARY}}", world.locked.pressure_summary)
+      .replace("{{ARENA_JSON}}", JSON.stringify(world.locked.arena))
+      .replace("{{RULES_JSON}}", JSON.stringify(world.locked.rules))
+      .replace("{{FACTIONS_JSON}}", JSON.stringify(world.locked.factions))
+      .replace("{{CONSEQUENCE_PATTERNS_JSON}}", JSON.stringify(world.locked.consequence_patterns))
+      .replace("{{INFORMATION_ACCESS_JSON}}", JSON.stringify(world.locked.information_access ?? []))
+      .replace("{{VOLATILITY_JSON}}", JSON.stringify(world.locked.volatility ?? []))
+      .replace("{{PLOT_SEED}}", session.plotSeed ?? "(none provided)")
+      .replace("{{UPSTREAM_DEVELOPMENT_TARGETS}}", upstreamTargets);
+
+    // Dynamic per-turn content
+    let dynamic = PLOT_CLARIFIER_USER_DYNAMIC
       .replace("{{PRIOR_TURNS}}", priorTurns)
       .replace("{{PSYCHOLOGY_LEDGER}}", psychText)
       .replace("{{ENGINE_DIALS}}", formatEngineDialsForPrompt(session.psychologyLedger))
@@ -880,23 +952,26 @@ export class WorldService {
     const probeText = formatSuggestedProbeForPrompt(session.psychologyLedger);
     const currentTurn = session.turns.length + 1;
     const directionMapText = formatDirectionMapForPrompt(session.psychologyLedger, currentTurn);
-    const focusNudge = this.buildFocusLoopNudge(session.turns);
+
+    dynamic = dynamic
+      .replace("{{DIRECTION_MAP}}", directionMapText || "")
+      + (probeText ? "\n\n" + probeText : "");
 
     return {
-      system: WORLD_CLARIFIER_SYSTEM,
-      user: user
-        + (focusNudge ? "\n\n" + focusNudge : "")
-        + (probeText ? "\n\n" + probeText : "")
-        + (directionMapText ? "\n\n" + directionMapText : ""),
+      system: PLOT_CLARIFIER_SYSTEM,
+      user: prefix + dynamic,
+      cacheableUserPrefix: prefix,
     };
   }
 
-  private buildBuilderPrompt(session: WorldSessionState): {
+  private buildBuilderPrompt(session: PlotSessionState): {
     system: string;
     user: string;
+    cacheableUserPrefix?: string;
   } {
     const hook = session.sourceHookPack;
     const charPack = session.sourceCharacterPack;
+    const world = session.sourceWorldPack;
     const ledgerText = this.formatLedgerForPrompt(session.constraintLedger ?? [], false);
     const signalsText = formatSignalsForBuilderJudge(session.psychologyLedger);
     const upstreamTargets = this.formatUpstreamTargets(session);
@@ -912,7 +987,11 @@ export class WorldService {
       }))
     );
 
-    const user = WORLD_BUILDER_USER_TEMPLATE
+    const charImagePack = session.sourceCharacterImagePack;
+    const visualSummary = this.formatCharacterVisualsSummary(charImagePack);
+
+    // Static upstream context — cacheable
+    const prefix = PLOT_BUILDER_USER_PREFIX
       .replace("{{PREMISE}}", hook.locked.premise)
       .replace("{{HOOK_SENTENCE}}", hook.locked.hook_sentence)
       .replace("{{EMOTIONAL_PROMISE}}", hook.locked.emotional_promise)
@@ -921,140 +1000,93 @@ export class WorldService {
       .replace("{{CHARACTER_PROFILES_JSON}}", charProfilesJson)
       .replace("{{ENSEMBLE_DYNAMIC}}", charPack.locked.ensemble_dynamic ?? "")
       .replace("{{RELATIONSHIP_TENSIONS_JSON}}", relationshipTensionsJson)
-      .replace("{{WORLD_SEED}}", session.worldSeed ?? "(none provided)")
-      .replace("{{UPSTREAM_DEVELOPMENT_TARGETS}}", upstreamTargets)
+      .replace("{{CHARACTER_VISUALS_SUMMARY}}", visualSummary)
+      .replace("{{WORLD_THESIS}}", world.locked.world_thesis)
+      .replace("{{PRESSURE_SUMMARY}}", world.locked.pressure_summary)
+      .replace("{{SCOPE_JSON}}", JSON.stringify(world.locked.scope))
+      .replace("{{ARENA_JSON}}", JSON.stringify(world.locked.arena))
+      .replace("{{RULES_JSON}}", JSON.stringify(world.locked.rules))
+      .replace("{{FACTIONS_JSON}}", JSON.stringify(world.locked.factions))
+      .replace("{{CONSEQUENCE_PATTERNS_JSON}}", JSON.stringify(world.locked.consequence_patterns))
+      .replace("{{INFORMATION_ACCESS_JSON}}", JSON.stringify(world.locked.information_access ?? []))
+      .replace("{{VOLATILITY_JSON}}", JSON.stringify(world.locked.volatility ?? []))
+      .replace("{{CANON_REGISTER_JSON}}", JSON.stringify(world.locked.canon_register ?? []))
+      .replace("{{PLOT_SEED}}", session.plotSeed ?? "(none provided)")
+      .replace("{{UPSTREAM_DEVELOPMENT_TARGETS}}", upstreamTargets);
+
+    // Dynamic per-generation content
+    const dynamic = PLOT_BUILDER_USER_DYNAMIC
       .replace("{{PRIOR_TURNS}}", this.formatPriorTurnsCompact(session.turns))
       .replace("{{PSYCHOLOGY_SIGNALS}}", signalsText)
       .replace("{{CONSTRAINT_LEDGER}}", ledgerText)
       .replace("{{TONE_CHIPS}}", JSON.stringify(hook.preferences?.tone_chips ?? []))
       .replace("{{BAN_LIST}}", JSON.stringify(hook.preferences?.bans ?? []));
 
-    return { system: WORLD_BUILDER_SYSTEM, user };
+    return { system: PLOT_BUILDER_SYSTEM, user: prefix + dynamic, cacheableUserPrefix: prefix };
   }
 
   private buildJudgePrompt(
-    world: WorldBuilderOutput,
-    session: WorldSessionState
+    plot: PlotBuilderOutput,
+    session: PlotSessionState
   ): { system: string; user: string } {
     const hook = session.sourceHookPack;
     const charPack = session.sourceCharacterPack;
+    const world = session.sourceWorldPack;
     const signalsText = formatSignalsForBuilderJudge(session.psychologyLedger);
     const upstreamTargets = this.formatUpstreamTargets(session);
     // Trimmed profiles for judge — only world-relevant fields
     const charProfilesJson = this.formatCharacterProfilesForBuilder(charPack);
 
-    const user = WORLD_JUDGE_USER_TEMPLATE
-      .replace("{{WORLD_JSON}}", JSON.stringify(world, null, 2))
+    const user = PLOT_JUDGE_USER_TEMPLATE
+      .replace("{{PLOT_JSON}}", JSON.stringify(plot, null, 2))
       .replace("{{PREMISE}}", hook.locked.premise)
       .replace("{{EMOTIONAL_PROMISE}}", hook.locked.emotional_promise)
       .replace("{{CHARACTER_PROFILES_JSON}}", charProfilesJson)
       .replace("{{ENSEMBLE_DYNAMIC}}", charPack.locked.ensemble_dynamic ?? "")
+      .replace("{{WORLD_THESIS}}", world.locked.world_thesis)
+      .replace("{{PRESSURE_SUMMARY}}", world.locked.pressure_summary)
+      .replace("{{RULES_JSON}}", JSON.stringify(world.locked.rules))
+      .replace("{{FACTIONS_JSON}}", JSON.stringify(world.locked.factions))
       .replace("{{PSYCHOLOGY_SIGNALS}}", signalsText)
       .replace("{{UPSTREAM_DEVELOPMENT_TARGETS}}", upstreamTargets);
 
-    return { system: WORLD_JUDGE_SYSTEM, user };
+    return { system: PLOT_JUDGE_SYSTEM, user };
   }
 
-  private buildSummaryPrompt(session: WorldSessionState): {
+  private buildSummaryPrompt(session: PlotSessionState): {
     system: string;
     user: string;
   } {
     const hook = session.sourceHookPack;
     const priorTurns = this.formatPriorTurns(session.turns);
 
-    const user = WORLD_SUMMARY_USER_TEMPLATE
+    const user = PLOT_SUMMARY_USER_TEMPLATE
       .replace("{{PREMISE}}", hook.locked.premise)
       .replace("{{EMOTIONAL_PROMISE}}", hook.locked.emotional_promise)
       .replace("{{PRIOR_TURNS}}", priorTurns)
-      .replace("{{WORLD_JSON}}", JSON.stringify(session.revealedWorld ?? {}, null, 2));
+      .replace("{{PLOT_JSON}}", JSON.stringify(session.revealedPlot ?? {}, null, 2));
 
-    return { system: WORLD_SUMMARY_SYSTEM, user };
-  }
-
-  // ─── Polish ───
-
-  private async polishDescriptions(
-    world: WorldBuilderOutput,
-    session: WorldSessionState,
-    modelOverride?: string
-  ): Promise<{ world_thesis?: string; pressure_summary?: string } | null> {
-    const hook = session.sourceHookPack;
-
-    const user = WORLD_POLISH_USER_TEMPLATE
-      .replace("{{WORLD_THESIS}}", world.world_thesis)
-      .replace("{{PRESSURE_SUMMARY}}", world.pressure_summary)
-      .replace("{{PREMISE}}", hook.locked.premise)
-      .replace("{{EMOTIONAL_PROMISE}}", hook.locked.emotional_promise)
-      .replace("{{BAN_LIST}}", JSON.stringify(hook.preferences?.bans ?? []));
-
-    const raw = await this.llm.call("world_polish", WORLD_POLISH_SYSTEM, user, {
-      temperature: 0.4,
-      maxTokens: 500,
-      modelOverride,
-    });
-
-    try {
-      const parsed = JSON.parse(raw.trim());
-      if (typeof parsed === "object" && parsed !== null) {
-        return parsed;
-      }
-    } catch {
-      console.error("WORLD POLISH parse failed");
-    }
-
-    return null;
+    return { system: PLOT_SUMMARY_SYSTEM, user };
   }
 
   // ─── Upstream Development Targets ───
 
-  private formatUpstreamTargets(session: WorldSessionState): string {
+  private formatUpstreamTargets(session: PlotSessionState): string {
     const targets = session.developmentTargets;
     if (!targets || targets.length === 0) return "(No upstream targets)";
 
     const unresolved = targets.filter(t => t.status !== "addressed");
     if (unresolved.length === 0) return "(All upstream targets addressed)";
 
-    const lines: string[] = ["DEVELOPMENT TARGETS (from earlier modules — weave in subtly):"];
-    for (let i = 0; i < unresolved.length; i++) {
-      const t = unresolved[i];
+    const lines: string[] = ["DEVELOPMENT TARGETS (from earlier modules — address where natural):"];
+    for (const t of unresolved) {
       const statusLabel = t.status === "partially_addressed" ? " [partially addressed]" : "";
-      // Use simple sequential number instead of internal IDs like dt_hook_0
-      lines.push(`  ${i + 1}. (from ${t.source_module}) ${t.target}${statusLabel}`);
+      // Include actual target ID so judge's upstream_target_assessment can reference it
+      lines.push(`  [${t.id}] (from ${t.source_module}) ${t.target}${statusLabel}`);
       if (t.notes) lines.push(`     Opportunity: ${t.notes}`);
     }
 
     return lines.join("\n");
-  }
-
-  // ─── Anti-loop: detect consecutive same-focus turns ───
-
-  /**
-   * Check if the clarifier has been stuck on the same world_focus for 3+ turns.
-   * Returns a soft nudge string for injection, or empty string if no loop detected.
-   *
-   * This is a NUDGE, not a constraint — the clarifier can still choose the same
-   * focus if it has good reason. The goal is to break unconscious loops.
-   */
-  private buildFocusLoopNudge(turns: WorldTurn[]): string {
-    if (turns.length < 3) return "";
-
-    // Get the last 3 focus values (from clarifier responses)
-    const recentFoci = turns.slice(-3).map(t => t.clarifierResponse.world_focus).filter(Boolean);
-    if (recentFoci.length < 3) return "";
-
-    // Check if all 3 are the same
-    const allSame = recentFoci.every(f => f === recentFoci[0]);
-    if (!allSame) return "";
-
-    const stuckFocus = recentFoci[0];
-
-    // Build the nudge — suggest other aspects, but don't force
-    const allAspects = ["arena", "rules", "factions", "consequences"];
-    const otherAspects = allAspects.filter(a => a !== stuckFocus);
-
-    return `═══ FOCUS DIVERSITY NOTE ═══
-You've focused on "${stuckFocus}" for 3 consecutive turns. This is fine if there's still meaningful ground to cover, but consider whether switching to ${otherAspects.join(" or ")} would build a more complete world faster. If you've been circling the same sub-topic, a fresh aspect might re-energize the conversation.
-This is a suggestion, not a rule. If ${stuckFocus} still needs work, keep going.`;
   }
 
   // ─── Formatting Helpers ───
@@ -1107,15 +1139,15 @@ This is a suggestion, not a rule. If ${stuckFocus} still needs work, keep going.
   /**
    * Compact prior turns for builder — just the key decisions, no full details.
    */
-  private formatPriorTurnsCompact(turns: WorldTurn[]): string {
+  private formatPriorTurnsCompact(turns: PlotTurn[]): string {
     if (turns.length === 0) return "(No conversation yet)";
 
     const lines: string[] = [];
     for (const turn of turns) {
       const parts: string[] = [];
       parts.push(`[Turn ${turn.turnNumber}]`);
-      if (turn.clarifierResponse.world_focus) {
-        parts.push(`  Focus: ${turn.clarifierResponse.world_focus}`);
+      if (turn.clarifierResponse.plot_focus) {
+        parts.push(`  Focus: ${turn.clarifierResponse.plot_focus}`);
       }
       parts.push(`  Question: "${turn.clarifierResponse.question}"`);
 
@@ -1163,7 +1195,7 @@ This is a suggestion, not a rule. If ${stuckFocus} still needs work, keep going.
     return lines.join("\n") || "(No character visuals)";
   }
 
-  private formatPriorTurns(turns: WorldTurn[]): string {
+  private formatPriorTurns(turns: PlotTurn[]): string {
     if (turns.length === 0) return "(No conversation yet)";
 
     const RECENT_WINDOW = turns.length <= 3 ? 2 : 1;
@@ -1176,8 +1208,8 @@ This is a suggestion, not a rule. If ${stuckFocus} still needs work, keep going.
       const turn = turns[i];
       const parts: string[] = [];
       parts.push(`[Turn ${turn.turnNumber}] (summary)`);
-      if (turn.clarifierResponse.world_focus) {
-        parts.push(`  Focus: ${turn.clarifierResponse.world_focus}`);
+      if (turn.clarifierResponse.plot_focus) {
+        parts.push(`  Focus: ${turn.clarifierResponse.plot_focus}`);
       }
       parts.push(`  Asked: "${turn.clarifierResponse.question}"`);
 
@@ -1203,9 +1235,9 @@ This is a suggestion, not a rule. If ${stuckFocus} still needs work, keep going.
         }
       }
 
-      // Include hypothesis_line in compressed turns (shows evolving world read)
+      // Include hypothesis_line in compressed turns (shows evolving plot read)
       if (turn.clarifierResponse.hypothesis_line) {
-        parts.push(`  World read: "${turn.clarifierResponse.hypothesis_line}"`);
+        parts.push(`  Plot read: "${turn.clarifierResponse.hypothesis_line}"`);
       }
 
       lines.push(parts.join("\n"));
@@ -1216,8 +1248,8 @@ This is a suggestion, not a rule. If ${stuckFocus} still needs work, keep going.
       const turn = turns[i];
       const parts: string[] = [];
       parts.push(`[Turn ${turn.turnNumber}]`);
-      if (turn.clarifierResponse.world_focus) {
-        parts.push(`  Focus: ${turn.clarifierResponse.world_focus}`);
+      if (turn.clarifierResponse.plot_focus) {
+        parts.push(`  Focus: ${turn.clarifierResponse.plot_focus}`);
       }
       parts.push(`  Question: "${turn.clarifierResponse.question}"`);
       parts.push(`  Options: ${turn.clarifierResponse.options.map((o) => `${o.id}="${o.label}"`).join(", ")}`);
@@ -1256,7 +1288,7 @@ This is a suggestion, not a rule. If ${stuckFocus} still needs work, keep going.
     return lines.join("\n\n");
   }
 
-  private formatLedgerForPrompt(ledger: WorldLedgerEntry[], compress = true): string {
+  private formatLedgerForPrompt(ledger: PlotLedgerEntry[], compress = true): string {
     if (!ledger || ledger.length === 0) return "(No constraints established yet)";
 
     const confirmed = ledger.filter((e) => e.confidence === "confirmed");
@@ -1266,7 +1298,7 @@ This is a suggestion, not a rule. If ${stuckFocus} still needs work, keep going.
     const lines: string[] = [];
 
     // Clean key for display — strip module prefixes that are just noise
-    const cleanKey = (key: string) => key.replace(/^(hook|char|world)\./, "");
+    const cleanKey = (key: string) => key.replace(/^(hook|char|world|plot)\./, "");
 
     if (imported.length > 0) {
       lines.push("IMPORTED from prior modules (honor these — build on them):");
@@ -1297,8 +1329,8 @@ This is a suggestion, not a rule. If ${stuckFocus} still needs work, keep going.
   // ─── Assumption Processing ───
 
   private processAssumptionResponses(
-    session: WorldSessionState,
-    responses: WorldAssumptionResponse[],
+    session: PlotSessionState,
+    responses: PlotAssumptionResponse[],
     turnNumber: number
   ): void {
     const ledger = session.constraintLedger;
@@ -1312,11 +1344,11 @@ This is a suggestion, not a rule. If ${stuckFocus} still needs work, keep going.
         "user_freeform" as const;
 
       const value = resp.action === "keep" ? resp.originalValue : resp.newValue;
-      const ledgerKey = `world.${resp.category}.${resp.assumptionId}`;
+      const ledgerKey = `plot.${resp.category}.${resp.assumptionId}`;
 
       const existingIdx = ledger.findIndex((e) => e.key === ledgerKey);
 
-      const entry: WorldLedgerEntry = {
+      const entry: PlotLedgerEntry = {
         key: ledgerKey,
         value,
         source,
@@ -1335,7 +1367,7 @@ This is a suggestion, not a rule. If ${stuckFocus} still needs work, keep going.
 
   // ─── Psychology Helpers ───
 
-  private updatePsychologyHeuristics(session: WorldSessionState): void {
+  private updatePsychologyHeuristics(session: PlotSessionState): void {
     if (!session.psychologyLedger) return;
 
     const lastTurn = session.turns[session.turns.length - 1];
@@ -1365,11 +1397,11 @@ This is a suggestion, not a rule. If ${stuckFocus} still needs work, keep going.
   // ─── Prompt History ───
 
   private recordPromptHistory(
-    session: WorldSessionState,
-    stage: WorldPromptHistoryEntry["stage"],
+    session: PlotSessionState,
+    stage: PlotPromptHistoryEntry["stage"],
     defaultSystem: string,
     defaultUser: string,
-    overrides?: WorldPromptOverrides,
+    overrides?: PlotPromptOverrides,
     responseSummary?: string
   ): void {
     if (!session.promptHistory) session.promptHistory = [];

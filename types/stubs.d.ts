@@ -17,6 +17,16 @@ declare module "fs/promises" {
 
 declare module "path" {
   export function join(...paths: string[]): string;
+  export function resolve(...paths: string[]): string;
+  export function dirname(path: string): string;
+}
+
+declare module "url" {
+  export function fileURLToPath(url: string): string;
+}
+
+declare module "fs" {
+  export function existsSync(path: string): boolean;
 }
 
 declare module "dotenv/config" {}
@@ -35,6 +45,7 @@ declare module "express" {
   export interface Response {
     status(code: number): Response;
     json(data: unknown): Response;
+    sendFile(path: string): void;
   }
   export type NextFunction = () => void;
   export type Handler = (req: Request, res: Response) => unknown;
@@ -52,6 +63,7 @@ declare module "express" {
   interface ExpressFactory {
     (): Express;
     json(): unknown;
+    static(root: string): unknown;
   }
   const express: ExpressFactory;
   export default express;
@@ -61,6 +73,9 @@ declare module "react" {
   export const StrictMode: unknown;
   export function useMemo<T>(factory: () => T, deps: unknown[]): T;
   export function useState<T>(initial: T | (() => T)): [T, (value: T | ((prev: T) => T)) => void];
+  export function useEffect(effect: () => void | (() => void), deps?: unknown[]): void;
+  export function useCallback<T extends (...args: any[]) => any>(callback: T, deps: unknown[]): T;
+  export function useRef<T>(initial: T): { current: T };
   const React: any;
   export default React;
 }

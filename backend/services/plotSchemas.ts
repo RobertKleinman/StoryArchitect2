@@ -1,6 +1,6 @@
 /**
- * JSON Schema definitions for World Module structured outputs.
- * Mirrors the TypeScript interfaces in shared/types/world.ts.
+ * JSON Schema definitions for Plot & Theme Module structured outputs.
+ * Mirrors the TypeScript interfaces in shared/types/plot.ts.
  */
 
 // ─── Shared user_read schema (v4 signal format — reused across all modules) ───
@@ -73,9 +73,9 @@ const USER_READ_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-// ─── World Clarifier Schema ───
+// ─── Plot Clarifier Schema ───
 
-export const WORLD_CLARIFIER_SCHEMA = {
+export const PLOT_CLARIFIER_SCHEMA = {
   type: "object",
   properties: {
     psychology_strategy: { type: "string" },
@@ -94,8 +94,8 @@ export const WORLD_CLARIFIER_SCHEMA = {
       },
     },
     allow_free_text: { type: "boolean" },
-    world_focus: { type: "string" },
-    ready_for_world: { type: "boolean" },
+    plot_focus: { anyOf: [{ type: "string" }, { type: "null" }] },
+    ready_for_plot: { type: "boolean" },
     readiness_pct: { type: "number" },
     readiness_note: { type: "string" },
     missing_signal: { type: "string" },
@@ -121,170 +121,165 @@ export const WORLD_CLARIFIER_SCHEMA = {
   },
   required: [
     "psychology_strategy", "hypothesis_line", "question", "options",
-    "allow_free_text", "ready_for_world", "readiness_pct", "readiness_note",
-    "missing_signal", "conflict_flag", "assumptions", "user_read"
+    "allow_free_text", "ready_for_plot", "readiness_pct", "readiness_note",
+    "missing_signal", "conflict_flag", "assumptions", "user_read",
   ],
   additionalProperties: false,
 } as const;
 
-// ─── World Builder Schema ───
+// ─── Plot Builder Schema ───
 
 // Builder schema — all object types MUST have additionalProperties: false per Anthropic API.
-// Enums removed from nested items to keep compiled grammar within limits.
-// Fields trimmed to constraint-system essentials (no plot/narrative fields).
-export const WORLD_BUILDER_SCHEMA = {
+// The tension_chain is the core output: 12-20 causally-linked beats.
+export const PLOT_BUILDER_SCHEMA = {
   type: "object",
   properties: {
-    scope: {
-      type: "object",
-      properties: {
-        reality_level: { type: "string" },
-        tone_rule: { type: "string" },
-        violence_level: { type: "string" },
-        time_pressure: { type: "string" },
-        camera_rule: { type: "string" },
-      },
-      required: ["reality_level", "tone_rule", "violence_level", "time_pressure", "camera_rule"],
-      additionalProperties: false,
-    },
-    arena: {
-      type: "object",
-      properties: {
-        locations: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              id: { type: "string" },
-              name: { type: "string" },
-              description: { type: "string" },
-              affordances: { type: "array", items: { type: "string" } },
-              access: { type: "string" },
-              emotional_register: { type: "string" },
-            },
-            required: ["id", "name", "description", "affordances", "access", "emotional_register"],
-            additionalProperties: false,
-          },
-        },
-        edges: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              from: { type: "string" },
-              to: { type: "string" },
-              traversal: { type: "string" },
-            },
-            required: ["from", "to", "traversal"],
-            additionalProperties: false,
-          },
-        },
-        primary_stage: { type: "string" },
-        hidden_stage: { type: "string" },
-      },
-      required: ["locations", "edges", "primary_stage", "hidden_stage"],
-      additionalProperties: false,
-    },
-    rules: {
+    core_conflict: { type: "string" },
+    tension_chain: {
       type: "array",
       items: {
         type: "object",
         properties: {
           id: { type: "string" },
-          domain: { type: "string" },
-          rule: { type: "string" },
-          consequence_if_broken: { type: "string" },
-          who_enforces: { type: "string" },
+          beat: { type: "string" },
+          causal_logic: { type: "string" },
+          question_opened: { type: "string" },
+          question_answered: { type: "string" },
+          emotional_register: { type: "string" },
+          stakes_level: { type: "number" },
+          characters_involved: { type: "array", items: { type: "string" } },
         },
-        required: ["id", "domain", "rule", "consequence_if_broken", "who_enforces"],
+        required: ["id", "beat", "causal_logic", "question_opened", "emotional_register", "stakes_level", "characters_involved"],
         additionalProperties: false,
       },
     },
-    factions: {
+    turning_points: {
       type: "array",
       items: {
         type: "object",
         properties: {
-          id: { type: "string" },
+          beat_id: { type: "string" },
+          label: { type: "string" },
+          believed_before: { type: "string" },
+          learned_after: { type: "string" },
+          whiplash_direction: { type: "string" },
+        },
+        required: ["beat_id", "label", "believed_before", "learned_after", "whiplash_direction"],
+        additionalProperties: false,
+      },
+    },
+    climax: {
+      type: "object",
+      properties: {
+        beat: { type: "string" },
+        why_now: { type: "string" },
+        core_conflict_collision: { type: "string" },
+      },
+      required: ["beat", "why_now", "core_conflict_collision"],
+      additionalProperties: false,
+    },
+    resolution: {
+      type: "object",
+      properties: {
+        new_normal: { type: "string" },
+        emotional_landing: { type: "string" },
+        ending_energy: { type: "string", enum: ["triumphant", "bittersweet", "dark", "ambiguous", "open"] },
+      },
+      required: ["new_normal", "emotional_landing", "ending_energy"],
+      additionalProperties: false,
+    },
+    dramatic_irony_points: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          beat_id: { type: "string" },
+          reader_knows: { type: "string" },
+          character_believes: { type: "string" },
+          tension_created: { type: "string" },
+        },
+        required: ["beat_id", "reader_knows", "character_believes", "tension_created"],
+        additionalProperties: false,
+      },
+    },
+    theme_cluster: {
+      type: "object",
+      properties: {
+        topic: { type: "string" },
+        question: { type: "string" },
+        statement: { type: "string" },
+        countertheme: { type: "string" },
+        inferred_from: { type: "string" },
+      },
+      required: ["topic", "question", "statement", "countertheme", "inferred_from"],
+      additionalProperties: false,
+    },
+    theme_beats: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          beat_id: { type: "string" },
+          resonance: { type: "string" },
+        },
+        required: ["beat_id", "resonance"],
+        additionalProperties: false,
+      },
+    },
+    motifs: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
           name: { type: "string" },
-          goal: { type: "string" },
-          methods: { type: "array", items: { type: "string" } },
-          constraints: { type: "array", items: { type: "string" } },
-          pressure_on_protagonist: { type: "string" },
+          first_appearance: { type: "string" },
+          recurrences: { type: "string" },
+          thematic_function: { type: "string" },
         },
-        required: ["id", "name", "goal", "methods", "constraints", "pressure_on_protagonist"],
+        required: ["name", "first_appearance", "recurrences", "thematic_function"],
         additionalProperties: false,
       },
     },
-    consequence_patterns: {
+    mystery_hooks: {
       type: "array",
       items: {
         type: "object",
         properties: {
-          id: { type: "string" },
-          trigger: { type: "string" },
-          world_response: { type: "string" },
-          escalation_speed: { type: "string" },
-          reversible: { type: "boolean" },
+          question: { type: "string" },
+          planted_at_beat: { type: "string" },
+          payoff_beat: { type: "string" },
+          sustains_through: { type: "string" },
         },
-        required: ["id", "trigger", "world_response", "escalation_speed", "reversible"],
+        required: ["question", "planted_at_beat", "sustains_through"],
         additionalProperties: false,
       },
     },
-    canon_register: {
+    addiction_engine: { type: "string" },
+    collision_sources: {
       type: "array",
       items: {
         type: "object",
         properties: {
-          id: { type: "string" },
-          fact: { type: "string" },
-          source_module: { type: "string" },
+          source: { type: "string" },
+          element_extracted: { type: "string" },
+          applied_to: { type: "string" },
         },
-        required: ["id", "fact", "source_module"],
+        required: ["source", "element_extracted", "applied_to"],
         additionalProperties: false,
       },
     },
-    information_access: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          id: { type: "string" },
-          truth: { type: "string" },
-          who_knows: { type: "array", items: { type: "string" } },
-          dramatic_irony: { type: "string" },
-        },
-        required: ["id", "truth", "who_knows", "dramatic_irony"],
-        additionalProperties: false,
-      },
-    },
-    volatility: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          id: { type: "string" },
-          element: { type: "string" },
-          trigger: { type: "string" },
-          consequence: { type: "string" },
-        },
-        required: ["id", "element", "trigger", "consequence"],
-        additionalProperties: false,
-      },
-    },
-    world_thesis: { type: "string" },
-    pressure_summary: { type: "string" },
   },
   required: [
-    "scope", "arena", "rules", "factions", "consequence_patterns",
-    "canon_register", "world_thesis", "pressure_summary"
+    "core_conflict", "tension_chain", "turning_points", "climax",
+    "resolution", "dramatic_irony_points", "theme_cluster", "theme_beats",
+    "motifs", "mystery_hooks", "addiction_engine", "collision_sources",
   ],
   additionalProperties: false,
 } as const;
 
-// ─── World Judge Schema ───
+// ─── Plot Judge Schema ───
 
-export const WORLD_JUDGE_SCHEMA = {
+export const PLOT_JUDGE_SCHEMA = {
   type: "object",
   properties: {
     pass: { type: "boolean" },
@@ -295,16 +290,20 @@ export const WORLD_JUDGE_SCHEMA = {
     scores: {
       type: "object",
       properties: {
-        constraint_density: { type: "number" },
-        arena_distinction: { type: "number" },
-        faction_pressure: { type: "number" },
-        internal_consistency: { type: "number" },
-        consequence_realism: { type: "number" },
+        tension_escalation: { type: "number" },
+        causal_integrity: { type: "number" },
+        twist_quality: { type: "number" },
+        mystery_hook_density: { type: "number" },
+        dramatic_irony_payoff: { type: "number" },
+        climax_earned: { type: "number" },
+        ending_satisfaction: { type: "number" },
         user_fit: { type: "number" },
-        scene_variety: { type: "number" },
-        information_asymmetry: { type: "number" },
       },
-      required: ["constraint_density", "arena_distinction", "faction_pressure", "internal_consistency", "consequence_realism", "user_fit", "scene_variety", "information_asymmetry"],
+      required: [
+        "tension_escalation", "causal_integrity", "twist_quality",
+        "mystery_hook_density", "dramatic_irony_payoff", "climax_earned",
+        "ending_satisfaction", "user_fit",
+      ],
       additionalProperties: false,
     },
     weakest_element: { type: "string" },

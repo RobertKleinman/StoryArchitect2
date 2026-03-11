@@ -8,6 +8,10 @@ import { CharacterService } from "./characterService";
 import { CharacterImageService } from "./characterImageService";
 import { WorldStore } from "../storage/worldStore";
 import { WorldService } from "./worldService";
+import { PlotStore } from "../storage/plotStore";
+import { PlotService } from "./plotService";
+import { SceneStore } from "../storage/sceneStore";
+import { SceneService } from "./sceneService";
 import { AnimeGenClient } from "./animeGenClient";
 
 function envModel(key: string, fallback: string): string {
@@ -34,7 +38,19 @@ export const activeModelConfig: ModelConfig = {
   world_judge: envModel("WORLD_MODEL_JUDGE", DEFAULT_MODEL_CONFIG.world_judge),
   world_polish: envModel("WORLD_MODEL_POLISH", DEFAULT_MODEL_CONFIG.world_polish),
   world_summary: envModel("WORLD_MODEL_SUMMARY", DEFAULT_MODEL_CONFIG.world_summary),
+  plot_clarifier: envModel("PLOT_MODEL_CLARIFIER", DEFAULT_MODEL_CONFIG.plot_clarifier),
+  plot_builder: envModel("PLOT_MODEL_BUILDER", DEFAULT_MODEL_CONFIG.plot_builder),
+  plot_judge: envModel("PLOT_MODEL_JUDGE", DEFAULT_MODEL_CONFIG.plot_judge),
+  plot_polish: envModel("PLOT_MODEL_POLISH", DEFAULT_MODEL_CONFIG.plot_polish),
+  plot_summary: envModel("PLOT_MODEL_SUMMARY", DEFAULT_MODEL_CONFIG.plot_summary),
+  scene_planner: envModel("SCENE_MODEL_PLANNER", DEFAULT_MODEL_CONFIG.scene_planner),
+  scene_clarifier: envModel("SCENE_MODEL_CLARIFIER", DEFAULT_MODEL_CONFIG.scene_clarifier),
+  scene_builder: envModel("SCENE_MODEL_BUILDER", DEFAULT_MODEL_CONFIG.scene_builder),
+  scene_minor_judge: envModel("SCENE_MODEL_MINOR_JUDGE", DEFAULT_MODEL_CONFIG.scene_minor_judge),
+  scene_final_judge: envModel("SCENE_MODEL_FINAL_JUDGE", DEFAULT_MODEL_CONFIG.scene_final_judge),
+  scene_divergence: envModel("SCENE_MODEL_DIVERGENCE", DEFAULT_MODEL_CONFIG.scene_divergence),
   psych_consolidator: envModel("PSYCH_MODEL_CONSOLIDATOR", DEFAULT_MODEL_CONFIG.psych_consolidator),
+  divergence_explorer: envModel("DIVERGENCE_MODEL_EXPLORER", DEFAULT_MODEL_CONFIG.divergence_explorer),
 };
 
 export const projectStore = new ProjectStore();
@@ -50,4 +66,12 @@ export const characterImageService = new CharacterImageService(
 export const worldStore = new WorldStore();
 export const worldService = new WorldService(
   worldStore, characterImageStore, characterStore, projectStore, llmClient
+);
+export const plotStore = new PlotStore();
+export const plotService = new PlotService(
+  plotStore, worldStore, characterImageStore, characterStore, projectStore, llmClient
+);
+export const sceneStore = new SceneStore();
+export const sceneService = new SceneService(
+  sceneStore, plotStore, worldStore, characterImageStore, characterStore, projectStore, llmClient
 );

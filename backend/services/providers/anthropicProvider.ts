@@ -49,7 +49,25 @@ export class AnthropicProvider implements LLMProvider {
           cache_control: { type: "ephemeral" },
         },
       ],
-      messages: [{ role: "user", content: userPrompt }],
+      // If a cacheable user prefix is provided, split the user message into two
+      // content blocks: the static prefix (cached) and the dynamic suffix.
+      // This lets Anthropic cache the large upstream context (~15,000+ tokens)
+      // that doesn't change between clarifier turns.
+      messages: [
+        {
+          role: "user",
+          content: options?.cacheableUserPrefix
+            ? [
+                {
+                  type: "text",
+                  text: options.cacheableUserPrefix,
+                  cache_control: { type: "ephemeral" },
+                },
+                { type: "text", text: userPrompt },
+              ]
+            : userPrompt,
+        },
+      ],
     };
 
     if (options?.jsonSchema) {
