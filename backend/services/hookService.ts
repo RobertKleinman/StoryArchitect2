@@ -51,6 +51,7 @@ import {
   markProbeConsumed,
 } from "./psychologyEngine";
 import type { RawSignalObservation, BehaviorSummary, AdaptationPlan } from "../../shared/types/userPsychology";
+import { shouldConsolidate as shouldConsolidateThrottled, shouldDiverge as shouldDivergeThrottled } from "./backgroundThrottling";
 import {
   runDivergenceExploration,
   extractDivergenceContext,
@@ -359,28 +360,13 @@ export class HookService {
 
     await this.store.save(session);
 
-    // ─── Fire background consolidation (non-blocking, throttled) ───
-    // Only consolidate on meaningful change to reduce LLM calls during user think-time
-    const prevTurn = session.turns.length >= 2 ? session.turns[session.turns.length - 2] : null;
-    const shouldConsolidate =
-      (turn.userSelection?.type === "free_text") ||
-      (prevTurn?.assumptionResponses?.some((r: AssumptionResponse) => r.action !== "keep")) ||
-      (turn.turnNumber % 3 === 0) || // every 3rd turn as fallback
-      ((session.psychologyLedger?.signalStore?.length ?? 0) - (session.psychologyLedger?.lastConsolidation?.turnNumber ?? 0) >= 5);
-
-    if (shouldConsolidate && session.psychologyLedger && session.psychologyLedger.signalStore.length > 0) {
+    // ─── Fire background work (non-blocking, throttled) ───
+    if (shouldConsolidateThrottled(turn, session)) {
       this.fireBackgroundConsolidation(session.projectId, turn.turnNumber, "hook")
         .catch(err => console.error("[PSYCH] Background consolidation fire failed:", err));
     }
 
-    // ─── Fire background divergence exploration (non-blocking, throttled) ───
-    // Only fire when user provides meaningful input or on time-based cadence
-    const shouldDiverge =
-      (turn.userSelection?.type === "free_text") ||
-      (prevTurn?.assumptionResponses?.some((r: AssumptionResponse) => r.action !== "keep")) ||
-      (turn.turnNumber % 2 === 0); // every 2nd turn as fallback
-
-    if (shouldDiverge && turn.turnNumber >= 2) {
+    if (shouldDivergeThrottled(turn, session)) {
       this.fireBackgroundDivergence(session, turn.turnNumber, "hook")
         .catch(err => console.error("[DIVERGENCE] Background exploration fire failed:", err));
     }
