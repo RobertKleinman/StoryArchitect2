@@ -22,11 +22,9 @@ import { ProjectStore } from "../storage/projectStore";
 import { LLMClient } from "./llmClient";
 import {
   CHARACTER_BUILDER_SYSTEM,
-  CHARACTER_BUILDER_USER_TEMPLATE,
   CHARACTER_BUILDER_USER_PREFIX,
   CHARACTER_BUILDER_USER_DYNAMIC,
   CHARACTER_CLARIFIER_SYSTEM,
-  CHARACTER_CLARIFIER_USER_TEMPLATE,
   CHARACTER_CLARIFIER_USER_PREFIX,
   CHARACTER_CLARIFIER_USER_DYNAMIC,
   CHARACTER_JUDGE_SYSTEM,
@@ -423,9 +421,10 @@ export class CharacterService {
 
     // ─── Fire background consolidation (non-blocking, throttled) ───
     // Only consolidate on meaningful change to reduce LLM calls during user think-time
+    const prevTurn = session.turns.length >= 2 ? session.turns[session.turns.length - 2] : null;
     const shouldConsolidate =
       (turn.userSelection?.type === "free_text") ||
-      (previousTurn?.assumptionResponses?.some(r => r.action !== "keep")) ||
+      (prevTurn?.assumptionResponses?.some((r: CharacterAssumptionResponse) => r.action !== "keep")) ||
       (turn.turnNumber % 3 === 0) ||
       ((session.psychologyLedger?.signalStore?.length ?? 0) - (session.psychologyLedger?.lastConsolidation?.turnNumber ?? 0) >= 5);
 
@@ -438,7 +437,7 @@ export class CharacterService {
     // Only fire when user provides meaningful input or on time-based cadence
     const shouldDiverge =
       (turn.userSelection?.type === "free_text") ||
-      (previousTurn?.assumptionResponses?.some(r => r.action !== "keep")) ||
+      (prevTurn?.assumptionResponses?.some((r: CharacterAssumptionResponse) => r.action !== "keep")) ||
       (turn.turnNumber % 2 === 0);
 
     if (shouldDiverge && turn.turnNumber >= 2) {

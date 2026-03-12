@@ -1342,6 +1342,7 @@ export class PlotService {
     responses: PlotAssumptionResponse[],
     turnNumber: number
   ): void {
+    if (!session.constraintLedger) session.constraintLedger = [];
     const ledger = session.constraintLedger;
 
     for (const resp of responses) {

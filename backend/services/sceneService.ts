@@ -66,8 +66,8 @@ import {
 
 import {
   SCENE_PLANNER_SYSTEM, SCENE_PLANNER_USER_TEMPLATE,
-  SCENE_CLARIFIER_SYSTEM, SCENE_CLARIFIER_USER_TEMPLATE, SCENE_CLARIFIER_USER_PREFIX, SCENE_CLARIFIER_USER_DYNAMIC,
-  SCENE_BUILDER_SYSTEM, SCENE_BUILDER_USER_TEMPLATE, SCENE_BUILDER_USER_PREFIX, SCENE_BUILDER_USER_DYNAMIC,
+  SCENE_CLARIFIER_SYSTEM, SCENE_CLARIFIER_USER_PREFIX, SCENE_CLARIFIER_USER_DYNAMIC,
+  SCENE_BUILDER_SYSTEM, SCENE_BUILDER_USER_PREFIX, SCENE_BUILDER_USER_DYNAMIC,
   SCENE_MINOR_JUDGE_SYSTEM, SCENE_MINOR_JUDGE_USER_TEMPLATE,
   SCENE_FINAL_JUDGE_SYSTEM, SCENE_FINAL_JUDGE_USER_TEMPLATE,
   SCENE_DIVERGENCE_SYSTEM, SCENE_DIVERGENCE_USER_TEMPLATE,
@@ -352,10 +352,7 @@ export class SceneService {
     const engineDials = formatEngineDialsForPrompt(session.psychologyLedger!);
     const userFeedback = userSelection ? `User said: "${userSelection.label}"` : "(no feedback yet)";
 
-    let dynamicSuffix = ""
-      .replace("{{USER_FEEDBACK}}", userFeedback)
-      .replace("{{PSYCHOLOGY_SIGNALS}}", psychSignals)
-      .replace("{{ENGINE_DIALS}}", engineDials);
+    let dynamicSuffix = `\n\n═══ USER FEEDBACK ═══\n${userFeedback}\n\n═══ USER PSYCHOLOGY ═══\n${psychSignals}\n\n${engineDials}`;
 
     const system = promptOverrides?.system ?? SCENE_PLAN_CLARIFIER_SYSTEM;
     const user = promptOverrides?.user ?? (cacheablePrefix + dynamicSuffix);

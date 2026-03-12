@@ -22,11 +22,9 @@ import { ProjectStore } from "../storage/projectStore";
 import { LLMClient } from "./llmClient";
 import {
   WORLD_BUILDER_SYSTEM,
-  WORLD_BUILDER_USER_TEMPLATE,
   WORLD_BUILDER_USER_PREFIX,
   WORLD_BUILDER_USER_DYNAMIC,
   WORLD_CLARIFIER_SYSTEM,
-  WORLD_CLARIFIER_USER_TEMPLATE,
   WORLD_CLARIFIER_USER_PREFIX,
   WORLD_CLARIFIER_USER_DYNAMIC,
   WORLD_JUDGE_SYSTEM,
@@ -473,9 +471,10 @@ export class WorldService {
 
     // ─── Fire background consolidation (non-blocking, throttled) ───
     // Only consolidate on meaningful change to reduce LLM calls during user think-time
+    const prevTurn = session!.turns.length >= 2 ? session!.turns[session!.turns.length - 2] : null;
     const shouldConsolidate =
       (turn.userSelection?.type === "free_text") ||
-      (previousTurn?.assumptionResponses?.some(r => r.action !== "keep")) ||
+      (prevTurn?.assumptionResponses?.some((r: any) => r.action !== "keep")) ||
       (turn.turnNumber % 3 === 0) ||
       ((session!.psychologyLedger?.signalStore?.length ?? 0) - (session!.psychologyLedger?.lastConsolidation?.turnNumber ?? 0) >= 5);
 
@@ -488,7 +487,7 @@ export class WorldService {
     // Only fire when user provides meaningful input or on time-based cadence
     const shouldDiverge =
       (turn.userSelection?.type === "free_text") ||
-      (previousTurn?.assumptionResponses?.some(r => r.action !== "keep")) ||
+      (prevTurn?.assumptionResponses?.some((r: any) => r.action !== "keep")) ||
       (turn.turnNumber % 2 === 0);
 
     if (shouldDiverge && turn.turnNumber >= 2) {

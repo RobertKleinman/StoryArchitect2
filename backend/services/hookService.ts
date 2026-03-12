@@ -21,11 +21,9 @@ import {
   HOOK_BUILDER_SYSTEM,
   HOOK_BUILDER_USER_PREFIX,
   HOOK_BUILDER_USER_DYNAMIC,
-  HOOK_BUILDER_USER_TEMPLATE,
   HOOK_CLARIFIER_SYSTEM,
   HOOK_CLARIFIER_USER_PREFIX,
   HOOK_CLARIFIER_USER_DYNAMIC,
-  HOOK_CLARIFIER_USER_TEMPLATE,
   HOOK_JUDGE_SYSTEM,
   HOOK_JUDGE_USER_TEMPLATE,
   HOOK_SUMMARY_SYSTEM,
@@ -636,7 +634,7 @@ export class HookService {
     if (session.tournamentProgress!.builderResults.length > 0) {
       const firstBuilderHook = session.tournamentProgress!.builderResults[0].parsed;
       if (firstBuilderHook) {
-        const firstJudgePrompt = this.buildJudgePrompt(firstBuilderHook, session.currentState);
+        const firstJudgePrompt = this.buildJudgePrompt(firstBuilderHook, session.currentState, session.psychologyLedger);
         this.recordPromptHistory(
           session, "judge", firstJudgePrompt.system, firstJudgePrompt.user,
           promptOverrides?.judge, judgeResponseSummary
