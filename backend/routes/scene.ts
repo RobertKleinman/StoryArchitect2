@@ -99,6 +99,18 @@ sceneRoutes.post("/clarify", async (req, res) => {
     const result = await sceneService.clarifyScene(
       projectId, userSelection, assumptionResponses, modelOverride, promptOverrides
     );
+
+    // If auto-build happened, include scene metadata for the frontend
+    if (result.autoBuiltScene) {
+      const session = await sceneService.getSession(projectId);
+      return res.json({
+        ...result,
+        autoBuiltSceneIndex: result.sceneIndex,
+        autoBuiltTotalScenes: result.totalScenes,
+        allScenesBuilt: session ? session.currentSceneIndex >= (session.scenePlan?.length ?? 0) : false,
+      });
+    }
+
     return res.json(result);
   } catch (err) {
     return handleError(res, err);

@@ -415,7 +415,7 @@ export class SceneService {
       const shouldConsolidate =
         (userSelection?.type === "free_text") ||
         (assumptionResponses?.some(r => r.action !== "keep")) ||
-        (turnNumber % 3 === 0) ||
+        (turnNumber % 5 === 0) ||
         ((session.psychologyLedger.signalStore?.length ?? 0) - (session.psychologyLedger.lastConsolidation?.turnNumber ?? 0) >= 5);
 
       if (shouldConsolidate) {
@@ -524,18 +524,31 @@ export class SceneService {
     // Get rhythm snapshot
     const rhythmSnapshot = this.computeRhythmSnapshot(session);
 
-    // Run divergence for this scene (focused, 3-5 alternatives)
-    let divergenceResult: SceneDivergenceOutput | null = null;
-    if (this.shouldRunDivergence(session, scenePlan, sceneIndex, totalScenes)) {
-      try {
-        divergenceResult = await this.runSceneDivergence(session, scenePlan, modelOverride);
-        if (divergenceResult) {
-          session.sceneDivergenceResults[scenePlan.scene_id] = divergenceResult;
-        }
-      } catch (err) {
-        console.error("SCENE DIVERGENCE ERROR (non-fatal):", err);
-      }
-    } else {
+    // Check for previously completed background divergence results for this scene
+    let divergenceResult: SceneDivergenceOutput | null =
+      session.sceneDivergenceResults[scenePlan.scene_id] ?? null;
+
+    // Fire divergence in the background (non-blocking) for this scene if needed
+    // Results will be available on the *next* clarifier turn or when building
+    if (this.shouldRunDivergence(session, scenePlan, sceneIndex, totalScenes) && !divergenceResult) {
+      // Capture projectId and sceneId for the background closure — do NOT reference the
+      // mutable `session` object to avoid race conditions with the main flow saving.
+      const bgProjectId = session.projectId;
+      const bgSceneId = scenePlan.scene_id;
+      this.runSceneDivergence(session, scenePlan, modelOverride)
+        .then(async (result) => {
+          if (result) {
+            // Re-fetch the latest session to avoid overwriting main-flow changes
+            const freshSession = await this.sceneStore.get(bgProjectId);
+            if (freshSession) {
+              freshSession.sceneDivergenceResults[bgSceneId] = result;
+              await this.sceneStore.save(freshSession);
+            }
+          }
+        })
+        .catch(err => console.error("SCENE DIVERGENCE ERROR (non-fatal, background):", err));
+      console.log(`[SCENE OPT] Divergence fired in background for scene ${scenePlan.scene_id}`);
+    } else if (!this.shouldRunDivergence(session, scenePlan, sceneIndex, totalScenes)) {
       console.log(`[SCENE OPT] Skipping divergence for scene ${scenePlan.scene_id} (low-risk)`);
     }
 
@@ -682,7 +695,7 @@ export class SceneService {
       const shouldConsolidateScene =
         (userSelection?.type === "free_text") ||
         (assumptionResponses?.some(r => r.action !== "keep")) ||
-        (turnNumber % 3 === 0) ||
+        (turnNumber % 5 === 0) ||
         ((session.psychologyLedger.signalStore?.length ?? 0) - (session.psychologyLedger.lastConsolidation?.turnNumber ?? 0) >= 5);
 
       if (shouldConsolidateScene) {
@@ -695,12 +708,26 @@ export class SceneService {
     session.lastSavedAt = new Date().toISOString();
     await this.sceneStore.save(session);
 
+    // OPTIMIZATION: When auto-pass fires, immediately build the scene in the same call
+    // This eliminates an HTTP round-trip for scenes that don't need user input
+    let autoBuiltScene: BuiltScene | null = null;
+    if (autoPassApplied) {
+      try {
+        console.log(`[SCENE OPT] Auto-pass pipeline: building scene ${scenePlan.scene_id} immediately`);
+        autoBuiltScene = await this.buildScene(projectId, modelOverride, promptOverrides ? { builder: promptOverrides } : undefined);
+      } catch (err) {
+        // Non-fatal: if the auto-build fails, the frontend can still trigger it manually
+        console.error(`[SCENE OPT] Auto-build failed for ${scenePlan.scene_id} (non-fatal):`, err);
+      }
+    }
+
     return {
       clarifier,
       sceneId: scenePlan.scene_id,
       sceneIndex,
       totalScenes,
       autoPassApplied,
+      autoBuiltScene,
     };
   }
 

@@ -314,10 +314,55 @@ export function SceneWorkshop() {
     }
   };
 
+  /**
+   * Process a clarify response that may include an auto-built scene.
+   * Returns the updated builtScenes array and whether all scenes are done.
+   */
+  const processClarifyAutoBuild = (result: any, currentBuiltScenes: BuiltScene[]) => {
+    if (result.autoBuiltScene) {
+      const updatedScenes = [...currentBuiltScenes, result.autoBuiltScene];
+      return { updatedScenes, allDone: result.allScenesBuilt ?? false };
+    }
+    return { updatedScenes: currentBuiltScenes, allDone: false };
+  };
+
   const startSceneClarify = async () => {
     setState(s => ({ ...s, loading: true, loadingMessage: "Preparing first scene...", error: null }));
     try {
       const result = await sceneApi.clarify({ projectId });
+      const { updatedScenes, allDone } = processClarifyAutoBuild(result, state.builtScenes);
+
+      if (allDone) {
+        setState(s => ({
+          ...s,
+          phase: "reviewing",
+          builtScenes: updatedScenes,
+          loading: false,
+        }));
+        return;
+      }
+
+      if (result.autoBuiltScene) {
+        // Scene was auto-built — move to next scene's clarifier
+        setState(s => ({ ...s, builtScenes: updatedScenes, loadingMessage: "Preparing next scene..." }));
+        const nextResult = await sceneApi.clarify({ projectId });
+        setState(s => ({
+          ...s,
+          phase: "scene_clarify",
+          sceneClarifier: nextResult.clarifier,
+          currentSceneId: nextResult.sceneId,
+          sceneIndex: nextResult.sceneIndex,
+          totalScenes: nextResult.totalScenes,
+          autoPassApplied: nextResult.autoPassApplied,
+          loading: false,
+          selectedOptionId: null,
+          selectedOptionLabel: null,
+          freeTextValue: "",
+          assumptionResponses: {},
+        }));
+        return;
+      }
+
       setState(s => ({
         ...s,
         phase: "scene_clarify",
@@ -368,6 +413,39 @@ export function SceneWorkshop() {
         assumptionResponses: assumptionResponses.length > 0 ? assumptionResponses : undefined,
       });
 
+      const { updatedScenes, allDone } = processClarifyAutoBuild(result, state.builtScenes);
+
+      if (allDone) {
+        setState(s => ({
+          ...s,
+          phase: "reviewing",
+          builtScenes: updatedScenes,
+          loading: false,
+        }));
+        return;
+      }
+
+      if (result.autoBuiltScene) {
+        // Scene was auto-built — move to next scene's clarifier
+        setState(s => ({ ...s, builtScenes: updatedScenes, loadingMessage: "Preparing next scene..." }));
+        const nextResult = await sceneApi.clarify({ projectId });
+        setState(s => ({
+          ...s,
+          phase: "scene_clarify",
+          sceneClarifier: nextResult.clarifier,
+          currentSceneId: nextResult.sceneId,
+          sceneIndex: nextResult.sceneIndex,
+          totalScenes: nextResult.totalScenes,
+          autoPassApplied: nextResult.autoPassApplied,
+          loading: false,
+          selectedOptionId: null,
+          selectedOptionLabel: null,
+          freeTextValue: "",
+          assumptionResponses: {},
+        }));
+        return;
+      }
+
       setState(s => ({
         ...s,
         sceneClarifier: result.clarifier,
@@ -416,6 +494,39 @@ export function SceneWorkshop() {
         }));
 
         const clarifyResult = await sceneApi.clarify({ projectId });
+        const { updatedScenes: scenesAfterAutoBuild, allDone } = processClarifyAutoBuild(clarifyResult, updatedScenes);
+
+        if (allDone) {
+          setState(s => ({
+            ...s,
+            phase: "reviewing",
+            builtScenes: scenesAfterAutoBuild,
+            loading: false,
+          }));
+          return;
+        }
+
+        if (clarifyResult.autoBuiltScene) {
+          // Next scene was auto-built too — chain to the one after
+          setState(s => ({ ...s, builtScenes: scenesAfterAutoBuild, loadingMessage: "Preparing next scene..." }));
+          const nextClarify = await sceneApi.clarify({ projectId });
+          setState(s => ({
+            ...s,
+            phase: "scene_clarify",
+            sceneClarifier: nextClarify.clarifier,
+            currentSceneId: nextClarify.sceneId,
+            sceneIndex: nextClarify.sceneIndex,
+            totalScenes: nextClarify.totalScenes,
+            autoPassApplied: nextClarify.autoPassApplied,
+            loading: false,
+            selectedOptionId: null,
+            selectedOptionLabel: null,
+            freeTextValue: "",
+            assumptionResponses: {},
+          }));
+          return;
+        }
+
         setState(s => ({
           ...s,
           phase: "scene_clarify",
@@ -436,7 +547,7 @@ export function SceneWorkshop() {
     }
   };
 
-  // ─── Auto-build after auto-pass ───
+  // ─── Auto-build after auto-pass (fallback for cases without server-side auto-build) ───
   const autoPassRef = React.useRef(false);
   React.useEffect(() => {
     if (state.phase === "scene_clarify" && state.autoPassApplied && !state.loading && !autoPassRef.current) {

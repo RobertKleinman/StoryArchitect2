@@ -40,7 +40,7 @@ export interface ThrottlingSessionInfo {
  * Fires when:
  *   - User typed free text (strong signal of engagement)
  *   - Previous turn had assumption changes (not just "keep")
- *   - Every 3rd turn as a fallback cadence
+ *   - Every 5th turn as a fallback cadence
  *   - Signal store has accumulated 5+ signals since last consolidation
  */
 export function shouldConsolidate(
@@ -64,7 +64,7 @@ export function shouldConsolidate(
     prevTurn?.assumptionResponses?.some(r => r.action !== "keep") ?? false;
 
   const cadenceFallback =
-    turn.turnNumber % 3 === 0;
+    turn.turnNumber % 5 === 0;
 
   const signalBacklog =
     (session.psychologyLedger?.signalStore?.length ?? 0) -
@@ -79,7 +79,7 @@ export function shouldConsolidate(
  * Fires when:
  *   - User typed free text
  *   - Previous turn had assumption changes
- *   - Every 2nd turn as a fallback cadence
+ *   - Every 4th turn as a fallback cadence
  *
  * Also requires at least 2 turns to have passed (need some context before diverging).
  */
@@ -99,7 +99,7 @@ export function shouldDiverge(
     prevTurn?.assumptionResponses?.some(r => r.action !== "keep") ?? false;
 
   const cadenceFallback =
-    turn.turnNumber % 2 === 0;
+    turn.turnNumber % 4 === 0;
 
   return meaningfulInput || assumptionChanged || cadenceFallback;
 }
