@@ -363,9 +363,10 @@ export class HookService {
 
     // ─── Fire background consolidation (non-blocking, throttled) ───
     // Only consolidate on meaningful change to reduce LLM calls during user think-time
+    const prevTurn = session.turns.length >= 2 ? session.turns[session.turns.length - 2] : null;
     const shouldConsolidate =
       (turn.userSelection?.type === "free_text") ||
-      (previousTurn?.assumptionResponses?.some(r => r.action !== "keep")) ||
+      (prevTurn?.assumptionResponses?.some((r: AssumptionResponse) => r.action !== "keep")) ||
       (turn.turnNumber % 3 === 0) || // every 3rd turn as fallback
       ((session.psychologyLedger?.signalStore?.length ?? 0) - (session.psychologyLedger?.lastConsolidation?.turnNumber ?? 0) >= 5);
 
@@ -378,7 +379,7 @@ export class HookService {
     // Only fire when user provides meaningful input or on time-based cadence
     const shouldDiverge =
       (turn.userSelection?.type === "free_text") ||
-      (previousTurn?.assumptionResponses?.some(r => r.action !== "keep")) ||
+      (prevTurn?.assumptionResponses?.some((r: AssumptionResponse) => r.action !== "keep")) ||
       (turn.turnNumber % 2 === 0); // every 2nd turn as fallback
 
     if (shouldDiverge && turn.turnNumber >= 2) {
