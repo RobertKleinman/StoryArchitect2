@@ -318,10 +318,14 @@ SAFETY:
 OUTPUT:
 Return ONLY valid JSON matching the HookClarifier schema. No markdown fences. No commentary.`;
 
-export const HOOK_CLARIFIER_USER_TEMPLATE = `Help this user discover an irresistible hook for their visual novel. Make it FUN.
+export const HOOK_CLARIFIER_USER_PREFIX = `Help this user discover an irresistible hook for their visual novel. Make it FUN.
 
 Their idea: "{{USER_SEED}}"
 
+Accumulated state: {{CURRENT_STATE_JSON}}
+Banned phrases: {{BAN_LIST}}`;
+
+export const HOOK_CLARIFIER_USER_DYNAMIC = `
 Conversation so far:
 {{PRIOR_TURNS}}
 
@@ -333,8 +337,6 @@ Conversation so far:
 
 {{ENGINE_DIALS}}
 
-Accumulated state: {{CURRENT_STATE_JSON}}
-Banned phrases: {{BAN_LIST}}
 Turn: {{TURN_NUMBER}}
 
 Run the adaptive engine:
@@ -346,6 +348,9 @@ Run the adaptive engine:
 5. Infer what you can from their language and choices — but surface choices they'd WANT control over (setting, character roles, tone, relationship dynamics).
 6. Surface your assumptions — but DON'T re-surface anything that's already CONFIRMED in the ledger. Only surface NEW assumptions or things still marked as inferred.
 7. Quality gate: is the hook strong enough AND has the user had meaningful creative input? Use the ledger's confirmed count to help judge — but remember, not every dimension needs confirming. If the user hasn't pushed back on inferred items after several turns, they're likely fine with them.`;
+
+/** @deprecated Use HOOK_CLARIFIER_USER_PREFIX + HOOK_CLARIFIER_USER_DYNAMIC instead */
+export const HOOK_CLARIFIER_USER_TEMPLATE = HOOK_CLARIFIER_USER_PREFIX + HOOK_CLARIFIER_USER_DYNAMIC;
 
 export const HOOK_BUILDER_SYSTEM = `You are HookBuilder. Use COLLISION + specificity to generate a hook that feels like it could only be THIS story.
 
@@ -408,10 +413,17 @@ CRITICAL — USER AUTHORSHIP RULE:
 OUTPUT:
 Return ONLY valid JSON matching the HookBuilder schema. No markdown fences. No commentary.`;
 
-export const HOOK_BUILDER_USER_TEMPLATE = `Generate a hook from this creative brief:
+export const HOOK_BUILDER_USER_PREFIX = `Generate a hook from this creative brief:
 
 User's original idea: "{{USER_SEED}}"
 
+Accumulated creative state:
+{{CURRENT_STATE_JSON}}
+
+Banned phrases: {{BAN_LIST}}
+Tone: {{TONE_CHIPS}}`;
+
+export const HOOK_BUILDER_USER_DYNAMIC = `
 Conversation so far:
 {{PRIOR_TURNS}}
 
@@ -422,13 +434,10 @@ CRITICAL: All CONFIRMED entries above MUST be honored in the premise. These are 
 ═══ USER BEHAVIOR SIGNALS ═══
 {{PSYCHOLOGY_SIGNALS}}
 
-Accumulated creative state:
-{{CURRENT_STATE_JSON}}
-
-Banned phrases: {{BAN_LIST}}
-Tone: {{TONE_CHIPS}}
-
 Return ONLY the HookBuilder JSON.`;
+
+/** @deprecated Use HOOK_BUILDER_USER_PREFIX + HOOK_BUILDER_USER_DYNAMIC instead */
+export const HOOK_BUILDER_USER_TEMPLATE = HOOK_BUILDER_USER_PREFIX + HOOK_BUILDER_USER_DYNAMIC;
 
 export const HOOK_JUDGE_SYSTEM = `You are HookJudge. Be mean. Your job is to prevent "competent but generic" hooks from shipping.
 

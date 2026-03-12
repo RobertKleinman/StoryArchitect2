@@ -180,7 +180,7 @@ sceneRoutes.get("/debug/scenes/:projectId", async (req, res) => {
       return res.status(404).json({ error: true, code: "NOT_FOUND", message: "Scene session not found" });
     }
 
-    const readableScenes = session.builtScenes.map(s => s.readable);
+    const readableScenes = session.builtScenes.map(s => s.builder_output.readable);
 
     return res.json({
       builtScenes: session.builtScenes,

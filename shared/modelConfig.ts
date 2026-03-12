@@ -141,37 +141,48 @@ export function creativeConfig(modelId: string): Partial<ModelConfig> {
 
 // ── Default config ──────────────────────────────────────────────────
 
+// ── Tier constants (change these to retier the whole system) ─────────
+const STRONG = "claude-sonnet-4-6";   // builders, judges, clarifiers — quality-critical
+const FAST   = "claude-haiku-4-5-20251001";  // summaries, polish, psych, divergence — speed-critical
+
 export const DEFAULT_MODEL_CONFIG: ModelConfig = {
-  clarifier: "claude-sonnet-4-6",
-  builder: "claude-sonnet-4-6",
-  judge: "claude-sonnet-4-6",
-  summary: "claude-sonnet-4-6",
-  polish: "claude-sonnet-4-6",
-  char_clarifier: "claude-sonnet-4-6",
-  char_builder: "claude-sonnet-4-6",
-  char_judge: "claude-sonnet-4-6",
-  char_polish: "claude-sonnet-4-6",
-  char_summary: "claude-sonnet-4-6",
-  img_clarifier: "claude-sonnet-4-6",
-  img_builder: "claude-sonnet-4-6",
-  img_judge: "claude-sonnet-4-6",
-  img_summary: "claude-sonnet-4-6",
-  world_clarifier: "claude-sonnet-4-6",
-  world_builder: "claude-sonnet-4-6",
-  world_judge: "claude-sonnet-4-6",
-  world_polish: "claude-sonnet-4-6",
-  world_summary: "claude-sonnet-4-6",
-  plot_clarifier: "claude-sonnet-4-6",
-  plot_builder: "claude-sonnet-4-6",
-  plot_judge: "claude-sonnet-4-6",
-  plot_polish: "claude-sonnet-4-6",
-  plot_summary: "claude-sonnet-4-6",
-  scene_planner: "claude-sonnet-4-6",
-  scene_clarifier: "claude-sonnet-4-6",
-  scene_builder: "claude-sonnet-4-6",
-  scene_minor_judge: "claude-sonnet-4-6",
-  scene_final_judge: "claude-sonnet-4-6",
-  scene_divergence: "claude-sonnet-4-6",
-  psych_consolidator: "claude-sonnet-4-6",
-  divergence_explorer: "claude-sonnet-4-6",
+  // Hook
+  clarifier: STRONG,
+  builder: STRONG,
+  judge: STRONG,
+  summary: FAST,
+  polish: FAST,
+  // Character
+  char_clarifier: STRONG,
+  char_builder: STRONG,
+  char_judge: STRONG,
+  char_polish: FAST,
+  char_summary: FAST,
+  // Character Image
+  img_clarifier: STRONG,
+  img_builder: STRONG,
+  img_judge: STRONG,
+  img_summary: FAST,
+  // World
+  world_clarifier: STRONG,
+  world_builder: STRONG,
+  world_judge: STRONG,
+  world_polish: FAST,
+  world_summary: FAST,
+  // Plot
+  plot_clarifier: STRONG,
+  plot_builder: STRONG,
+  plot_judge: STRONG,
+  plot_polish: FAST,
+  plot_summary: FAST,
+  // Scene
+  scene_planner: STRONG,
+  scene_clarifier: STRONG,
+  scene_builder: STRONG,
+  scene_minor_judge: FAST,        // deterministic checks gate this; when it runs, fast is fine
+  scene_final_judge: STRONG,      // one-time whole-work assessment — keep strong
+  scene_divergence: FAST,         // background exploration — fast tier
+  // Background
+  psych_consolidator: FAST,       // runs during user think-time
+  divergence_explorer: FAST,      // runs during user think-time
 };

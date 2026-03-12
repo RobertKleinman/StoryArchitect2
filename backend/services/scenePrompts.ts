@@ -162,7 +162,8 @@ Use the psychology signals to calibrate:
 
 OUTPUT: Return valid JSON matching the schema. No markdown fences.`;
 
-export const SCENE_CLARIFIER_USER_TEMPLATE = `Present this scene to the user and determine if steering is needed.
+// PREFIX: static/cacheable context that doesn't change between turns
+export const SCENE_CLARIFIER_USER_PREFIX = `Present this scene to the user and determine if steering is needed.
 
 ═══ SCENE PLAN ═══
 {{SCENE_PLAN_JSON}}
@@ -176,6 +177,14 @@ export const SCENE_CLARIFIER_USER_TEMPLATE = `Present this scene to the user and
 ═══ DIVERGENCE ALTERNATIVES (if any — from focused scene divergence) ═══
 {{DIVERGENCE_ALTERNATIVES}}
 
+Scene {{SCENE_INDEX}} of {{TOTAL_SCENES}}.
+
+`;
+
+// DYNAMIC: changes each turn (constraint ledger, psychology signals, engine dials, conversation history)
+export const SCENE_CLARIFIER_USER_DYNAMIC = `═══ CONVERSATION HISTORY (planning phase + prior scene turns) ═══
+{{PRIOR_TURNS}}
+
 ═══ CONSTRAINT LEDGER (scene-relevant locked decisions) ═══
 {{CONSTRAINT_LEDGER}}
 
@@ -185,12 +194,10 @@ export const SCENE_CLARIFIER_USER_TEMPLATE = `Present this scene to the user and
 ═══ ENGINE DIALS ═══
 {{ENGINE_DIALS}}
 
-═══ CONVERSATION HISTORY (planning phase + prior scene turns) ═══
-{{PRIOR_TURNS}}
-
-Scene {{SCENE_INDEX}} of {{TOTAL_SCENES}}.
-
 Decide: auto-pass or ask? If asking, present ONE clear staging choice. Always provide the vivid scene summary.`;
+
+// Deprecated: use PREFIX + DYNAMIC for prompt caching
+export const SCENE_CLARIFIER_USER_TEMPLATE = SCENE_CLARIFIER_USER_PREFIX + SCENE_CLARIFIER_USER_DYNAMIC;
 
 // ═══════════════════════════════════════════════════════════════
 // SCENE BUILDER — writes the actual VN scene
@@ -273,18 +280,17 @@ WORD COUNT: Aim for 800-2000 words per scene depending on pacing type.
 
 OUTPUT: Return valid JSON with the VN scene structure and the screenplay-style readable text. Include delivery notes on how you executed the dramatic spine.`;
 
-export const SCENE_BUILDER_USER_TEMPLATE = `Write this scene.
+// PREFIX: static/cacheable context that doesn't change between scenes
+export const SCENE_BUILDER_USER_PREFIX = `Write this scene.
 
 ═══ SCENE PLAN (the dramatic spine — you MUST deliver on all fields) ═══
 {{SCENE_PLAN_JSON}}
 
-═══ PREVIOUS SCENE (for continuity — honor the exit hook and continuity anchor) ═══
-{{PREVIOUS_SCENE_TEXT}}
+═══ USER STEERING (user-confirmed direction — override plan defaults where specified) ═══
+{{USER_STEERING}}
 
-═══ SCENE RHYTHM ═══
-Recent pacing: {{RECENT_PACING}}
-Monotony risk: {{MONOTONY_RISK}}
-Rhythm note: {{RHYTHM_NOTE}}
+═══ SCENE CONSTRAINTS (locked decisions from clarification — MUST be honored) ═══
+{{SCENE_CONSTRAINTS}}
 
 ═══ CHARACTER PROFILES ═══
 {{CHARACTER_PROFILES_JSON}}
@@ -311,10 +317,24 @@ Rhythm note: {{RHYTHM_NOTE}}
 Tone chips: {{TONE_CHIPS}}
 Bans: {{BANS}}
 
+`;
+
+// DYNAMIC: changes each turn (previous scene, rhythm, psychology signals)
+export const SCENE_BUILDER_USER_DYNAMIC = `═══ PREVIOUS SCENE (for continuity — honor the exit hook and continuity anchor) ═══
+{{PREVIOUS_SCENE_TEXT}}
+
+═══ SCENE RHYTHM ═══
+Recent pacing: {{RECENT_PACING}}
+Monotony risk: {{MONOTONY_RISK}}
+Rhythm note: {{RHYTHM_NOTE}}
+
 ═══ USER PSYCHOLOGY (inform writing density, pacing, intensity) ═══
 {{PSYCHOLOGY_SIGNALS}}
 
-Write the complete scene in both VN structured format and screenplay readable format. Deliver on every dramatic spine field. Return valid JSON.`;
+Write the complete scene in both VN structured format and screenplay readable format. Deliver on every dramatic spine field. Honor user steering and constraints. Return valid JSON.`;
+
+// Deprecated: use PREFIX + DYNAMIC for prompt caching
+export const SCENE_BUILDER_USER_TEMPLATE = SCENE_BUILDER_USER_PREFIX + SCENE_BUILDER_USER_DYNAMIC;
 
 // ═══════════════════════════════════════════════════════════════
 // SCENE MINOR JUDGE — quick consistency check per scene

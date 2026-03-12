@@ -125,6 +125,8 @@ export interface ScenePlan {
   active_irony?: DramaticIronyPoint[];
   /** Mystery hooks planted or paid off */
   mystery_hook_activity?: Array<{ hook_question: string; action: "planted" | "paid_off" | "sustained" }>;
+  /** User steering directions merged from clarifier (populated by service, not LLM) */
+  user_steering?: string;
 }
 
 // ─── Scene Rhythm (tracks pattern across scenes for variety) ───
@@ -400,6 +402,22 @@ export interface SceneDevelopmentTarget {
   notes?: string;
 }
 
+// ─── Scene Staging State (per-scene user steering layer) ───
+
+export interface SceneStagingState {
+  scene_id: string;
+  /** User's option selection (from clarifier) */
+  user_selection?: { type: string; optionId?: string; label: string };
+  /** Assumption overrides the user made for this scene */
+  assumption_overrides: Record<string, string>;
+  /** If the user picked a divergence alternative */
+  divergence_choice?: string;
+  /** The effective plan after merging user steering into the canonical plan */
+  effective_plan: ScenePlan;
+  /** Has the clarifier been resolved (user responded or auto-passed)? */
+  resolved: boolean;
+}
+
 // ─── Planning Phase Types ───
 
 export interface ScenePlannerOutput {
@@ -525,6 +543,8 @@ export interface SceneSessionState {
 
   // ─── Scene-by-scene phase ───
   currentSceneIndex: number;
+  /** Per-scene staging state: user steering merged into effective plan */
+  sceneStagingStates: Record<string, SceneStagingState>;
   writingTurns: SceneWritingTurn[];
   builtScenes: BuiltScene[];
   /** Scene rhythm tracking for variety enforcement */

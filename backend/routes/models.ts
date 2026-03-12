@@ -10,6 +10,8 @@ const MODEL_CONFIG_KEYS: ReadonlySet<string> = new Set<keyof ModelConfig>([
   "char_clarifier", "char_builder", "char_judge", "char_polish", "char_summary",
   "img_clarifier", "img_builder", "img_judge", "img_summary",
   "world_clarifier", "world_builder", "world_judge", "world_polish", "world_summary",
+  "plot_clarifier", "plot_builder", "plot_judge", "plot_polish", "plot_summary",
+  "scene_planner", "scene_clarifier", "scene_builder", "scene_minor_judge", "scene_final_judge", "scene_divergence",
   "psych_consolidator",
   "divergence_explorer",
 ]);

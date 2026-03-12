@@ -311,7 +311,7 @@ ALWAYS:
 OUTPUT:
 Return ONLY valid JSON matching the WorldClarifier schema. No markdown fences. No commentary.`;
 
-export const WORLD_CLARIFIER_USER_TEMPLATE = `Help this user build the world their characters live in. Make it a pressure cooker.
+export const WORLD_CLARIFIER_USER_PREFIX = `Help this user build the world their characters live in. Make it a pressure cooker.
 
 ═══ HOOK CONTEXT (locked from hook module) ═══
 Premise: "{{PREMISE}}"
@@ -336,7 +336,9 @@ Relationship Tensions: {{RELATIONSHIP_TENSIONS_JSON}}
 ═══ UPSTREAM DEVELOPMENT TARGETS (from earlier modules — weave in subtly) ═══
 {{UPSTREAM_DEVELOPMENT_TARGETS}}
 
-═══ CONVERSATION ═══
+`;
+
+export const WORLD_CLARIFIER_USER_DYNAMIC = `═══ CONVERSATION ═══
 {{PRIOR_TURNS}}
 
 ═══ USER PSYCHOLOGY (use this to shape your strategy — see STEP 2.5) ═══
@@ -350,6 +352,9 @@ Relationship Tensions: {{RELATIONSHIP_TENSIONS_JSON}}
 Turn: {{TURN_NUMBER}}
 
 Run the adaptive engine. Build the stage that will squeeze these characters.`;
+
+/** @deprecated Use WORLD_CLARIFIER_USER_PREFIX and WORLD_CLARIFIER_USER_DYNAMIC instead */
+export const WORLD_CLARIFIER_USER_TEMPLATE = WORLD_CLARIFIER_USER_PREFIX + WORLD_CLARIFIER_USER_DYNAMIC;
 
 export const WORLD_BUILDER_SYSTEM = `You are WorldBuilder. You produce a CONSTRAINT SYSTEM — the stage, rules, and pressure sources for a story. A downstream PLOT module will decide what actually happens. You build the ARENA, not the script.
 
@@ -487,7 +492,7 @@ USER AUTHORSHIP RULE:
 OUTPUT:
 Return ONLY valid JSON matching the WorldBuilder schema. No markdown fences. No commentary.`;
 
-export const WORLD_BUILDER_USER_TEMPLATE = `Generate the world from this creative brief:
+export const WORLD_BUILDER_USER_PREFIX = `Generate the world from this creative brief:
 
 ═══ HOOK CONTEXT ═══
 Premise: "{{PREMISE}}"
@@ -507,7 +512,12 @@ Relationship Tensions: {{RELATIONSHIP_TENSIONS_JSON}}
 ═══ UPSTREAM DEVELOPMENT TARGETS (strengthen these where natural) ═══
 {{UPSTREAM_DEVELOPMENT_TARGETS}}
 
-═══ CONVERSATION ═══
+Tone: {{TONE_CHIPS}}
+Bans: {{BAN_LIST}}
+
+`;
+
+export const WORLD_BUILDER_USER_DYNAMIC = `═══ CONVERSATION ═══
 {{PRIOR_TURNS}}
 
 ═══ USER BEHAVIOR SIGNALS ═══
@@ -517,10 +527,10 @@ Relationship Tensions: {{RELATIONSHIP_TENSIONS_JSON}}
 {{CONSTRAINT_LEDGER}}
 CRITICAL: All CONFIRMED entries must be honored.
 
-Tone: {{TONE_CHIPS}}
-Bans: {{BAN_LIST}}
-
 Return ONLY the WorldBuilder JSON.`;
+
+/** @deprecated Use WORLD_BUILDER_USER_PREFIX and WORLD_BUILDER_USER_DYNAMIC instead */
+export const WORLD_BUILDER_USER_TEMPLATE = WORLD_BUILDER_USER_PREFIX + WORLD_BUILDER_USER_DYNAMIC;
 
 export const WORLD_JUDGE_SYSTEM = `You are WorldJudge. Prevent generic, decorative, narrative-heavy, or pressure-free worlds from shipping.
 

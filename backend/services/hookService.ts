@@ -19,8 +19,12 @@ import { ProjectStore } from "../storage/projectStore";
 import { LLMClient } from "./llmClient";
 import {
   HOOK_BUILDER_SYSTEM,
+  HOOK_BUILDER_USER_PREFIX,
+  HOOK_BUILDER_USER_DYNAMIC,
   HOOK_BUILDER_USER_TEMPLATE,
   HOOK_CLARIFIER_SYSTEM,
+  HOOK_CLARIFIER_USER_PREFIX,
+  HOOK_CLARIFIER_USER_DYNAMIC,
   HOOK_CLARIFIER_USER_TEMPLATE,
   HOOK_JUDGE_SYSTEM,
   HOOK_JUDGE_USER_TEMPLATE,
@@ -247,6 +251,8 @@ export class HookService {
         maxTokens: 4000,
         modelOverride,
         jsonSchema: HOOK_CLARIFIER_SCHEMA,
+        // Only use cached prefix when not using prompt overrides
+        cacheableUserPrefix: promptOverrides?.user ? undefined : prompt.cacheableUserPrefix,
       });
     } catch (err) {
       console.error("CLARIFY LLM ERROR:", err);
@@ -355,20 +361,27 @@ export class HookService {
 
     await this.store.save(session);
 
-    // ─── Fire background consolidation (non-blocking) ───
-    // Runs during user think-time. If it finishes before the user's next
-    // submission, the next clarifier turn gets the consolidated ledger.
-    // If it doesn't finish in time, no harm — same as today.
-    if (session.psychologyLedger && session.psychologyLedger.signalStore.length > 0) {
+    // ─── Fire background consolidation (non-blocking, throttled) ───
+    // Only consolidate on meaningful change to reduce LLM calls during user think-time
+    const shouldConsolidate =
+      (turn.userSelection?.type === "free_text") ||
+      (previousTurn?.assumptionResponses?.some(r => r.action !== "keep")) ||
+      (turn.turnNumber % 3 === 0) || // every 3rd turn as fallback
+      ((session.psychologyLedger?.signalStore?.length ?? 0) - (session.psychologyLedger?.lastConsolidation?.turnNumber ?? 0) >= 5);
+
+    if (shouldConsolidate && session.psychologyLedger && session.psychologyLedger.signalStore.length > 0) {
       this.fireBackgroundConsolidation(session.projectId, turn.turnNumber, "hook")
         .catch(err => console.error("[PSYCH] Background consolidation fire failed:", err));
     }
 
-    // ─── Fire background divergence exploration (non-blocking) ───
-    // Runs in parallel with consolidation during user think-time.
-    // Generates a direction map of unexplored story possibilities.
-    // Only fires after turn 1 (need at least seed + 1 interaction).
-    if (turn.turnNumber >= 2) {
+    // ─── Fire background divergence exploration (non-blocking, throttled) ───
+    // Only fire when user provides meaningful input or on time-based cadence
+    const shouldDiverge =
+      (turn.userSelection?.type === "free_text") ||
+      (previousTurn?.assumptionResponses?.some(r => r.action !== "keep")) ||
+      (turn.turnNumber % 2 === 0); // every 2nd turn as fallback
+
+    if (shouldDiverge && turn.turnNumber >= 2) {
       this.fireBackgroundDivergence(session, turn.turnNumber, "hook")
         .catch(err => console.error("[DIVERGENCE] Background exploration fire failed:", err));
     }
@@ -508,37 +521,105 @@ export class HookService {
     const builderUser = promptOverrides?.builder?.user ?? builderPrompt.user;
     const temperatures = [0.7, 0.85, 1.0];
 
-    // Run all 3 builders concurrently — they're independent (same prompt, different temps)
+    // SHORT-CIRCUIT TOURNAMENT: Run builders and judges serially with early exit
     const builderStart = Date.now();
-    const builderPromises = temperatures.map((temp, i) =>
-      this.llm.call("builder", builderSystem, builderUser, {
-        temperature: temp,
-        maxTokens: 4000,
-        modelOverride,
-        jsonSchema: HOOK_BUILDER_SCHEMA,
-      }).then(raw => {
-        const parsed = this.parseAndValidate<HookBuilderOutput>(raw, [
-          "hook_sentence", "emotional_promise", "premise", "opening_image",
-          "page_1_splash_prompt", "page_turn_trigger", "why_addictive", "collision_sources",
-        ]);
-        if (!parsed) {
-          console.error(`BUILDER CANDIDATE ${i + 1} PARSE FAILED. Raw:`, raw.slice(0, 500));
-        }
-        return { raw, parsed };
-      }).catch(err => {
-        console.error(`BUILDER CANDIDATE ${i + 1} LLM ERROR:`, err);
-        return { raw: "", parsed: null as HookBuilderOutput | null };
-      })
-    );
-    const builderSettled = await Promise.all(builderPromises);
-    session.tournamentProgress!.builderResults = builderSettled;
-    console.log(`[perf] 3 builders completed in ${Date.now() - builderStart}ms (parallel)`);
+    const candidates: Array<{ hook: HookBuilderOutput; judge: HookJudgeOutput | null }> = [];
 
-    // Single checkpoint save after all builders complete
+    for (let i = 0; i < temperatures.length; i++) {
+      const temp = temperatures[i];
+
+      // Run builder for this candidate
+      let builderRaw = "";
+      try {
+        builderRaw = await this.llm.call("builder", builderSystem, builderUser, {
+          temperature: temp,
+          maxTokens: 4000,
+          modelOverride,
+          jsonSchema: HOOK_BUILDER_SCHEMA,
+          cacheableUserPrefix: promptOverrides?.builder?.user ? undefined : builderPrompt.cacheableUserPrefix,
+        });
+      } catch (err) {
+        console.error(`BUILDER CANDIDATE ${i + 1} LLM ERROR:`, err);
+        continue; // Skip to next candidate if builder fails
+      }
+
+      const builderParsed = this.parseAndValidate<HookBuilderOutput>(builderRaw, [
+        "hook_sentence", "emotional_promise", "premise", "opening_image",
+        "page_1_splash_prompt", "page_turn_trigger", "why_addictive", "collision_sources",
+      ]);
+
+      if (!builderParsed) {
+        console.error(`BUILDER CANDIDATE ${i + 1} PARSE FAILED. Raw:`, builderRaw.slice(0, 500));
+        continue;
+      }
+
+      session.tournamentProgress!.builderResults.push({ raw: builderRaw, parsed: builderParsed });
+
+      // Run judge for this candidate
+      const judgePrompt = this.buildJudgePrompt(builderParsed, session.currentState, session.psychologyLedger);
+      const judgeSystem = promptOverrides?.judge?.system ?? judgePrompt.system;
+      const judgeUser = promptOverrides?.judge?.user ?? judgePrompt.user;
+
+      let judgeRaw = "";
+      try {
+        judgeRaw = await this.llm.call("judge", judgeSystem, judgeUser, {
+          temperature: 0.3,
+          modelOverride,
+          jsonSchema: HOOK_JUDGE_SCHEMA,
+        });
+      } catch (err) {
+        console.error(`JUDGE ${i + 1} LLM ERROR:`, err);
+        // Store null judge for this candidate
+        session.tournamentProgress!.judgeResults.push({ raw: "", parsed: null });
+        continue;
+      }
+
+      const judgeParsed = this.parseAndValidate<HookJudgeOutput>(judgeRaw, [
+        "pass", "hard_fail_reasons", "scores",
+        "most_generic_part", "one_fix_instruction",
+      ]);
+
+      if (!judgeParsed) {
+        console.error(`JUDGE ${i + 1} PARSE FAILED. Raw:`, judgeRaw.slice(0, 500));
+        session.tournamentProgress!.judgeResults.push({ raw: judgeRaw, parsed: null });
+        continue;
+      }
+
+      session.tournamentProgress!.judgeResults.push({ raw: judgeRaw, parsed: judgeParsed });
+
+      const avgScore = this.avgScore(judgeParsed);
+
+      // Early exit logic
+      if (judgeParsed.pass && avgScore >= 8.5) {
+        // Elite candidate: exit immediately
+        candidates.push({ hook: builderParsed, judge: judgeParsed });
+        console.log(`[TOURNAMENT] Hook early-exit after ${i + 1} candidate(s), avgScore=${avgScore.toFixed(1)}`);
+        session.lastSavedAt = new Date().toISOString();
+        await this.store.save(session);
+        break;
+      } else if (judgeParsed.pass && avgScore >= 8.0) {
+        // Good candidate: continue to check next, then decide
+        candidates.push({ hook: builderParsed, judge: judgeParsed });
+        // If this is candidate 2, we can decide to exit after evaluating it
+        if (i === 1) {
+          console.log(`[TOURNAMENT] Hook early-exit after ${i + 1} candidate(s), avgScore=${avgScore.toFixed(1)}`);
+          session.lastSavedAt = new Date().toISOString();
+          await this.store.save(session);
+          break;
+        }
+      } else {
+        // Failed candidate: store and continue
+        candidates.push({ hook: builderParsed, judge: judgeParsed });
+      }
+    }
+
+    console.log(`[perf] Hook tournament completed in ${Date.now() - builderStart}ms (serial with early-exit)`);
+
+    // Single checkpoint save
     session.lastSavedAt = new Date().toISOString();
     await this.store.save(session);
 
-    // Record builder prompt history (one entry covers all 3 candidates)
+    // Record builder prompt history
     const builderResponseSummary = session.tournamentProgress!.builderResults
       .map((r, i) => `Candidate ${i + 1}: ${r.parsed ? r.parsed.premise?.slice(0, 100) : "FAILED"}`)
       .join(" | ");
@@ -547,83 +628,65 @@ export class HookService {
       promptOverrides?.builder, builderResponseSummary
     );
 
-    const hooks: HookBuilderOutput[] = session.tournamentProgress!.builderResults
-      .map(r => r.parsed)
-      .filter((p): p is HookBuilderOutput => p !== null);
+    // Record judge prompt history
+    const judgeResponseSummary = session.tournamentProgress!.judgeResults
+      .map((r, i) => `Judge ${i + 1}: ${r.parsed ? (r.parsed.pass ? "PASS" : "FAIL") + " avg=" + this.avgScore(r.parsed).toFixed(1) : "FAILED"}`)
+      .join(" | ");
+    if (session.tournamentProgress!.builderResults.length > 0) {
+      const firstBuilderHook = session.tournamentProgress!.builderResults[0].parsed;
+      if (firstBuilderHook) {
+        const firstJudgePrompt = this.buildJudgePrompt(firstBuilderHook, session.currentState);
+        this.recordPromptHistory(
+          session, "judge", firstJudgePrompt.system, firstJudgePrompt.user,
+          promptOverrides?.judge, judgeResponseSummary
+        );
+      }
+    }
 
-    if (hooks.length === 0) {
+    // Validate we have candidates
+    if (candidates.length === 0) {
       session.tournamentProgress = undefined;
       await this.store.save(session);
       throw new HookServiceError("LLM_PARSE_ERROR", "All builder candidates failed to parse");
     }
 
-    // Move to judge phase
-    session.tournamentProgress!.phase = "judges";
-    session.lastSavedAt = new Date().toISOString();
-    await this.store.save(session);
-
-    // Run all judges concurrently — each judges one independent candidate
-    const judgeStart = Date.now();
-    const judgePromises = hooks.map((hook, i) => {
-      const judgePrompt = this.buildJudgePrompt(hook, session.currentState, session.psychologyLedger);
-      const judgeSystem = promptOverrides?.judge?.system ?? judgePrompt.system;
-      const judgeUser = promptOverrides?.judge?.user ?? judgePrompt.user;
-      return this.llm.call("judge", judgeSystem, judgeUser, {
-        temperature: 0.3,
-        modelOverride,
-        jsonSchema: HOOK_JUDGE_SCHEMA,
-      }).then(raw => {
-        const parsed = this.parseAndValidate<HookJudgeOutput>(raw, [
-          "pass", "hard_fail_reasons", "scores",
-          "most_generic_part", "one_fix_instruction",
-        ]);
-        if (!parsed) {
-          console.error(`JUDGE ${i + 1} PARSE FAILED. Raw:`, raw.slice(0, 500));
-        }
-        return { raw, parsed };
-      }).catch(err => {
-        console.error(`JUDGE ${i + 1} LLM ERROR:`, err);
-        return { raw: "", parsed: null as HookJudgeOutput | null };
-      });
-    });
-    const judgeSettled = await Promise.all(judgePromises);
-    session.tournamentProgress!.judgeResults = judgeSettled;
-    console.log(`[perf] ${hooks.length} judges completed in ${Date.now() - judgeStart}ms (parallel)`);
-
-    // Single checkpoint save after all judges complete
-    session.lastSavedAt = new Date().toISOString();
-    await this.store.save(session);
-
-    // Record judge prompt history
-    if (hooks.length > 0) {
-      const firstJudgePrompt = this.buildJudgePrompt(hooks[0], session.currentState);
-      const judgeResponseSummary = session.tournamentProgress!.judgeResults
-        .map((r, i) => `Judge ${i + 1}: ${r.parsed ? (r.parsed.pass ? "PASS" : "FAIL") + " avg=" + this.avgScore(r.parsed).toFixed(1) : "FAILED"}`)
-        .join(" | ");
-      this.recordPromptHistory(
-        session, "judge", firstJudgePrompt.system, firstJudgePrompt.user,
-        promptOverrides?.judge, judgeResponseSummary
-      );
-    }
-
-    // Select winner
+    // Move to selecting phase
     session.tournamentProgress!.phase = "selecting";
+    session.lastSavedAt = new Date().toISOString();
+    await this.store.save(session);
 
-    const candidates: Array<{ hook: HookBuilderOutput; judge: HookJudgeOutput }> = [];
-    for (let i = 0; i < session.tournamentProgress!.judgeResults.length; i++) {
-      const parsed = session.tournamentProgress!.judgeResults[i].parsed;
-      if (parsed) {
-        candidates.push({ hook: hooks[i], judge: parsed });
+    // Select winner from collected candidates (already have judges for each)
+    const validCandidates: Array<{ hook: HookBuilderOutput; judge: HookJudgeOutput }> = [];
+    for (const c of candidates) {
+      if (c.judge) {
+        validCandidates.push({ hook: c.hook, judge: c.judge });
       }
     }
 
-    if (candidates.length === 0) {
+    if (validCandidates.length === 0) {
+      // All judges failed — fall back to first valid builder
+      const fallbackHook = candidates[0].hook;
+      session.revealedHook = fallbackHook;
+      session.revealedJudge = undefined;
+      session.status = "revealed";
+      session.rerollCount = resetRerollCount ? 0 : session.rerollCount + 1;
       session.tournamentProgress = undefined;
+      session.lastSavedAt = new Date().toISOString();
       await this.store.save(session);
-      throw new HookServiceError("LLM_PARSE_ERROR", "All judge evaluations failed to parse");
+      return {
+        hook: fallbackHook,
+        judge: {
+          passed: false,
+          hard_fail_reasons: ["All judges failed to evaluate"],
+          scores: { specificity: 0, drawability: 0, page_turn: 0, mechanism: 0, freshness: 0, user_fit: 0 },
+          most_generic_part: "",
+          one_fix_instruction: "",
+        },
+        rerollCount: session.rerollCount,
+      };
     }
 
-    const winner = this.selectWinner(candidates);
+    const winner = this.selectWinner(validCandidates);
 
     // Premise polish + slop QA: rewrite the winning premise to protect mystery and strip AI slop
     try {
@@ -805,50 +868,68 @@ export class HookService {
   private buildClarifierPrompt(session: HookSessionState): {
     system: string;
     user: string;
+    cacheableUserPrefix?: string;
   } {
     const currentStateJson = JSON.stringify(this.stripNil(session.currentState));
-    const priorTurns = this.formatPriorTurns(session.turns);
     const bans = JSON.stringify(session.currentState.bans ?? []);
+
+    // Static prefix — cacheable (doesn't change between turns)
+    const prefix = HOOK_CLARIFIER_USER_PREFIX
+      .replace("{{USER_SEED}}", session.seedInput)
+      .replace("{{CURRENT_STATE_JSON}}", currentStateJson)
+      .replace("{{BAN_LIST}}", bans);
+
+    // Dynamic suffix — changes each turn (prior turns, psychology, ledger, turn number, probes, direction map)
+    const priorTurns = this.formatPriorTurns(session.turns);
     const ledgerText = this.formatLedgerForPrompt(session.constraintLedger ?? []);
-
     const turnNumber = String(session.turns.length + 1);
-
     const psychText = formatPsychologyLedgerForPrompt(session.psychologyLedger);
     const probeText = formatSuggestedProbeForPrompt(session.psychologyLedger);
     const currentTurn = session.turns.length + 1;
     const directionMapText = formatDirectionMapForPrompt(session.psychologyLedger, currentTurn);
 
-    const user = HOOK_CLARIFIER_USER_TEMPLATE
-      .replace("{{USER_SEED}}", session.seedInput)
+    let dynamic = HOOK_CLARIFIER_USER_DYNAMIC
       .replace("{{PRIOR_TURNS}}", priorTurns)
       .replace("{{CONSTRAINT_LEDGER}}", ledgerText)
       .replace("{{PSYCHOLOGY_LEDGER}}", psychText)
       .replace("{{ENGINE_DIALS}}", formatEngineDialsForPrompt(session.psychologyLedger))
-      .replace("{{CURRENT_STATE_JSON}}", currentStateJson)
-      .replace("{{BAN_LIST}}", bans)
-      .replace("{{TURN_NUMBER}}", turnNumber)
-      + (probeText ? "\n\n" + probeText : "")
-      + (directionMapText ? "\n\n" + directionMapText : "");
+      .replace("{{TURN_NUMBER}}", turnNumber);
 
-    return { system: HOOK_CLARIFIER_SYSTEM, user };
+    dynamic += (probeText ? "\n\n" + probeText : "");
+    dynamic += (directionMapText ? "\n\n" + directionMapText : "");
+
+    return {
+      system: HOOK_CLARIFIER_SYSTEM,
+      user: prefix + dynamic,
+      cacheableUserPrefix: prefix,
+    };
   }
 
   private buildBuilderPrompt(session: HookSessionState): {
     system: string;
     user: string;
+    cacheableUserPrefix?: string;
   } {
-    const ledgerText = this.formatLedgerForPrompt(session.constraintLedger ?? []);
-    const signalsText = formatSignalsForBuilderJudge(session.psychologyLedger);
-    const user = HOOK_BUILDER_USER_TEMPLATE
+    // Static prefix — cacheable (user seed, current state, bans, tone chips don't change between builder calls)
+    const prefix = HOOK_BUILDER_USER_PREFIX
       .replace("{{USER_SEED}}", session.seedInput)
-      .replace("{{PRIOR_TURNS}}", this.formatPriorTurns(session.turns))
-      .replace("{{CONSTRAINT_LEDGER}}", ledgerText)
-      .replace("{{PSYCHOLOGY_SIGNALS}}", signalsText)
       .replace("{{CURRENT_STATE_JSON}}", JSON.stringify(this.stripNil(session.currentState)))
       .replace("{{BAN_LIST}}", JSON.stringify(session.currentState.bans ?? []))
       .replace("{{TONE_CHIPS}}", JSON.stringify(session.currentState.tone_chips ?? []));
 
-    return { system: HOOK_BUILDER_SYSTEM, user };
+    // Dynamic suffix — changes (prior turns from clarification, psychology signals, constraint ledger)
+    const ledgerText = this.formatLedgerForPrompt(session.constraintLedger ?? []);
+    const signalsText = formatSignalsForBuilderJudge(session.psychologyLedger);
+    let dynamic = HOOK_BUILDER_USER_DYNAMIC
+      .replace("{{PRIOR_TURNS}}", this.formatPriorTurns(session.turns))
+      .replace("{{CONSTRAINT_LEDGER}}", ledgerText)
+      .replace("{{PSYCHOLOGY_SIGNALS}}", signalsText);
+
+    return {
+      system: HOOK_BUILDER_SYSTEM,
+      user: prefix + dynamic,
+      cacheableUserPrefix: prefix,
+    };
   }
 
   private buildJudgePrompt(
@@ -1204,7 +1285,7 @@ export class HookService {
 
   private avgScore(judge: HookJudgeOutput): number {
     const s = judge.scores;
-    return (s.specificity + s.drawability + s.page_turn + s.mechanism + s.freshness) / 5;
+    return (s.specificity + s.drawability + s.page_turn + s.mechanism + s.freshness + s.user_fit) / 6;
   }
 
   /** Record a prompt history entry (tracks both defaults and user edits) */

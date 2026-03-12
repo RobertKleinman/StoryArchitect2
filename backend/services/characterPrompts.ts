@@ -304,7 +304,7 @@ SAFETY:
 OUTPUT:
 Return ONLY valid JSON matching the CharacterClarifier schema. No markdown fences. No commentary.`;
 
-export const CHARACTER_CLARIFIER_USER_TEMPLATE = `Help this user build an irresistible cast for their visual novel. Make it FUN. Make them obsess over these characters.
+export const CHARACTER_CLARIFIER_USER_PREFIX = `Help this user build an irresistible cast for their visual novel. Make it FUN. Make them obsess over these characters.
 
 ═══ HOOK CONTEXT (locked from previous module) ═══
 Premise: "{{PREMISE}}"
@@ -322,7 +322,12 @@ Hook Summary: "{{STATE_SUMMARY}}"
 ═══ UPSTREAM DEVELOPMENT TARGETS (from hook module — weave in subtly) ═══
 {{UPSTREAM_DEVELOPMENT_TARGETS}}
 
-═══ CONVERSATION ═══
+═══ CAST STATE ═══
+{{CAST_STATE_JSON}}
+
+`;
+
+export const CHARACTER_CLARIFIER_USER_DYNAMIC = `═══ CONVERSATION ═══
 {{PRIOR_TURNS}}
 
 ═══ USER PSYCHOLOGY (use this to shape your strategy — see STEP 2.5) ═══
@@ -333,12 +338,11 @@ Hook Summary: "{{STATE_SUMMARY}}"
 ═══ CONSTRAINT LEDGER (authoritative) ═══
 {{CONSTRAINT_LEDGER}}
 
-═══ CAST STATE ═══
-{{CAST_STATE_JSON}}
-
 Turn: {{TURN_NUMBER}}
 
 Run the adaptive engine. Be the friend who gets too excited about their characters. Make this the most fun creative conversation they've ever had.`;
+
+/** @deprecated */ export const CHARACTER_CLARIFIER_USER_TEMPLATE = CHARACTER_CLARIFIER_USER_PREFIX + CHARACTER_CLARIFIER_USER_DYNAMIC;
 
 export const CHARACTER_BUILDER_SYSTEM = `You are CharacterBuilder. Generate a cast that is psychologically real, structurally diverse, IMPOSSIBLE to stop thinking about, and inseparable from the hook.
 
@@ -440,7 +444,7 @@ USER AUTHORSHIP RULE:
 OUTPUT:
 Return ONLY valid JSON matching the CharacterBuilder schema. No markdown fences. No commentary.`;
 
-export const CHARACTER_BUILDER_USER_TEMPLATE = `Generate the full cast from this creative brief:
+export const CHARACTER_BUILDER_USER_PREFIX = `Generate the full cast from this creative brief:
 
 ═══ HOOK CONTEXT ═══
 Premise: "{{PREMISE}}"
@@ -455,7 +459,15 @@ Setting: "{{SETTING}}"
 ═══ UPSTREAM DEVELOPMENT TARGETS (strengthen these where natural) ═══
 {{UPSTREAM_DEVELOPMENT_TARGETS}}
 
-═══ CONVERSATION ═══
+═══ CAST STATE ═══
+{{CAST_STATE_JSON}}
+
+Tone: {{TONE_CHIPS}}
+Bans: {{BAN_LIST}}
+
+`;
+
+export const CHARACTER_BUILDER_USER_DYNAMIC = `═══ CONVERSATION ═══
 {{PRIOR_TURNS}}
 
 ═══ USER BEHAVIOR SIGNALS ═══
@@ -465,13 +477,9 @@ Setting: "{{SETTING}}"
 {{CONSTRAINT_LEDGER}}
 CRITICAL: All CONFIRMED entries must be honored.
 
-═══ CAST STATE ═══
-{{CAST_STATE_JSON}}
-
-Tone: {{TONE_CHIPS}}
-Bans: {{BAN_LIST}}
-
 Return ONLY the CharacterBuilder JSON.`;
+
+/** @deprecated */ export const CHARACTER_BUILDER_USER_TEMPLATE = CHARACTER_BUILDER_USER_PREFIX + CHARACTER_BUILDER_USER_DYNAMIC;
 
 export const CHARACTER_JUDGE_SYSTEM = `You are CharacterJudge. Be mean. Prevent flat, generic, or lifeless casts from shipping.
 

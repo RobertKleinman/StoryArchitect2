@@ -123,6 +123,21 @@ export class SceneStore {
     return moduleExport;
   }
 
+  async deleteExport(projectId: string): Promise<void> {
+    const filePath = path.join(
+      this.dataDir,
+      "exports",
+      `${this.sanitize(projectId)}.json`
+    );
+    try {
+      await fs.unlink(filePath);
+    } catch (e: any) {
+      if (e.code !== "ENOENT") {
+        console.error(`[SceneStore] deleteExport failed: ${filePath}`, e.code, e.message);
+      }
+    }
+  }
+
   async getExport(projectId: string): Promise<SceneModuleExport | null> {
     const filePath = path.join(
       this.dataDir,

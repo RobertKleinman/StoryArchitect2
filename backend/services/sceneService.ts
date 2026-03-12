@@ -31,6 +31,7 @@ import type {
   ScenePlanningTurn,
   SceneWritingTurn,
   ScenePromptOverrides,
+  SceneStagingState,
   PacingType,
   CompulsionVector,
 } from "../../shared/types/scene";
@@ -65,8 +66,8 @@ import {
 
 import {
   SCENE_PLANNER_SYSTEM, SCENE_PLANNER_USER_TEMPLATE,
-  SCENE_CLARIFIER_SYSTEM, SCENE_CLARIFIER_USER_TEMPLATE,
-  SCENE_BUILDER_SYSTEM, SCENE_BUILDER_USER_TEMPLATE,
+  SCENE_CLARIFIER_SYSTEM, SCENE_CLARIFIER_USER_TEMPLATE, SCENE_CLARIFIER_USER_PREFIX, SCENE_CLARIFIER_USER_DYNAMIC,
+  SCENE_BUILDER_SYSTEM, SCENE_BUILDER_USER_TEMPLATE, SCENE_BUILDER_USER_PREFIX, SCENE_BUILDER_USER_DYNAMIC,
   SCENE_MINOR_JUDGE_SYSTEM, SCENE_MINOR_JUDGE_USER_TEMPLATE,
   SCENE_FINAL_JUDGE_SYSTEM, SCENE_FINAL_JUDGE_USER_TEMPLATE,
   SCENE_DIVERGENCE_SYSTEM, SCENE_DIVERGENCE_USER_TEMPLATE,
@@ -100,6 +101,9 @@ export class SceneServiceError extends Error {
 // ─── Service ───
 
 export class SceneService {
+  // OPTIMIZATION: Cache for divergence exploration results, keyed by sceneIndex:stagingState hash
+  private divergenceCache = new Map<string, SceneDivergenceOutput>();
+
   constructor(
     private sceneStore: SceneStore,
     private plotStore: PlotStore,
@@ -209,7 +213,7 @@ export class SceneService {
     try {
       plannerRaw = await this.llm.call("scene_planner", plannerSystem, plannerUserFinal, {
         temperature: 0.7,
-        maxTokens: 16000,
+        maxTokens: 32000,
         modelOverride,
         jsonSchema: SCENE_PLANNER_SCHEMA,
       });
@@ -254,6 +258,7 @@ export class SceneService {
       writingTurns: [],
       builtScenes: [],
       sceneDivergenceResults: {},
+      sceneStagingStates: {},
       constraintLedger: importedLedger,
       developmentTargets: devTargets,
       status: "planning",
@@ -311,25 +316,49 @@ export class SceneService {
       }
     }
 
-    // Update psychology from user interaction
-    updateHeuristics(session.psychologyLedger!, {
-      isTyped: userSelection?.type === "free_text",
-      responseLength: userSelection?.label?.length ?? 0,
-    });
+    // Update psychology heuristics from user interaction
+    if (userSelection && session.psychologyLedger) {
+      const isTyped = userSelection.type === "free_text";
+      updateHeuristics(session.psychologyLedger, {
+        typedCount: isTyped ? 1 : 0,
+        clickedCount: isTyped ? 0 : 1,
+        totalAssumptions: assumptionResponses?.length ?? 0,
+        deferredAssumptions: 0,
+        changedAssumptions: assumptionResponses?.filter(r => r.action !== "keep").length ?? 0,
+        responseLengths: isTyped ? [userSelection.label?.length ?? 0] : [],
+      });
+
+      // Record assumption delta
+      if (assumptionResponses && assumptionResponses.length > 0) {
+        const offeredIds = assumptionResponses.map(r => r.assumptionId);
+        const actions: Record<string, "keep" | "alternative" | "freeform"> = {};
+        for (const r of assumptionResponses) {
+          actions[r.assumptionId] = r.action as "keep" | "alternative" | "freeform";
+        }
+        recordAssumptionDelta(session.psychologyLedger, session.planningTurns.length + 1, offeredIds, offeredIds, actions);
+      }
+    }
 
     // Build plan clarifier prompt
     const planSummary = this.formatScenePlanSummary(session.scenePlan ?? []);
+
+    // Static prefix — cacheable (narrative preview, scene plan summary don't change between turns)
+    const cacheablePrefix = SCENE_PLAN_CLARIFIER_USER_TEMPLATE
+      .replace("{{NARRATIVE_PREVIEW}}", session.narrativePreview?.trailer_text ?? "")
+      .replace("{{SCENE_PLAN_SUMMARY}}", planSummary);
+
+    // Dynamic suffix — changes each turn (psychology signals, engine dials, user feedback)
     const psychSignals = formatPsychologyLedgerForPrompt(session.psychologyLedger!);
     const engineDials = formatEngineDialsForPrompt(session.psychologyLedger!);
     const userFeedback = userSelection ? `User said: "${userSelection.label}"` : "(no feedback yet)";
 
-    const system = promptOverrides?.system ?? SCENE_PLAN_CLARIFIER_SYSTEM;
-    const user = promptOverrides?.user ?? SCENE_PLAN_CLARIFIER_USER_TEMPLATE
-      .replace("{{NARRATIVE_PREVIEW}}", session.narrativePreview?.trailer_text ?? "")
-      .replace("{{SCENE_PLAN_SUMMARY}}", planSummary)
+    let dynamicSuffix = ""
       .replace("{{USER_FEEDBACK}}", userFeedback)
       .replace("{{PSYCHOLOGY_SIGNALS}}", psychSignals)
       .replace("{{ENGINE_DIALS}}", engineDials);
+
+    const system = promptOverrides?.system ?? SCENE_PLAN_CLARIFIER_SYSTEM;
+    const user = promptOverrides?.user ?? (cacheablePrefix + dynamicSuffix);
 
     let clarifierRaw: string;
     try {
@@ -338,6 +367,8 @@ export class SceneService {
         maxTokens: 4000,
         modelOverride,
         jsonSchema: SCENE_CLARIFIER_SCHEMA,
+        // Only use cached prefix when not using prompt overrides
+        cacheableUserPrefix: promptOverrides?.user ? undefined : cacheablePrefix,
       });
     } catch (err) {
       console.error("SCENE PLAN CLARIFIER LLM ERROR:", err);
@@ -372,8 +403,30 @@ export class SceneService {
     await this.sceneStore.save(session);
 
     // Record signals from clarifier
-    if (clarifier.user_read?.signals && session.psychologyLedger) {
-      recordSignals(session.psychologyLedger, clarifier.user_read.signals, turnNumber);
+    if (clarifier.user_read && session.psychologyLedger) {
+      recordSignals(
+        session.psychologyLedger,
+        turnNumber,
+        "scene",
+        clarifier.user_read.signals ?? [],
+        clarifier.user_read.behaviorSummary,
+        clarifier.user_read.adaptationPlan,
+      );
+
+      // Run background consolidation (non-blocking, throttled)
+      // Only consolidate on meaningful change
+      const shouldConsolidate =
+        (userSelection?.type === "free_text") ||
+        (assumptionResponses?.some(r => r.action !== "keep")) ||
+        (turnNumber % 3 === 0) ||
+        ((session.psychologyLedger.signalStore?.length ?? 0) - (session.psychologyLedger.lastConsolidation?.turnNumber ?? 0) >= 5);
+
+      if (shouldConsolidate) {
+        runConsolidation(session.psychologyLedger, turnNumber, "scene", this.llm).catch(err =>
+          console.error("SCENE PLAN CONSOLIDATION ERROR (non-fatal):", err)
+        );
+      }
+
       await this.sceneStore.save(session);
     }
 
@@ -449,11 +502,26 @@ export class SceneService {
     }
 
     // Update heuristics
-    if (userSelection) {
-      updateHeuristics(session.psychologyLedger!, {
-        isTyped: userSelection.type === "free_text",
-        responseLength: userSelection.label?.length ?? 0,
+    if (userSelection && session.psychologyLedger) {
+      const isTyped = userSelection.type === "free_text";
+      updateHeuristics(session.psychologyLedger, {
+        typedCount: isTyped ? 1 : 0,
+        clickedCount: isTyped ? 0 : 1,
+        totalAssumptions: assumptionResponses?.length ?? 0,
+        deferredAssumptions: 0,
+        changedAssumptions: assumptionResponses?.filter(r => r.action !== "keep").length ?? 0,
+        responseLengths: isTyped ? [userSelection.label?.length ?? 0] : [],
       });
+
+      // Record assumption delta
+      if (assumptionResponses && assumptionResponses.length > 0) {
+        const offeredIds = assumptionResponses.map(r => r.assumptionId);
+        const actions: Record<string, "keep" | "alternative" | "freeform"> = {};
+        for (const r of assumptionResponses) {
+          actions[r.assumptionId] = r.action as "keep" | "alternative" | "freeform";
+        }
+        recordAssumptionDelta(session.psychologyLedger, session.writingTurns.length + 1, offeredIds, offeredIds, actions);
+      }
     }
 
     // Get rhythm snapshot
@@ -461,13 +529,17 @@ export class SceneService {
 
     // Run divergence for this scene (focused, 3-5 alternatives)
     let divergenceResult: SceneDivergenceOutput | null = null;
-    try {
-      divergenceResult = await this.runSceneDivergence(session, scenePlan, modelOverride);
-      if (divergenceResult) {
-        session.sceneDivergenceResults[scenePlan.scene_id] = divergenceResult;
+    if (this.shouldRunDivergence(session, scenePlan, sceneIndex, totalScenes)) {
+      try {
+        divergenceResult = await this.runSceneDivergence(session, scenePlan, modelOverride);
+        if (divergenceResult) {
+          session.sceneDivergenceResults[scenePlan.scene_id] = divergenceResult;
+        }
+      } catch (err) {
+        console.error("SCENE DIVERGENCE ERROR (non-fatal):", err);
       }
-    } catch (err) {
-      console.error("SCENE DIVERGENCE ERROR (non-fatal):", err);
+    } else {
+      console.log(`[SCENE OPT] Skipping divergence for scene ${scenePlan.scene_id} (low-risk)`);
     }
 
     // Build clarifier prompt
@@ -480,23 +552,29 @@ export class SceneService {
       ? JSON.stringify(divergenceResult.alternatives, null, 2)
       : "(no staging alternatives worth asking about)";
 
+    // Static prefix — cacheable (scene plan, previous scene summary, rhythm snapshot don't change within a scene clarifier turn)
+    const cacheablePrefix = SCENE_CLARIFIER_USER_PREFIX
+      .replace("{{SCENE_PLAN_JSON}}", JSON.stringify(scenePlan, null, 2))
+      .replace("{{PREVIOUS_SCENE_SUMMARY}}", previousSummary)
+      .replace("{{RHYTHM_SNAPSHOT}}", JSON.stringify(rhythmSnapshot))
+      .replace("{{DIVERGENCE_ALTERNATIVES}}", divergenceText)
+      .replace("{{SCENE_INDEX}}", String(sceneIndex + 1))
+      .replace("{{TOTAL_SCENES}}", String(totalScenes));
+
+    // Dynamic suffix — changes (psychology signals, engine dials, constraint ledger, prior turns)
     const psychSignals = formatPsychologyLedgerForPrompt(session.psychologyLedger!);
     const engineDials = formatEngineDialsForPrompt(session.psychologyLedger!);
     const ledgerText = this.formatLedger(session.constraintLedger);
     const priorTurns = this.formatPriorTurns(session.planningTurns, session.writingTurns);
 
-    const system = promptOverrides?.system ?? SCENE_CLARIFIER_SYSTEM;
-    const user = promptOverrides?.user ?? SCENE_CLARIFIER_USER_TEMPLATE
-      .replace("{{SCENE_PLAN_JSON}}", JSON.stringify(scenePlan, null, 2))
-      .replace("{{PREVIOUS_SCENE_SUMMARY}}", previousSummary)
-      .replace("{{RHYTHM_SNAPSHOT}}", JSON.stringify(rhythmSnapshot))
-      .replace("{{DIVERGENCE_ALTERNATIVES}}", divergenceText)
+    const dynamicSuffix = SCENE_CLARIFIER_USER_DYNAMIC
       .replace("{{CONSTRAINT_LEDGER}}", ledgerText)
       .replace("{{PSYCHOLOGY_SIGNALS}}", psychSignals)
       .replace("{{ENGINE_DIALS}}", engineDials)
-      .replace("{{PRIOR_TURNS}}", priorTurns)
-      .replace("{{SCENE_INDEX}}", String(sceneIndex + 1))
-      .replace("{{TOTAL_SCENES}}", String(totalScenes));
+      .replace("{{PRIOR_TURNS}}", priorTurns);
+
+    const system = promptOverrides?.system ?? SCENE_CLARIFIER_SYSTEM;
+    const user = promptOverrides?.user ?? (cacheablePrefix + dynamicSuffix);
 
     let clarifierRaw: string;
     try {
@@ -505,6 +583,8 @@ export class SceneService {
         maxTokens: 4000,
         modelOverride,
         jsonSchema: SCENE_CLARIFIER_SCHEMA,
+        // Only use cached prefix when not using prompt overrides
+        cacheableUserPrefix: promptOverrides?.user ? undefined : cacheablePrefix,
       });
     } catch (err) {
       console.error("SCENE CLARIFIER LLM ERROR:", err);
@@ -518,7 +598,9 @@ export class SceneService {
       throw new SceneServiceError("LLM_PARSE_ERROR", "Failed to parse scene clarifier response");
     }
 
-    const autoPassApplied = !clarifier.needs_input;
+    // Auto-pass requires BOTH: LLM says no input needed AND confidence >= 0.75
+    const AUTO_PASS_THRESHOLD = 0.75;
+    const autoPassApplied = !clarifier.needs_input && clarifier.auto_pass_confidence >= AUTO_PASS_THRESHOLD;
     const turnNumber = session.writingTurns.length + 1;
 
     session.writingTurns.push({
@@ -529,12 +611,88 @@ export class SceneService {
       userSelection: autoPassApplied ? { type: "auto_pass", label: "(auto-passed)" } : null,
     });
 
+    // Build effective scene plan with user steering merged in
+    if (!session.sceneStagingStates) session.sceneStagingStates = {};
+    const stagingState: SceneStagingState = session.sceneStagingStates[scenePlan.scene_id] ?? {
+      scene_id: scenePlan.scene_id,
+      assumption_overrides: {},
+      effective_plan: { ...scenePlan },
+      resolved: false,
+    };
+
+    // Merge user steering into effective plan
+    if (userSelection) {
+      stagingState.user_selection = userSelection;
+    }
+    if (assumptionResponses) {
+      for (const resp of assumptionResponses) {
+        stagingState.assumption_overrides[resp.assumptionId] = resp.newValue;
+      }
+    }
+    if (divergenceResult?.worth_asking && userSelection?.optionId) {
+      const chosenAlt = divergenceResult.alternatives.find((_, i) => String.fromCharCode(65 + i) === userSelection.optionId);
+      if (chosenAlt) {
+        stagingState.divergence_choice = chosenAlt.label;
+      }
+    }
+
+    // Materialize effective plan: start with canonical, overlay steering
+    const effectivePlan = { ...scenePlan };
+    // Apply user direction as staging notes that the builder will consume
+    const steeringDirections: string[] = [];
+    if (stagingState.user_selection?.type === "free_text" && stagingState.user_selection.label) {
+      steeringDirections.push(`User direction: "${stagingState.user_selection.label}"`);
+    }
+    if (stagingState.user_selection?.type === "option" && stagingState.user_selection.label) {
+      steeringDirections.push(`User chose: "${stagingState.user_selection.label}"`);
+    }
+    if (stagingState.divergence_choice) {
+      steeringDirections.push(`Staging alternative selected: "${stagingState.divergence_choice}"`);
+    }
+    for (const [key, val] of Object.entries(stagingState.assumption_overrides)) {
+      steeringDirections.push(`Assumption override [${key}]: "${val}"`);
+    }
+    if (steeringDirections.length > 0) {
+      effectivePlan.user_steering = steeringDirections.join("\n");
+    }
+    stagingState.effective_plan = effectivePlan;
+    stagingState.resolved = autoPassApplied || (!!userSelection);
+    session.sceneStagingStates[scenePlan.scene_id] = stagingState;
+
+    // OPTIMIZATION: Invalidate divergence cache when staging changes
+    if (userSelection || assumptionResponses || divergenceResult) {
+      const oldKey = this.divergenceCacheKey(sceneIndex, undefined);
+      this.divergenceCache.delete(oldKey);
+      console.log(`[DIVERGENCE CACHE] Invalidated for scene ${sceneIndex} due to staging change`);
+    }
+
     session.rhythmSnapshot = rhythmSnapshot;
     this.recordPromptHistory(session, "scene_clarifier", system, user, promptOverrides, `scene ${scenePlan.scene_id} ${autoPassApplied ? "(auto-pass)" : ""}`);
 
-    // Record signals
-    if (clarifier.user_read?.signals && session.psychologyLedger) {
-      recordSignals(session.psychologyLedger, clarifier.user_read.signals, turnNumber);
+    // Record psychology signals
+    if (clarifier.user_read && session.psychologyLedger) {
+      recordSignals(
+        session.psychologyLedger,
+        turnNumber,
+        "scene",
+        clarifier.user_read.signals ?? [],
+        clarifier.user_read.behaviorSummary,
+        clarifier.user_read.adaptationPlan,
+      );
+
+      // Run background consolidation (non-blocking, throttled)
+      // Only consolidate on meaningful change
+      const shouldConsolidateScene =
+        (userSelection?.type === "free_text") ||
+        (assumptionResponses?.some(r => r.action !== "keep")) ||
+        (turnNumber % 3 === 0) ||
+        ((session.psychologyLedger.signalStore?.length ?? 0) - (session.psychologyLedger.lastConsolidation?.turnNumber ?? 0) >= 5);
+
+      if (shouldConsolidateScene) {
+        runConsolidation(session.psychologyLedger, turnNumber, "scene", this.llm).catch(err =>
+          console.error("SCENE CONSOLIDATION ERROR (non-fatal):", err)
+        );
+      }
     }
 
     session.lastSavedAt = new Date().toISOString();
@@ -565,18 +723,31 @@ export class SceneService {
     }
 
     const sceneIndex = session.currentSceneIndex;
-    const scenePlan = session.scenePlan![sceneIndex];
+    const canonicalPlan = session.scenePlan![sceneIndex];
+
+    // Enforce: clarifier must be resolved before building
+    const staging = session.sceneStagingStates?.[canonicalPlan.scene_id];
+    if (staging && !staging.resolved) {
+      throw new SceneServiceError("INVALID_INPUT", `Scene "${canonicalPlan.scene_id}" clarifier has not been resolved. Submit or auto-pass the clarifier first.`);
+    }
+
+    // Use effective plan (with user steering merged in) if available, else canonical
+    const scenePlan = staging?.effective_plan ?? canonicalPlan;
     const rhythmSnapshot = session.rhythmSnapshot ?? this.computeRhythmSnapshot(session);
 
-    // Build the scene
+    // Build the scene with effective plan (includes user_steering field)
     const builderOutput = await this.runBuilder(session, scenePlan, rhythmSnapshot, modelOverride, promptOverrides?.builder);
 
     // Run minor judge
     let minorJudge: SceneMinorJudgeOutput | null = null;
-    try {
-      minorJudge = await this.runMinorJudge(session, scenePlan, builderOutput, sceneIndex, modelOverride, promptOverrides?.judge);
-    } catch (err) {
-      console.error("SCENE MINOR JUDGE ERROR (non-fatal):", err);
+    if (this.shouldRunMinorJudge(session, scenePlan, sceneIndex)) {
+      try {
+        minorJudge = await this.runMinorJudge(session, scenePlan, builderOutput, sceneIndex, modelOverride, promptOverrides?.judge);
+      } catch (err) {
+        console.error("SCENE MINOR JUDGE ERROR (non-fatal):", err);
+      }
+    } else {
+      console.log(`[SCENE OPT] Skipping minor judge for scene ${scenePlan.scene_id} (auto-passed, low-risk)`);
     }
 
     // Check retroactive consistency
@@ -635,28 +806,37 @@ export class SceneService {
     session.status = "final_judging";
     await this.sceneStore.save(session);
 
-    const allScenesJson = JSON.stringify(session.builtScenes.map(s => ({
-      scene_id: s.scene_id,
-      title: s.plan.title,
-      screenplay: s.builder_output.readable.screenplay_text,
-      word_count: s.builder_output.readable.word_count,
-      delivery_notes: s.builder_output.delivery_notes,
-    })), null, 2);
+    // OPTIMIZATION: Use scene digests instead of full screenplay text to reduce token usage
+    const allScenesJson = JSON.stringify(session.builtScenes.map(s => this.createSceneDigest(s)));
 
-    const allPlansJson = JSON.stringify(session.scenePlan, null, 2);
+    const allPlansJson = JSON.stringify(session.scenePlan);
     const plotPack = session.sourcePlotPack;
+
+    // OPTIMIZATION: Item 16 - For final judge, collect all unique characters from all scenes
+    const allCharactersInvolved = new Set<string>();
+    if (session.scenePlan) {
+      for (const scene of session.scenePlan) {
+        for (const char of scene.characters_present) {
+          allCharactersInvolved.add(char);
+        }
+      }
+    }
+    const relevantCharacters = this.filterCharacterProfiles(
+      session.sourceCharacterPack.locked.characters,
+      Array.from(allCharactersInvolved)
+    );
 
     const system = promptOverrides?.system ?? SCENE_FINAL_JUDGE_SYSTEM;
     const user = promptOverrides?.user ?? SCENE_FINAL_JUDGE_USER_TEMPLATE
       .replace("{{ALL_SCENES_JSON}}", allScenesJson)
       .replace("{{ALL_PLANS_JSON}}", allPlansJson)
-      .replace("{{TENSION_CHAIN_JSON}}", JSON.stringify(plotPack.locked.tension_chain, null, 2))
-      .replace("{{TURNING_POINTS_JSON}}", JSON.stringify(plotPack.locked.turning_points, null, 2))
-      .replace("{{MYSTERY_HOOKS_JSON}}", JSON.stringify(plotPack.locked.mystery_hooks, null, 2))
-      .replace("{{MOTIFS_JSON}}", JSON.stringify(plotPack.locked.motifs, null, 2))
-      .replace("{{THEME_JSON}}", JSON.stringify(plotPack.locked.theme_cluster, null, 2))
-      .replace("{{RESOLUTION_JSON}}", JSON.stringify(plotPack.locked.resolution, null, 2))
-      .replace("{{CHARACTER_PROFILES_JSON}}", JSON.stringify(session.sourceCharacterPack.locked.characters, null, 2))
+      .replace("{{TENSION_CHAIN_JSON}}", JSON.stringify(plotPack.locked.tension_chain))
+      .replace("{{TURNING_POINTS_JSON}}", JSON.stringify(plotPack.locked.turning_points))
+      .replace("{{MYSTERY_HOOKS_JSON}}", JSON.stringify(plotPack.locked.mystery_hooks))
+      .replace("{{MOTIFS_JSON}}", JSON.stringify(plotPack.locked.motifs))
+      .replace("{{THEME_JSON}}", JSON.stringify(plotPack.locked.theme_cluster))
+      .replace("{{RESOLUTION_JSON}}", JSON.stringify(plotPack.locked.resolution))
+      .replace("{{CHARACTER_PROFILES_JSON}}", JSON.stringify(relevantCharacters))
       .replace("{{TOTAL_SCENES}}", String(session.builtScenes.length))
       .replace("{{ENDING_ENERGY}}", plotPack.locked.resolution.ending_energy);
 
@@ -698,6 +878,9 @@ export class SceneService {
   async complete(projectId: string): Promise<ScenePack> {
     const session = await this.sceneStore.get(projectId);
     if (!session) throw new SceneServiceError("NOT_FOUND", "Scene session not found");
+    if (session.status !== "reviewing" && session.status !== "final_judging" && session.status !== "complete") {
+      throw new SceneServiceError("INVALID_INPUT", `Cannot complete in status: ${session.status}. All scenes must be built first.`);
+    }
 
     const autoPassedCount = session.writingTurns.filter(t => t.userSelection?.type === "auto_pass").length;
     const steeredCount = session.builtScenes.length - autoPassedCount;
@@ -761,6 +944,8 @@ export class SceneService {
 
   async resetSession(projectId: string): Promise<void> {
     await this.sceneStore.delete(projectId);
+    // Also clean up any export file
+    try { await this.sceneStore.deleteExport(projectId); } catch {}
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -777,8 +962,18 @@ export class SceneService {
     const previousScene = session.builtScenes.length > 0
       ? session.builtScenes[session.builtScenes.length - 1]
       : null;
+    // OPTIMIZATION: Item 15 - Use continuity summary instead of full scene text to reduce tokens
     const previousText = previousScene
-      ? previousScene.builder_output.readable.screenplay_text
+      ? (() => {
+          // Check if the previous scene's plan has a continuity anchor
+          if (previousScene.plan.continuity_anchor) {
+            return previousScene.plan.continuity_anchor;
+          }
+          // Fallback: Create a short summary from the previous scene's emotional arc and exit hook
+          const screenplay = previousScene.builder_output.readable.screenplay_text;
+          const summary = `Previous scene "${previousScene.plan.title}" ended with emotion: ${previousScene.plan.emotion_arc.end}. Exit hook: ${previousScene.plan.exit_hook}. (Full scene text truncated — ${screenplay.length} chars total)`;
+          return summary.length > 500 ? summary.slice(0, 500) + "..." : summary;
+        })()
       : "(first scene)";
 
     // Get character visuals if available
@@ -790,30 +985,51 @@ export class SceneService {
               { visual_description: c.visual_description?.full_body_description ?? "(no visual)", image_prompt: c.visual_description?.image_generation_prompt ?? "" },
             ])
           ),
-          null, 2,
         )
       : "(no character visuals available)";
 
-    const psychSignals = formatPsychologyLedgerForPrompt(session.psychologyLedger!);
     const plotPack = session.sourcePlotPack;
 
-    const system = promptOverrides?.system ?? SCENE_BUILDER_SYSTEM;
-    const user = promptOverrides?.user ?? SCENE_BUILDER_USER_TEMPLATE
-      .replace("{{SCENE_PLAN_JSON}}", JSON.stringify(scenePlan, null, 2))
-      .replace("{{PREVIOUS_SCENE_TEXT}}", previousText.slice(0, 3000))
+    // Build user steering text from effective plan
+    const userSteeringText = scenePlan.user_steering ?? "(no user steering — use your best judgment)";
+
+    // Get constraint ledger entries relevant to this scene
+    const sceneConstraints = session.constraintLedger
+      .filter(e => e.confidence === "confirmed" && (!e.sceneId || e.sceneId === scenePlan.scene_id))
+      .map(e => `[${e.key}] ${e.value} (${e.source})`)
+      .join("\n") || "(no constraints)";
+
+    // Static prefix — cacheable (scene plan, character profiles, world summary, theme, tone chips, bans don't change)
+    // OPTIMIZATION: Item 16 - Only include characters involved in this scene
+    const relevantCharacters = this.filterCharacterProfiles(
+      session.sourceCharacterPack.locked.characters,
+      scenePlan.characters_present
+    );
+    const cacheablePrefix = SCENE_BUILDER_USER_PREFIX
+      .replace("{{SCENE_PLAN_JSON}}", JSON.stringify(scenePlan))
+      .replace("{{USER_STEERING}}", userSteeringText)
+      .replace("{{SCENE_CONSTRAINTS}}", sceneConstraints)
+      .replace("{{CHARACTER_PROFILES_JSON}}", JSON.stringify(relevantCharacters))
+      .replace("{{CHARACTER_VISUALS_JSON}}", charVisuals)
+      .replace("{{WORLD_SUMMARY}}", session.sourceWorldPack?.state_summary ?? "(no world context)")
+      .replace("{{ACTIVE_IRONY_JSON}}", JSON.stringify(scenePlan.active_irony ?? []))
+      .replace("{{ACTIVE_MYSTERY_JSON}}", JSON.stringify(scenePlan.mystery_hook_activity ?? []))
+      .replace("{{MOTIF_NOTES}}", scenePlan.motif_notes ?? "(none)")
+      .replace("{{THEME_JSON}}", JSON.stringify(plotPack.locked.theme_cluster))
+      .replace("{{TONE_CHIPS}}", JSON.stringify(plotPack.preferences?.tone_chips ?? []))
+      .replace("{{BANS}}", JSON.stringify(plotPack.preferences?.bans ?? []));
+
+    // Dynamic suffix — changes (previous scene text, rhythm snapshot, psychology signals)
+    const psychSignals = formatPsychologyLedgerForPrompt(session.psychologyLedger!);
+    const dynamicSuffix = SCENE_BUILDER_USER_DYNAMIC
+      .replace("{{PREVIOUS_SCENE_TEXT}}", previousText)
       .replace("{{RECENT_PACING}}", rhythmSnapshot.recent_pacing.join(", ") || "(first scene)")
       .replace("{{MONOTONY_RISK}}", String(rhythmSnapshot.monotony_risk))
       .replace("{{RHYTHM_NOTE}}", rhythmSnapshot.rhythm_note)
-      .replace("{{CHARACTER_PROFILES_JSON}}", JSON.stringify(session.sourceCharacterPack.locked.characters, null, 2))
-      .replace("{{CHARACTER_VISUALS_JSON}}", charVisuals)
-      .replace("{{WORLD_SUMMARY}}", session.sourceWorldPack?.state_summary ?? "(no world context)")
-      .replace("{{ACTIVE_IRONY_JSON}}", JSON.stringify(scenePlan.active_irony ?? [], null, 2))
-      .replace("{{ACTIVE_MYSTERY_JSON}}", JSON.stringify(scenePlan.mystery_hook_activity ?? [], null, 2))
-      .replace("{{MOTIF_NOTES}}", scenePlan.motif_notes ?? "(none)")
-      .replace("{{THEME_JSON}}", JSON.stringify(plotPack.locked.theme_cluster, null, 2))
-      .replace("{{TONE_CHIPS}}", JSON.stringify(plotPack.preferences?.tone_chips ?? []))
-      .replace("{{BANS}}", JSON.stringify(plotPack.preferences?.bans ?? []))
       .replace("{{PSYCHOLOGY_SIGNALS}}", psychSignals);
+
+    const system = promptOverrides?.system ?? SCENE_BUILDER_SYSTEM;
+    const user = promptOverrides?.user ?? (cacheablePrefix + dynamicSuffix);
 
     let builderRaw: string;
     try {
@@ -822,6 +1038,8 @@ export class SceneService {
         maxTokens: 8000,
         modelOverride,
         jsonSchema: SCENE_BUILDER_SCHEMA,
+        // Only use cached prefix when not using prompt overrides
+        cacheableUserPrefix: promptOverrides?.user ? undefined : cacheablePrefix,
       });
     } catch (err) {
       console.error("SCENE BUILDER LLM ERROR:", err);
@@ -856,16 +1074,22 @@ export class SceneService {
       : sceneIndex < totalScenes * 0.75 ? "peak"
       : "resolution";
 
+    // OPTIMIZATION: Item 16 - Only include characters involved in this scene
+    const relevantCharacters = this.filterCharacterProfiles(
+      session.sourceCharacterPack.locked.characters,
+      scenePlan.characters_present
+    );
+
     const system = promptOverrides?.system ?? SCENE_MINOR_JUDGE_SYSTEM;
     const user = promptOverrides?.user ?? SCENE_MINOR_JUDGE_USER_TEMPLATE
-      .replace("{{SCENE_PLAN_JSON}}", JSON.stringify(scenePlan, null, 2))
+      .replace("{{SCENE_PLAN_JSON}}", JSON.stringify(scenePlan))
       .replace("{{SCENE_CONTENT_JSON}}", JSON.stringify({
         screenplay: builderOutput.readable.screenplay_text,
         delivery_notes: builderOutput.delivery_notes,
         vn_lines_count: builderOutput.vn_scene.lines.length,
-      }, null, 2))
+      }))
       .replace("{{PREVIOUS_SCENE_SUMMARY}}", previousSummary)
-      .replace("{{CHARACTER_PROFILES_JSON}}", JSON.stringify(session.sourceCharacterPack.locked.characters, null, 2))
+      .replace("{{CHARACTER_PROFILES_JSON}}", JSON.stringify(relevantCharacters))
       .replace("{{SCENE_INDEX}}", String(sceneIndex + 1))
       .replace("{{TOTAL_SCENES}}", String(totalScenes))
       .replace("{{PACING_TYPE}}", scenePlan.pacing_type)
@@ -896,6 +1120,17 @@ export class SceneService {
     scenePlan: ScenePlan,
     modelOverride?: string,
   ): Promise<SceneDivergenceOutput | null> {
+    // OPTIMIZATION: Check divergence cache first
+    const sceneIndex = session.currentSceneIndex;
+    const stagingState = session.sceneStagingStates?.[scenePlan.scene_id];
+    const cacheKey = this.divergenceCacheKey(sceneIndex, stagingState);
+
+    const cached = this.divergenceCache.get(cacheKey);
+    if (cached) {
+      console.log(`[DIVERGENCE CACHE] Hit for scene ${sceneIndex}`);
+      return cached;
+    }
+
     const previousScene = session.builtScenes.length > 0
       ? session.builtScenes[session.builtScenes.length - 1]
       : null;
@@ -907,11 +1142,17 @@ export class SceneService {
     const beats = session.sourcePlotPack.locked.tension_chain.filter(b => scenePlan.beat_ids.includes(b.id));
     const psychSignals = formatPsychologyLedgerForPrompt(session.psychologyLedger!);
 
+    // OPTIMIZATION: Item 16 - Only include characters involved in this scene
+    const relevantCharacters = this.filterCharacterProfiles(
+      session.sourceCharacterPack.locked.characters,
+      scenePlan.characters_present
+    );
+
     const user = SCENE_DIVERGENCE_USER_TEMPLATE
-      .replace("{{SCENE_PLAN_JSON}}", JSON.stringify(scenePlan, null, 2))
-      .replace("{{BEAT_JSON}}", JSON.stringify(beats, null, 2))
+      .replace("{{SCENE_PLAN_JSON}}", JSON.stringify(scenePlan))
+      .replace("{{BEAT_JSON}}", JSON.stringify(beats))
       .replace("{{PREVIOUS_SCENE_SUMMARY}}", previousSummary)
-      .replace("{{CHARACTER_PROFILES_JSON}}", JSON.stringify(session.sourceCharacterPack.locked.characters, null, 2))
+      .replace("{{CHARACTER_PROFILES_JSON}}", JSON.stringify(relevantCharacters))
       .replace("{{WORLD_SUMMARY}}", session.sourceWorldPack?.state_summary ?? "(no world context)")
       .replace("{{PSYCHOLOGY_SIGNALS}}", psychSignals);
 
@@ -930,6 +1171,8 @@ export class SceneService {
 
     const result = this.parseAndValidate<SceneDivergenceOutput>(raw, ["scene_id", "alternatives", "worth_asking"]);
     if (result) {
+      // OPTIMIZATION: Cache the result for this scene's staging state
+      this.divergenceCache.set(cacheKey, result);
       this.recordPromptHistory(session, "divergence", SCENE_DIVERGENCE_SYSTEM, user, undefined, `${result.alternatives.length} alternatives, worth_asking: ${result.worth_asking}`);
     }
     return result;
@@ -938,6 +1181,47 @@ export class SceneService {
   // ═══════════════════════════════════════════════════════════════
   // PRIVATE — Utility helpers
   // ═══════════════════════════════════════════════════════════════
+
+  // OPTIMIZATION: Item 16 - Filter character profiles to only relevant cast
+  private filterCharacterProfiles(allCharacters: any, charactersInvolved: string[]): any {
+    if (!charactersInvolved || charactersInvolved.length === 0) {
+      // Fallback: return all characters if no cast list is provided
+      return allCharacters;
+    }
+
+    const filtered: Record<string, any> = {};
+    for (const charId of charactersInvolved) {
+      if (allCharacters[charId]) {
+        filtered[charId] = allCharacters[charId];
+      }
+    }
+
+    return Object.keys(filtered).length > 0 ? filtered : allCharacters;
+  }
+
+  private createSceneDigest(builtScene: BuiltScene): { scene_id: string; title: string; digest: string; word_count: number; delivery_notes: any } {
+    const screenplay = builtScene.builder_output.readable.screenplay_text;
+
+    // Extract first 100 chars of key events
+    const keyEvents = screenplay.length > 100 ? screenplay.slice(0, 100) : screenplay;
+
+    // Get emotional register from scene plan
+    const emotionalRegister = builtScene.plan.emotion_arc.end;
+
+    // Get characters involved
+    const characters = builtScene.plan.characters_present.join(", ");
+
+    // Build compact digest
+    const digest = `[${builtScene.plan.pacing_type}] ${keyEvents}... (Characters: ${characters}, Emotion: ${emotionalRegister})`;
+
+    return {
+      scene_id: builtScene.scene_id,
+      title: builtScene.plan.title,
+      digest: digest,
+      word_count: builtScene.builder_output.readable.word_count,
+      delivery_notes: builtScene.builder_output.delivery_notes,
+    };
+  }
 
   private computeRhythmSnapshot(session: SceneSessionState): SceneRhythmSnapshot {
     const built = session.builtScenes;
@@ -969,6 +1253,81 @@ export class SceneService {
       monotony_risk: monotonyRisk,
       rhythm_note: rhythmNote,
     };
+  }
+
+  private divergenceCacheKey(sceneIndex: number, stagingState: SceneStagingState | undefined): string {
+    // Create cache key from scene index and staging state
+    const stagingHash = stagingState
+      ? JSON.stringify({
+          user_selection: stagingState.user_selection,
+          assumption_overrides: stagingState.assumption_overrides,
+          divergence_choice: stagingState.divergence_choice,
+        })
+      : "{}";
+    return `${sceneIndex}:${stagingHash}`;
+  }
+
+  private shouldRunDivergence(session: SceneSessionState, scenePlan: ScenePlan, sceneIndex: number, totalScenes: number): boolean {
+    // Gate 1: Scene is pivotal (has pivotal: true or pivot_moment on the plan)
+    const isPivotal = (scenePlan as any).pivotal || (scenePlan as any).pivot_moment;
+    if (isPivotal) return true;
+
+    // Gate 2: Scene is first or last
+    if (sceneIndex === 0 || sceneIndex === totalScenes - 1) return true;
+
+    // Gate 3: Check clarifier confidence from previous turn
+    if (session.writingTurns.length > 0) {
+      const lastWritingTurn = session.writingTurns[session.writingTurns.length - 1];
+      if (lastWritingTurn.clarifierResponse?.auto_pass_confidence !== undefined) {
+        const clarifierConfidence = lastWritingTurn.clarifierResponse.auto_pass_confidence;
+        if (clarifierConfidence < 0.7) return true;
+      }
+    }
+
+    // Gate 4: Scene has user steering from staging state
+    const stagingState = session.sceneStagingStates?.[scenePlan.scene_id];
+    if (stagingState?.user_selection || Object.keys(stagingState?.assumption_overrides ?? {}).length > 0) {
+      return true;
+    }
+
+    // Gate 5: Monotony risk - check if 2+ consecutive scenes have same pacing type
+    if (sceneIndex > 0) {
+      const currentPacing = scenePlan.pacing_type;
+      const previousPacing = session.scenePlan?.[sceneIndex - 1]?.pacing_type;
+
+      let consecutiveCount = 1;
+      if (previousPacing === currentPacing) {
+        consecutiveCount++;
+        // Check if there's a scene before the previous one with the same pacing
+        if (sceneIndex > 1) {
+          const twoBack = session.scenePlan?.[sceneIndex - 2]?.pacing_type;
+          if (twoBack === currentPacing) {
+            consecutiveCount++;
+          }
+        }
+      }
+
+      if (consecutiveCount >= 2) return true;
+    }
+
+    // Default: low-risk scene, skip divergence
+    return false;
+  }
+
+  private shouldRunMinorJudge(session: SceneSessionState, scenePlan: ScenePlan, sceneIndex: number): boolean {
+    const staging = session.sceneStagingStates?.[scenePlan.scene_id];
+    const totalScenes = session.scenePlan?.length ?? 0;
+
+    // Skip ONLY when ALL conditions are true
+    const wasAutoPassedWithoutUserSelection = staging?.resolved && !staging?.user_selection;
+    const hasNoUserSteering = !staging?.user_selection && Object.keys(staging?.assumption_overrides ?? {}).length === 0;
+    const isNotPivotal = !(scenePlan as any).pivotal && !(scenePlan as any).pivot_moment;
+    const isNotLastScene = sceneIndex !== totalScenes - 1;
+    const pacingIsNotCritical = scenePlan.pacing_type !== "climax" && scenePlan.pacing_type !== "revelation";
+
+    const shouldSkip = wasAutoPassedWithoutUserSelection && hasNoUserSteering && isNotPivotal && isNotLastScene && pacingIsNotCritical;
+
+    return !shouldSkip;
   }
 
   private buildInitialPlanClarifier(planner: ScenePlannerOutput, psychLedger: UserPsychologyLedger): SceneClarifierResponse {

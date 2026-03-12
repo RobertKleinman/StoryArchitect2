@@ -23,8 +23,12 @@ import { LLMClient } from "./llmClient";
 import {
   CHARACTER_BUILDER_SYSTEM,
   CHARACTER_BUILDER_USER_TEMPLATE,
+  CHARACTER_BUILDER_USER_PREFIX,
+  CHARACTER_BUILDER_USER_DYNAMIC,
   CHARACTER_CLARIFIER_SYSTEM,
   CHARACTER_CLARIFIER_USER_TEMPLATE,
+  CHARACTER_CLARIFIER_USER_PREFIX,
+  CHARACTER_CLARIFIER_USER_DYNAMIC,
   CHARACTER_JUDGE_SYSTEM,
   CHARACTER_JUDGE_USER_TEMPLATE,
   CHARACTER_POLISH_SYSTEM,
@@ -271,6 +275,8 @@ export class CharacterService {
         maxTokens: 3500,
         modelOverride,
         jsonSchema: CHARACTER_CLARIFIER_SCHEMA,
+        // Only use cached prefix when not using prompt overrides
+        cacheableUserPrefix: promptOverrides?.user ? undefined : prompt.cacheableUserPrefix,
       });
     } catch (err: any) {
       console.error("CHAR CLARIFY LLM ERROR:", err);
@@ -415,14 +421,27 @@ export class CharacterService {
 
     await this.charStore.save(session);
 
-    // ─── Fire background consolidation (non-blocking) ───
-    if (session.psychologyLedger && session.psychologyLedger.signalStore.length > 0) {
+    // ─── Fire background consolidation (non-blocking, throttled) ───
+    // Only consolidate on meaningful change to reduce LLM calls during user think-time
+    const shouldConsolidate =
+      (turn.userSelection?.type === "free_text") ||
+      (previousTurn?.assumptionResponses?.some(r => r.action !== "keep")) ||
+      (turn.turnNumber % 3 === 0) ||
+      ((session.psychologyLedger?.signalStore?.length ?? 0) - (session.psychologyLedger?.lastConsolidation?.turnNumber ?? 0) >= 5);
+
+    if (shouldConsolidate && session.psychologyLedger && session.psychologyLedger.signalStore.length > 0) {
       this.fireBackgroundConsolidation(session.projectId, turn.turnNumber, "character")
         .catch(err => console.error("[PSYCH] Character consolidation fire failed:", err));
     }
 
-    // ─── Fire background divergence exploration (non-blocking) ───
-    if (turn.turnNumber >= 2) {
+    // ─── Fire background divergence exploration (non-blocking, throttled) ───
+    // Only fire when user provides meaningful input or on time-based cadence
+    const shouldDiverge =
+      (turn.userSelection?.type === "free_text") ||
+      (previousTurn?.assumptionResponses?.some(r => r.action !== "keep")) ||
+      (turn.turnNumber % 2 === 0);
+
+    if (shouldDiverge && turn.turnNumber >= 2) {
       this.fireBackgroundDivergence(session, turn.turnNumber, "character")
         .catch(err => console.error("[DIVERGENCE] Character exploration fire failed:", err));
     }
@@ -595,48 +614,114 @@ export class CharacterService {
     const candidateCount = confirmedCount >= 8 ? 2 : 3;
     const temperatures = candidateCount === 2 ? [0.7, 0.9] : [0.7, 0.85, 1.0];
 
-    // Run all builders concurrently — same prompt, different temps
+    // SHORT-CIRCUIT TOURNAMENT: Run builders and judges serially with early exit
     const builderStart = Date.now();
-    const builderPromises = temperatures.map((temp, i) =>
-      this.llm.call("char_builder", builderSystem, builderUser, {
-        temperature: temp,
-        maxTokens: builderMaxTokens,
-        modelOverride,
-        jsonSchema: CHARACTER_BUILDER_SCHEMA,
-      }).then(raw => {
-        let parsed = this.parseAndValidate<CharacterBuilderOutput>(raw, [
-          "characters", "ensemble_dynamic", "relationship_tensions",
-          "structural_diversity", "collision_sources",
-        ]);
-        if (!parsed) {
-          console.error(`CHAR BUILDER CANDIDATE ${i + 1} PARSE FAILED. Raw:`, raw.slice(0, 500));
-        }
-        // Convert characters from LLM array format to Record<role, profile>
-        if (parsed && Array.isArray(parsed.characters)) {
-          const charsRecord: Record<string, any> = {};
-          for (const profile of parsed.characters as any[]) {
-            if (profile.role) {
-              charsRecord[profile.role] = profile;
-            }
-          }
-          parsed.characters = charsRecord;
-        }
-        return { raw, parsed };
-      }).catch(err => {
-        console.error(`CHAR BUILDER CANDIDATE ${i + 1} LLM ERROR:`, err);
-        return { raw: "", parsed: null as CharacterBuilderOutput | null };
-      })
-    );
-    const builderSettled = await Promise.all(builderPromises);
-    session.tournamentProgress!.builderResults = builderSettled;
-    console.log(`[perf] ${candidateCount} char builders completed in ${Date.now() - builderStart}ms (parallel)`);
+    const candidates: Array<{ cast: CharacterBuilderOutput; judge: CharacterJudgeOutput | null }> = [];
 
-    // Single checkpoint save after all builders complete
+    for (let i = 0; i < temperatures.length; i++) {
+      const temp = temperatures[i];
+
+      // Run builder for this candidate
+      let builderRaw = "";
+      try {
+        builderRaw = await this.llm.call("char_builder", builderSystem, builderUser, {
+          temperature: temp,
+          maxTokens: builderMaxTokens,
+          modelOverride,
+          jsonSchema: CHARACTER_BUILDER_SCHEMA,
+          cacheableUserPrefix: promptOverrides?.builder?.user ? undefined : builderPrompt.cacheableUserPrefix,
+        });
+      } catch (err) {
+        console.error(`CHAR BUILDER CANDIDATE ${i + 1} LLM ERROR:`, err);
+        continue;
+      }
+
+      let builderParsed = this.parseAndValidate<CharacterBuilderOutput>(builderRaw, [
+        "characters", "ensemble_dynamic", "relationship_tensions",
+        "structural_diversity", "collision_sources",
+      ]);
+
+      if (!builderParsed) {
+        console.error(`CHAR BUILDER CANDIDATE ${i + 1} PARSE FAILED. Raw:`, builderRaw.slice(0, 500));
+        continue;
+      }
+
+      // Convert characters from LLM array format to Record<role, profile>
+      if (builderParsed && Array.isArray(builderParsed.characters)) {
+        const charsRecord: Record<string, any> = {};
+        for (const profile of builderParsed.characters as any[]) {
+          if (profile.role) {
+            charsRecord[profile.role] = profile;
+          }
+        }
+        builderParsed.characters = charsRecord;
+      }
+
+      session.tournamentProgress!.builderResults.push({ raw: builderRaw, parsed: builderParsed });
+
+      // Run judge for this candidate
+      const judgePrompt = this.buildJudgePrompt(builderParsed, session);
+      const judgeSystem = promptOverrides?.judge?.system ?? judgePrompt.system;
+      const judgeUser = promptOverrides?.judge?.user ?? judgePrompt.user;
+
+      let judgeRaw = "";
+      try {
+        judgeRaw = await this.llm.call("char_judge", judgeSystem, judgeUser, {
+          temperature: 0.3,
+          maxTokens: 1200,
+          modelOverride,
+          jsonSchema: CHARACTER_JUDGE_SCHEMA,
+        });
+      } catch (err) {
+        console.error(`CHAR JUDGE ${i + 1} LLM ERROR:`, err);
+        session.tournamentProgress!.judgeResults.push({ raw: "", parsed: null });
+        continue;
+      }
+
+      const judgeParsed = this.parseAndValidate<CharacterJudgeOutput>(judgeRaw, [
+        "pass", "hard_fail_reasons", "scores", "weakest_character", "one_fix_instruction",
+      ]);
+
+      if (!judgeParsed) {
+        console.error(`CHAR JUDGE ${i + 1} PARSE FAILED. Raw:`, judgeRaw.slice(0, 500));
+        session.tournamentProgress!.judgeResults.push({ raw: judgeRaw, parsed: null });
+        continue;
+      }
+
+      session.tournamentProgress!.judgeResults.push({ raw: judgeRaw, parsed: judgeParsed });
+
+      const avgScore = this.charAvgScore(judgeParsed);
+
+      // Early exit logic
+      if (judgeParsed.pass && avgScore >= 8.5) {
+        // Elite candidate: exit immediately
+        candidates.push({ cast: builderParsed, judge: judgeParsed });
+        console.log(`[TOURNAMENT] Character early-exit after ${i + 1} candidate(s), avgScore=${avgScore.toFixed(1)}`);
+        session.lastSavedAt = new Date().toISOString();
+        await this.charStore.save(session);
+        break;
+      } else if (judgeParsed.pass && avgScore >= 8.0) {
+        // Good candidate: continue to check next, then decide
+        candidates.push({ cast: builderParsed, judge: judgeParsed });
+        if (i === 1) {
+          console.log(`[TOURNAMENT] Character early-exit after ${i + 1} candidate(s), avgScore=${avgScore.toFixed(1)}`);
+          session.lastSavedAt = new Date().toISOString();
+          await this.charStore.save(session);
+          break;
+        }
+      } else {
+        candidates.push({ cast: builderParsed, judge: judgeParsed });
+      }
+    }
+
+    console.log(`[perf] Character tournament completed in ${Date.now() - builderStart}ms (serial with early-exit)`);
+
+    // Single checkpoint save
     session.lastSavedAt = new Date().toISOString();
     await this.charStore.save(session);
 
-    // Record builder prompt history (one entry covers all candidates)
-    const builderResponseSummary = builderSettled
+    // Record builder prompt history
+    const builderResponseSummary = session.tournamentProgress!.builderResults
       .map((r, i) => `Candidate ${i + 1}: ${r.parsed ? Object.keys(r.parsed.characters).join(",") : "FAILED"}`)
       .join(" | ");
     this.recordPromptHistory(
@@ -644,11 +729,7 @@ export class CharacterService {
       promptOverrides?.builder, builderResponseSummary
     );
 
-    const casts: CharacterBuilderOutput[] = builderSettled
-      .map(r => r.parsed)
-      .filter((p): p is CharacterBuilderOutput => p !== null);
-
-    if (casts.length === 0) {
+    if (candidates.length === 0) {
       session.tournamentProgress = undefined;
       session.status = "clarifying";
       await this.charStore.save(session);
@@ -660,44 +741,19 @@ export class CharacterService {
     session.lastSavedAt = new Date().toISOString();
     await this.charStore.save(session);
 
-    // Run all judges concurrently — each judges one independent candidate
-    const judgeStart = Date.now();
-    const judgePromises = casts.map((cast, i) => {
-      const judgePrompt = this.buildJudgePrompt(cast, session);
-      const judgeSystem = promptOverrides?.judge?.system ?? judgePrompt.system;
-      const judgeUser = promptOverrides?.judge?.user ?? judgePrompt.user;
-      return this.llm.call("char_judge", judgeSystem, judgeUser, {
-        temperature: 0.3,
-        maxTokens: 1200,
-        modelOverride,
-        jsonSchema: CHARACTER_JUDGE_SCHEMA,
-      }).then(raw => {
-        const parsed = this.parseAndValidate<CharacterJudgeOutput>(raw, [
-          "pass", "hard_fail_reasons", "scores", "weakest_character", "one_fix_instruction",
-        ]);
-        if (!parsed) {
-          console.error(`CHAR JUDGE ${i + 1} PARSE FAILED. Raw:`, raw.slice(0, 500));
-        }
-        return { raw, parsed };
-      }).catch(err => {
-        console.error(`CHAR JUDGE ${i + 1} LLM ERROR:`, err);
-        return { raw: "", parsed: null as CharacterJudgeOutput | null };
-      });
-    });
-    const judgeSettled = await Promise.all(judgePromises);
-    session.tournamentProgress!.judgeResults = judgeSettled;
-    console.log(`[perf] ${casts.length} char judges completed in ${Date.now() - judgeStart}ms (parallel)`);
+    // Record judge prompt history
+    const judgeResponseSummary = session.tournamentProgress!.judgeResults
+      .map((r, i) => `Judge ${i + 1}: ${r.parsed ? (r.parsed.pass ? "PASS" : "FAIL") + " avg=" + this.charAvgScore(r.parsed).toFixed(1) : "FAILED"}`)
+      .join(" | ");
+    const judgeSettled = session.tournamentProgress!.judgeResults;
 
     // Single checkpoint save after all judges complete
     session.lastSavedAt = new Date().toISOString();
     await this.charStore.save(session);
 
     // Record judge prompt history
-    if (casts.length > 0) {
-      const firstJudgePrompt = this.buildJudgePrompt(casts[0], session);
-      const judgeResponseSummary = judgeSettled
-        .map((r, i) => `Judge ${i + 1}: ${r.parsed ? (r.parsed.pass ? "PASS" : "FAIL") + " avg=" + this.charAvgScore(r.parsed).toFixed(1) : "FAILED"}`)
-        .join(" | ");
+    if (candidates.length > 0) {
+      const firstJudgePrompt = this.buildJudgePrompt(candidates[0].cast, session);
       this.recordPromptHistory(
         session, "judge", firstJudgePrompt.system, firstJudgePrompt.user,
         promptOverrides?.judge, judgeResponseSummary
@@ -707,17 +763,16 @@ export class CharacterService {
     // Select winner
     session.tournamentProgress!.phase = "selecting";
 
-    const candidates: Array<{ cast: CharacterBuilderOutput; judge: CharacterJudgeOutput }> = [];
-    for (let i = 0; i < judgeSettled.length; i++) {
-      const parsed = judgeSettled[i].parsed;
-      if (parsed) {
-        candidates.push({ cast: casts[i], judge: parsed });
+    const validCandidates: Array<{ cast: CharacterBuilderOutput; judge: CharacterJudgeOutput }> = [];
+    for (const c of candidates) {
+      if (c.judge) {
+        validCandidates.push({ cast: c.cast, judge: c.judge });
       }
     }
 
-    if (candidates.length === 0) {
+    if (validCandidates.length === 0) {
       // All judges failed — fall back to first valid builder output without judge
-      const fallbackCast = casts[0];
+      const fallbackCast = candidates[0].cast;
       session.revealedCharacters = fallbackCast;
       session.revealedJudge = undefined;
       session.status = "revealed";
@@ -732,7 +787,7 @@ export class CharacterService {
       };
     }
 
-    const winner = this.selectCharacterWinner(candidates);
+    const winner = this.selectCharacterWinner(validCandidates);
 
     // Polish descriptions
     try {
@@ -952,18 +1007,14 @@ export class CharacterService {
   private buildClarifierPrompt(session: CharacterSessionState): {
     system: string;
     user: string;
+    cacheableUserPrefix?: string;
   } {
     const hook = session.sourceHook;
     const castStateJson = JSON.stringify(this.stripNilCharacters(session.characters));
-    const priorTurns = this.formatPriorTurns(session.turns);
-    const ledgerText = this.formatLedgerForPrompt(session.constraintLedger ?? []);
-    const turnNumber = String(session.turns.length + 1);
-
-    const psychText = formatPsychologyLedgerForPrompt(session.psychologyLedger);
-    const probeText = formatSuggestedProbeForPrompt(session.psychologyLedger);
     const upstreamTargets = this.formatUpstreamTargetsFromHook(session.sourceHook);
 
-    const user = CHARACTER_CLARIFIER_USER_TEMPLATE
+    // Static prefix — cacheable (hook data, cast state, character seed don't change between turns)
+    const prefix = CHARACTER_CLARIFIER_USER_PREFIX
       .replace("{{PREMISE}}", hook.locked.premise)
       .replace("{{HOOK_SENTENCE}}", hook.locked.hook_sentence)
       .replace("{{EMOTIONAL_PROMISE}}", hook.locked.emotional_promise)
@@ -972,50 +1023,71 @@ export class CharacterService {
       .replace("{{TONE_CHIPS}}", JSON.stringify(hook.preferences?.tone_chips ?? []))
       .replace("{{BAN_LIST}}", JSON.stringify(hook.preferences?.bans ?? []))
       .replace("{{STATE_SUMMARY}}", this.compressStateSummary(hook.state_summary ?? ""))
+      .replace("{{CAST_STATE_JSON}}", castStateJson)
+      .replace("{{CHARACTER_SEED}}", session.characterSeed ?? "(none provided)")
+      .replace("{{UPSTREAM_DEVELOPMENT_TARGETS}}", upstreamTargets);
+
+    // Dynamic suffix — changes each turn (prior turns, psychology, ledger, turn number, probes, direction map)
+    const priorTurns = this.formatPriorTurns(session.turns);
+    const ledgerText = this.formatLedgerForPrompt(session.constraintLedger ?? []);
+    const turnNumber = String(session.turns.length + 1);
+    const psychText = formatPsychologyLedgerForPrompt(session.psychologyLedger);
+    const probeText = formatSuggestedProbeForPrompt(session.psychologyLedger);
+    const currentTurn = session.turns.length + 1;
+    const directionMapText = formatDirectionMapForPrompt(session.psychologyLedger, currentTurn);
+
+    let dynamic = CHARACTER_CLARIFIER_USER_DYNAMIC
       .replace("{{PRIOR_TURNS}}", priorTurns)
       .replace("{{PSYCHOLOGY_LEDGER}}", psychText)
       .replace("{{ENGINE_DIALS}}", formatEngineDialsForPrompt(session.psychologyLedger))
       .replace("{{CONSTRAINT_LEDGER}}", ledgerText)
-      .replace("{{CAST_STATE_JSON}}", castStateJson)
-      .replace("{{TURN_NUMBER}}", turnNumber)
-      .replace("{{CHARACTER_SEED}}", session.characterSeed ?? "(none provided)")
-      .replace("{{UPSTREAM_DEVELOPMENT_TARGETS}}", upstreamTargets)
-      + (probeText ? "\n\n" + probeText : "");
+      .replace("{{TURN_NUMBER}}", turnNumber);
 
-    const currentTurn = session.turns.length + 1;
-    const directionMapText = formatDirectionMapForPrompt(session.psychologyLedger, currentTurn);
-    const finalUser = directionMapText ? user + "\n\n" + directionMapText : user;
+    dynamic += (probeText ? "\n\n" + probeText : "");
+    dynamic += (directionMapText ? "\n\n" + directionMapText : "");
 
-    return { system: CHARACTER_CLARIFIER_SYSTEM, user: finalUser };
+    return {
+      system: CHARACTER_CLARIFIER_SYSTEM,
+      user: prefix + dynamic,
+      cacheableUserPrefix: prefix,
+    };
   }
 
   private buildBuilderPrompt(session: CharacterSessionState): {
     system: string;
     user: string;
+    cacheableUserPrefix?: string;
   } {
     const hook = session.sourceHook;
     const castStateJson = JSON.stringify(this.stripNilCharacters(session.characters));
-    const ledgerText = this.formatLedgerForPrompt(session.constraintLedger ?? [], false);
-
-    const signalsText = formatSignalsForBuilderJudge(session.psychologyLedger);
     const upstreamTargets = this.formatUpstreamTargetsFromHook(session.sourceHook);
 
-    const user = CHARACTER_BUILDER_USER_TEMPLATE
+    // Static prefix — cacheable (hook data, cast state, character seed, tone chips, bans don't change)
+    const prefix = CHARACTER_BUILDER_USER_PREFIX
       .replace("{{PREMISE}}", hook.locked.premise)
       .replace("{{HOOK_SENTENCE}}", hook.locked.hook_sentence)
       .replace("{{EMOTIONAL_PROMISE}}", hook.locked.emotional_promise)
       .replace("{{CORE_ENGINE_JSON}}", JSON.stringify(hook.locked.core_engine))
       .replace("{{SETTING}}", hook.locked.core_engine.setting_anchor ?? "")
-      .replace("{{PRIOR_TURNS}}", this.formatPriorTurns(session.turns))
-      .replace("{{PSYCHOLOGY_SIGNALS}}", signalsText)
-      .replace("{{CONSTRAINT_LEDGER}}", ledgerText)
       .replace("{{CAST_STATE_JSON}}", castStateJson)
       .replace("{{TONE_CHIPS}}", JSON.stringify(hook.preferences?.tone_chips ?? []))
       .replace("{{BAN_LIST}}", JSON.stringify(hook.preferences?.bans ?? []))
       .replace("{{CHARACTER_SEED}}", session.characterSeed ?? "(none provided)")
       .replace("{{UPSTREAM_DEVELOPMENT_TARGETS}}", upstreamTargets);
 
-    return { system: CHARACTER_BUILDER_SYSTEM, user };
+    // Dynamic suffix — changes (prior turns, psychology signals, constraint ledger)
+    const ledgerText = this.formatLedgerForPrompt(session.constraintLedger ?? [], false);
+    const signalsText = formatSignalsForBuilderJudge(session.psychologyLedger);
+    let dynamic = CHARACTER_BUILDER_USER_DYNAMIC
+      .replace("{{PRIOR_TURNS}}", this.formatPriorTurns(session.turns))
+      .replace("{{PSYCHOLOGY_SIGNALS}}", signalsText)
+      .replace("{{CONSTRAINT_LEDGER}}", ledgerText);
+
+    return {
+      system: CHARACTER_BUILDER_SYSTEM,
+      user: prefix + dynamic,
+      cacheableUserPrefix: prefix,
+    };
   }
 
   private buildJudgePrompt(

@@ -67,7 +67,7 @@ export const sceneApi = {
     request<ScenePlanResponse>("/scene/plan", {
       method: "POST",
       body: JSON.stringify(body),
-      timeoutMs: 300_000, // 5 min — planner + clarifier
+      timeoutMs: 600_000, // 10 min — planner is a heavy structured output call
     }),
 
   /** Refine the plan with user feedback */

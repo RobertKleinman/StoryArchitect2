@@ -244,11 +244,15 @@ export function SceneWorkshop() {
   };
 
   const submitPlanTurn = async () => {
-    if (!state.selectedOptionId && !state.freeTextValue.trim()) return;
+    const hasSelection = !!state.selectedOptionId || !!state.freeTextValue.trim();
+    const hasAssumptions = Object.keys(state.assumptionResponses).length > 0;
+    if (!hasSelection && !hasAssumptions) return;
 
     const userSelection = state.freeTextValue.trim()
       ? { type: "free_text" as const, label: state.freeTextValue.trim() }
-      : { type: "option" as const, optionId: state.selectedOptionId!, label: state.selectedOptionLabel! };
+      : state.selectedOptionId
+        ? { type: "option" as const, optionId: state.selectedOptionId!, label: state.selectedOptionLabel! }
+        : { type: "confirm" as const, label: "(assumptions only)" };
 
     const assumptionResponses: Array<{ assumptionId: string; action: string; originalValue: string; newValue: string }> = [];
     for (const [id, resp] of Object.entries(state.assumptionResponses)) {
@@ -334,11 +338,15 @@ export function SceneWorkshop() {
   };
 
   const submitSceneTurn = async () => {
-    if (!state.selectedOptionId && !state.freeTextValue.trim()) return;
+    const hasSelection = !!state.selectedOptionId || !!state.freeTextValue.trim();
+    const hasAssumptions = Object.keys(state.assumptionResponses).length > 0;
+    if (!hasSelection && !hasAssumptions) return;
 
     const userSelection = state.freeTextValue.trim()
       ? { type: "free_text" as const, label: state.freeTextValue.trim() }
-      : { type: "option" as const, optionId: state.selectedOptionId!, label: state.selectedOptionLabel! };
+      : state.selectedOptionId
+        ? { type: "option" as const, optionId: state.selectedOptionId!, label: state.selectedOptionLabel! }
+        : { type: "confirm" as const, label: "(assumptions only)" };
 
     const assumptionResponses: Array<{ assumptionId: string; action: string; originalValue: string; newValue: string }> = [];
     for (const [id, resp] of Object.entries(state.assumptionResponses)) {
@@ -428,6 +436,18 @@ export function SceneWorkshop() {
     }
   };
 
+  // ─── Auto-build after auto-pass ───
+  const autoPassRef = React.useRef(false);
+  React.useEffect(() => {
+    if (state.phase === "scene_clarify" && state.autoPassApplied && !state.loading && !autoPassRef.current) {
+      autoPassRef.current = true;
+      buildCurrentScene();
+    }
+    if (state.phase !== "scene_clarify") {
+      autoPassRef.current = false;
+    }
+  });
+
   const runFinalJudge = async () => {
     setState(s => ({ ...s, phase: "final_judging", loading: true, loadingMessage: "Running final assessment...", error: null }));
     try {
@@ -504,16 +524,15 @@ export function SceneWorkshop() {
             <p className="clarifier-question">{clarifier.question}</p>
 
             {clarifier.options && clarifier.options.length > 0 && (
-              <div className="option-grid">
+              <div className="options-row">
                 {clarifier.options.map((opt) => (
                   <button
                     key={opt.id}
                     type="button"
-                    className={`option-card ${state.selectedOptionId === opt.id ? "option-card-selected" : ""}`}
+                    className={`chip ${state.selectedOptionId === opt.id ? "chip-selected" : ""}`}
                     onClick={() => selectOption(opt)}
                   >
-                    <span className="option-id">{opt.id}</span>
-                    <span className="option-label">{opt.label}</span>
+                    {opt.label}
                   </button>
                 ))}
               </div>
@@ -538,7 +557,7 @@ export function SceneWorkshop() {
                     <div className="assumption-actions">
                       <button
                         type="button"
-                        className={`btn-sm ${state.assumptionResponses[a.id]?.action === "keep" ? "btn-active" : ""}`}
+                        className={`chip-sm ${state.assumptionResponses[a.id]?.action === "keep" ? "chip-selected" : ""}`}
                         onClick={() => setAssumptionAction(a.id, "keep", a.assumption)}
                       >
                         Keep
@@ -547,10 +566,10 @@ export function SceneWorkshop() {
                         <button
                           key={i}
                           type="button"
-                          className={`btn-sm ${
+                          className={`chip-sm ${
                             state.assumptionResponses[a.id]?.action === "alternative" &&
                             state.assumptionResponses[a.id]?.value === alt
-                              ? "btn-active" : ""
+                              ? "chip-selected" : ""
                           }`}
                           onClick={() => setAssumptionAction(a.id, "alternative", alt)}
                         >
@@ -558,6 +577,13 @@ export function SceneWorkshop() {
                         </button>
                       ))}
                     </div>
+                    <input
+                      type="text"
+                      className="assumption-freeform"
+                      placeholder="Or type your own..."
+                      value={state.assumptionResponses[a.id]?.action === "freeform" ? state.assumptionResponses[a.id]?.value : ""}
+                      onChange={(e) => setAssumptionAction(a.id, "freeform", e.target.value)}
+                    />
                   </div>
                 ))}
               </div>
@@ -568,7 +594,7 @@ export function SceneWorkshop() {
                 type="button"
                 className="btn-primary"
                 onClick={onSubmit}
-                disabled={state.loading || (!state.selectedOptionId && !state.freeTextValue.trim())}
+                disabled={state.loading || (!state.selectedOptionId && !state.freeTextValue.trim() && Object.keys(state.assumptionResponses).length === 0)}
               >
                 {submitLabel}
               </button>
@@ -840,19 +866,11 @@ export function SceneWorkshop() {
 
           {state.autoPassApplied ? (
             <div className="auto-pass-section">
-              <p>This scene was auto-passed based on high confidence. Building now...</p>
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={buildCurrentScene}
-                disabled={state.loading}
-              >
-                Build Scene
-              </button>
+              <p>High confidence — auto-building this scene...</p>
             </div>
           ) : (
             <>
-              {renderClarifierUI(state.sceneClarifier, submitSceneTurn, "Submit")}
+              {renderClarifierUI(state.sceneClarifier, submitSceneTurn, "Submit Steering")}
               <div className="scene-build-actions">
                 <button
                   type="button"
@@ -860,7 +878,7 @@ export function SceneWorkshop() {
                   onClick={buildCurrentScene}
                   disabled={state.loading}
                 >
-                  Build This Scene
+                  Looks Good — Build It
                 </button>
               </div>
             </>
@@ -943,12 +961,12 @@ export function SceneWorkshop() {
       )}
 
       {/* ═══ Psychology Overlay ═══ */}
-      {showPsych && (
-        <PsychologyOverlay
-          fetchPsychology={fetchPsych}
-          onClose={() => setShowPsych(false)}
-        />
-      )}
+      <PsychologyOverlay
+        fetchPsychology={fetchPsych}
+        projectId={projectId}
+        visible={showPsych}
+        onClose={() => setShowPsych(false)}
+      />
     </div>
   );
 }

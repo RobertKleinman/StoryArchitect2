@@ -23,8 +23,12 @@ import { LLMClient } from "./llmClient";
 import {
   WORLD_BUILDER_SYSTEM,
   WORLD_BUILDER_USER_TEMPLATE,
+  WORLD_BUILDER_USER_PREFIX,
+  WORLD_BUILDER_USER_DYNAMIC,
   WORLD_CLARIFIER_SYSTEM,
   WORLD_CLARIFIER_USER_TEMPLATE,
+  WORLD_CLARIFIER_USER_PREFIX,
+  WORLD_CLARIFIER_USER_DYNAMIC,
   WORLD_JUDGE_SYSTEM,
   WORLD_JUDGE_USER_TEMPLATE,
   WORLD_POLISH_SYSTEM,
@@ -375,6 +379,8 @@ export class WorldService {
         maxTokens: 4000,
         modelOverride,
         jsonSchema: WORLD_CLARIFIER_SCHEMA,
+        // Only use cached prefix when not using prompt overrides
+        cacheableUserPrefix: promptOverrides?.user ? undefined : prompt.cacheableUserPrefix,
       });
     } catch (err) {
       console.error("WORLD CLARIFIER LLM ERROR:", err);
@@ -465,14 +471,27 @@ export class WorldService {
 
     await this.worldStore.save(session!);
 
-    // ─── Fire background consolidation (non-blocking) ───
-    if (session!.psychologyLedger && session!.psychologyLedger.signalStore.length > 0) {
+    // ─── Fire background consolidation (non-blocking, throttled) ───
+    // Only consolidate on meaningful change to reduce LLM calls during user think-time
+    const shouldConsolidate =
+      (turn.userSelection?.type === "free_text") ||
+      (previousTurn?.assumptionResponses?.some(r => r.action !== "keep")) ||
+      (turn.turnNumber % 3 === 0) ||
+      ((session!.psychologyLedger?.signalStore?.length ?? 0) - (session!.psychologyLedger?.lastConsolidation?.turnNumber ?? 0) >= 5);
+
+    if (shouldConsolidate && session!.psychologyLedger && session!.psychologyLedger.signalStore.length > 0) {
       this.fireBackgroundConsolidation(session!.projectId, turn.turnNumber, "world")
         .catch(err => console.error("[PSYCH] World consolidation fire failed:", err));
     }
 
-    // ─── Fire background divergence exploration (non-blocking) ───
-    if (turn.turnNumber >= 2) {
+    // ─── Fire background divergence exploration (non-blocking, throttled) ───
+    // Only fire when user provides meaningful input or on time-based cadence
+    const shouldDiverge =
+      (turn.userSelection?.type === "free_text") ||
+      (previousTurn?.assumptionResponses?.some(r => r.action !== "keep")) ||
+      (turn.turnNumber % 2 === 0);
+
+    if (shouldDiverge && turn.turnNumber >= 2) {
       this.fireBackgroundDivergence(session!, turn.turnNumber, "world")
         .catch(err => console.error("[DIVERGENCE] World exploration fire failed:", err));
     }
@@ -592,6 +611,8 @@ export class WorldService {
         maxTokens: 12000,
         modelOverride,
         jsonSchema: WORLD_BUILDER_SCHEMA,
+        // Only use cached prefix when not using prompt overrides
+        cacheableUserPrefix: promptOverrides?.builder?.user ? undefined : builderPrompt.cacheableUserPrefix,
       });
     } catch (err) {
       console.error("WORLD BUILDER LLM ERROR:", err);
@@ -843,21 +864,19 @@ export class WorldService {
   private buildClarifierPrompt(session: WorldSessionState): {
     system: string;
     user: string;
+    cacheableUserPrefix?: string;
   } {
     const hook = session.sourceHookPack;
     const charPack = session.sourceCharacterPack;
     const charImagePack = session.sourceCharacterImagePack;
-    const priorTurns = this.formatPriorTurns(session.turns);
-    const ledgerText = this.formatLedgerForPrompt(session.constraintLedger ?? []);
-    const turnNumber = String(session.turns.length + 1);
-    const psychText = formatPsychologyLedgerForPrompt(session.psychologyLedger);
     const upstreamTargets = this.formatUpstreamTargets(session);
 
     const charProfilesJson = JSON.stringify(charPack.locked.characters, null, 2);
     const relationshipTensionsJson = JSON.stringify(charPack.locked.relationship_tensions ?? []);
     const visualSummary = this.formatCharacterVisualsSummary(charImagePack);
 
-    const user = WORLD_CLARIFIER_USER_TEMPLATE
+    // Static prefix — cacheable (hook, character data, world seed, upstream targets don't change)
+    const prefix = WORLD_CLARIFIER_USER_PREFIX
       .replace("{{PREMISE}}", hook.locked.premise)
       .replace("{{HOOK_SENTENCE}}", hook.locked.hook_sentence)
       .replace("{{EMOTIONAL_PROMISE}}", hook.locked.emotional_promise)
@@ -870,35 +889,44 @@ export class WorldService {
       .replace("{{RELATIONSHIP_TENSIONS_JSON}}", relationshipTensionsJson)
       .replace("{{CHARACTER_VISUALS_SUMMARY}}", visualSummary)
       .replace("{{WORLD_SEED}}", session.worldSeed ?? "(none provided)")
-      .replace("{{UPSTREAM_DEVELOPMENT_TARGETS}}", upstreamTargets)
+      .replace("{{UPSTREAM_DEVELOPMENT_TARGETS}}", upstreamTargets);
+
+    // Dynamic suffix — changes each turn (prior turns, psychology, ledger, turn number, probes, direction map, focus nudge)
+    const priorTurns = this.formatPriorTurns(session.turns);
+    const ledgerText = this.formatLedgerForPrompt(session.constraintLedger ?? []);
+    const turnNumber = String(session.turns.length + 1);
+    const psychText = formatPsychologyLedgerForPrompt(session.psychologyLedger);
+
+    let dynamic = WORLD_CLARIFIER_USER_DYNAMIC
       .replace("{{PRIOR_TURNS}}", priorTurns)
       .replace("{{PSYCHOLOGY_LEDGER}}", psychText)
       .replace("{{ENGINE_DIALS}}", formatEngineDialsForPrompt(session.psychologyLedger))
       .replace("{{CONSTRAINT_LEDGER}}", ledgerText)
       .replace("{{TURN_NUMBER}}", turnNumber);
 
+    const focusNudge = this.buildFocusLoopNudge(session.turns);
     const probeText = formatSuggestedProbeForPrompt(session.psychologyLedger);
     const currentTurn = session.turns.length + 1;
     const directionMapText = formatDirectionMapForPrompt(session.psychologyLedger, currentTurn);
-    const focusNudge = this.buildFocusLoopNudge(session.turns);
+
+    dynamic += (focusNudge ? "\n\n" + focusNudge : "");
+    dynamic += (probeText ? "\n\n" + probeText : "");
+    dynamic += (directionMapText ? "\n\n" + directionMapText : "");
 
     return {
       system: WORLD_CLARIFIER_SYSTEM,
-      user: user
-        + (focusNudge ? "\n\n" + focusNudge : "")
-        + (probeText ? "\n\n" + probeText : "")
-        + (directionMapText ? "\n\n" + directionMapText : ""),
+      user: prefix + dynamic,
+      cacheableUserPrefix: prefix,
     };
   }
 
   private buildBuilderPrompt(session: WorldSessionState): {
     system: string;
     user: string;
+    cacheableUserPrefix?: string;
   } {
     const hook = session.sourceHookPack;
     const charPack = session.sourceCharacterPack;
-    const ledgerText = this.formatLedgerForPrompt(session.constraintLedger ?? [], false);
-    const signalsText = formatSignalsForBuilderJudge(session.psychologyLedger);
     const upstreamTargets = this.formatUpstreamTargets(session);
 
     // Trimmed character profiles for builder — only world-relevant fields
@@ -912,7 +940,8 @@ export class WorldService {
       }))
     );
 
-    const user = WORLD_BUILDER_USER_TEMPLATE
+    // Static prefix — cacheable (hook, character data, world seed, upstream targets, tone chips, bans don't change)
+    const prefix = WORLD_BUILDER_USER_PREFIX
       .replace("{{PREMISE}}", hook.locked.premise)
       .replace("{{HOOK_SENTENCE}}", hook.locked.hook_sentence)
       .replace("{{EMOTIONAL_PROMISE}}", hook.locked.emotional_promise)
@@ -923,13 +952,22 @@ export class WorldService {
       .replace("{{RELATIONSHIP_TENSIONS_JSON}}", relationshipTensionsJson)
       .replace("{{WORLD_SEED}}", session.worldSeed ?? "(none provided)")
       .replace("{{UPSTREAM_DEVELOPMENT_TARGETS}}", upstreamTargets)
-      .replace("{{PRIOR_TURNS}}", this.formatPriorTurnsCompact(session.turns))
-      .replace("{{PSYCHOLOGY_SIGNALS}}", signalsText)
-      .replace("{{CONSTRAINT_LEDGER}}", ledgerText)
       .replace("{{TONE_CHIPS}}", JSON.stringify(hook.preferences?.tone_chips ?? []))
       .replace("{{BAN_LIST}}", JSON.stringify(hook.preferences?.bans ?? []));
 
-    return { system: WORLD_BUILDER_SYSTEM, user };
+    // Dynamic suffix — changes (prior turns, psychology signals, constraint ledger)
+    const ledgerText = this.formatLedgerForPrompt(session.constraintLedger ?? [], false);
+    const signalsText = formatSignalsForBuilderJudge(session.psychologyLedger);
+    let dynamic = WORLD_BUILDER_USER_DYNAMIC
+      .replace("{{PRIOR_TURNS}}", this.formatPriorTurnsCompact(session.turns))
+      .replace("{{PSYCHOLOGY_SIGNALS}}", signalsText)
+      .replace("{{CONSTRAINT_LEDGER}}", ledgerText);
+
+    return {
+      system: WORLD_BUILDER_SYSTEM,
+      user: prefix + dynamic,
+      cacheableUserPrefix: prefix,
+    };
   }
 
   private buildJudgePrompt(

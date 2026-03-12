@@ -157,7 +157,7 @@ function computeStatus(
 export function recordSignals(
   ledger: UserPsychologyLedger,
   turnNumber: number,
-  module: "hook" | "character" | "character_image" | "world" | "plot",
+  module: "hook" | "character" | "character_image" | "world" | "plot" | "scene",
   rawSignals: RawSignalObservation[],
   behaviorSummary: BehaviorSummary,
   adaptationPlan: AdaptationPlan,
@@ -211,7 +211,7 @@ export function recordSignals(
 export function recordHypotheses(
   ledger: UserPsychologyLedger,
   turnNumber: number,
-  module: "hook" | "character" | "character_image" | "world" | "plot",
+  module: "hook" | "character" | "character_image" | "world" | "plot" | "scene",
   hypotheses: {
     hypothesis: string;
     evidence: string;
@@ -250,7 +250,7 @@ export function recordHypotheses(
 function processRawSignal(
   ledger: UserPsychologyLedger,
   turnNumber: number,
-  module: "hook" | "character" | "character_image" | "world" | "plot",
+  module: "hook" | "character" | "character_image" | "world" | "plot" | "scene",
   raw: RawSignalObservation,
 ): void {
   const store = ledger.signalStore;
@@ -1086,7 +1086,7 @@ import type {
 export async function runConsolidation(
   ledger: UserPsychologyLedger,
   turnNumber: number,
-  module: "hook" | "character" | "character_image" | "world" | "plot",
+  module: "hook" | "character" | "character_image" | "world" | "plot" | "scene",
   llm: LLMClient,
 ): Promise<ConsolidationSnapshot | null> {
   // Guard: skip if no signals to consolidate
