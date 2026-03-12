@@ -559,12 +559,12 @@ export class SceneService {
       : "(first scene — no previous)";
 
     const divergenceText = divergenceResult?.worth_asking
-      ? JSON.stringify(divergenceResult.alternatives, null, 2)
+      ? JSON.stringify(divergenceResult.alternatives)
       : "(no staging alternatives worth asking about)";
 
     // Static prefix — cacheable (scene plan, previous scene summary, rhythm snapshot don't change within a scene clarifier turn)
     const cacheablePrefix = SCENE_CLARIFIER_USER_PREFIX
-      .replace("{{SCENE_PLAN_JSON}}", JSON.stringify(scenePlan, null, 2))
+      .replace("{{SCENE_PLAN_JSON}}", JSON.stringify(scenePlan))
       .replace("{{PREVIOUS_SCENE_SUMMARY}}", previousSummary)
       .replace("{{RHYTHM_SNAPSHOT}}", JSON.stringify(rhythmSnapshot))
       .replace("{{DIVERGENCE_ALTERNATIVES}}", divergenceText)

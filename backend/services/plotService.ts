@@ -63,6 +63,10 @@ import {
   extractDivergenceContext,
   formatDirectionMapForPrompt,
 } from "./divergenceExplorer";
+import {
+  shouldConsolidate as shouldConsolidateThrottled,
+  shouldDiverge as shouldDivergeThrottled,
+} from "./backgroundThrottling";
 
 // ─── API response types ───
 
@@ -527,14 +531,14 @@ export class PlotService {
 
     await this.plotStore.save(session!);
 
-    // ─── Fire background consolidation (non-blocking) ───
-    if (session!.psychologyLedger && session!.psychologyLedger.signalStore.length > 0) {
+    // ─── Fire background consolidation (non-blocking, throttled) ───
+    if (shouldConsolidateThrottled(turn, session!)) {
       this.fireBackgroundConsolidation(session!.projectId, turn.turnNumber, "plot")
         .catch(err => console.error("[PSYCH] Plot consolidation fire failed:", err));
     }
 
-    // ─── Fire background divergence exploration (non-blocking) ───
-    if (turn.turnNumber >= 2) {
+    // ─── Fire background divergence exploration (non-blocking, throttled) ───
+    if (shouldDivergeThrottled(turn, session!)) {
       this.fireBackgroundDivergence(session!, turn.turnNumber, "plot")
         .catch(err => console.error("[DIVERGENCE] Plot exploration fire failed:", err));
     }
