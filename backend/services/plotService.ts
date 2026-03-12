@@ -727,6 +727,10 @@ export class PlotService {
           target.status = assessment.status;
           if (assessment.notes) target.notes = assessment.notes;
           if (assessment.status === "addressed") target.addressed_by = "plot";
+          if (assessment.quality) target.quality = assessment.quality;
+          if (assessment.current_gap) target.current_gap = assessment.current_gap;
+          if (assessment.suggestion) target.suggestion = assessment.suggestion;
+          if (assessment.best_module_to_address) target.best_module_to_address = assessment.best_module_to_address;
         }
       }
     }
@@ -838,6 +842,8 @@ export class PlotService {
           target: `[${w.area}] ${w.weakness}`,
           status: "unaddressed",
           notes: w.development_opportunity,
+          best_module_to_address: "scene",
+          current_gap: w.weakness,
         });
       }
     }
@@ -1075,7 +1081,7 @@ export class PlotService {
     const targets = session.developmentTargets;
     if (!targets || targets.length === 0) return "(No upstream targets)";
 
-    const unresolved = targets.filter(t => t.status !== "addressed");
+    const unresolved = targets.filter(t => t.status !== "addressed" && t.status !== "deferred");
     if (unresolved.length === 0) return "(All upstream targets addressed)";
 
     const lines: string[] = ["DEVELOPMENT TARGETS (from earlier modules — address where natural):"];
@@ -1083,6 +1089,9 @@ export class PlotService {
       const statusLabel = t.status === "partially_addressed" ? " [partially addressed]" : "";
       // Include actual target ID so judge's upstream_target_assessment can reference it
       lines.push(`  [${t.id}] (from ${t.source_module}) ${t.target}${statusLabel}`);
+      if (t.current_gap) lines.push(`     Gap: ${t.current_gap}`);
+      if (t.suggestion) lines.push(`     Suggestion: ${t.suggestion}`);
+      if (t.best_module_to_address) lines.push(`     Best addressed by: ${t.best_module_to_address}`);
       if (t.notes) lines.push(`     Opportunity: ${t.notes}`);
     }
 

@@ -327,7 +327,11 @@ export const PLOT_JUDGE_SCHEMA = {
         type: "object",
         properties: {
           target_id: { type: "string" },
-          status: { type: "string", enum: ["addressed", "partially_addressed", "unaddressed"] },
+          status: { type: "string", enum: ["addressed", "partially_addressed", "unaddressed", "deferred"] },
+          quality: { type: "string", enum: ["weak", "partial", "strong"] },
+          current_gap: { type: "string" },
+          suggestion: { type: "string" },
+          best_module_to_address: { type: "string", enum: ["character", "character_image", "world", "plot", "scene", "dialogue"] },
           notes: { type: "string" },
         },
         required: ["target_id", "status"],

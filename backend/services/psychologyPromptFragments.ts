@@ -376,12 +376,14 @@ RULES:
 export const JUDGE_UPSTREAM_TARGETS_INSTRUCTIONS = `UPSTREAM TARGET ASSESSMENT (additional judge check):
 
 Check whether the builder output addressed any of the upstream development targets.
-For each target, note whether it was:
-  - "addressed": the output meaningfully develops this area
-  - "partially_addressed": some improvement but still weak
-  - "unaddressed": the output didn't touch this area (may be out of scope for this module)
+For each target, assess:
+  - status: "addressed" (meaningfully developed), "partially_addressed" (some improvement but still weak), "unaddressed" (not touched, may be out of scope), or "deferred" (user has repeatedly ignored this)
+  - quality: if status is addressed or partially_addressed, rate as "weak" | "partial" | "strong"
+  - current_gap: if partially_addressed, describe what's still missing
+  - suggestion: concrete next step for a downstream module to address this
+  - best_module_to_address: which downstream module is best positioned ("character" | "character_image" | "world" | "plot" | "scene" | "dialogue")
 
-This assessment helps downstream modules know what still needs work.
+This assessment helps downstream modules know what still needs work and where to focus.
 Include this in your judgment output.`;
 
 // ─────────────────────────────────────────────────────────────────

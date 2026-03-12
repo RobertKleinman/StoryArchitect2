@@ -199,6 +199,8 @@ export interface SceneBuilderOutput {
     value_shift_executed: string;
     exit_hook_planted: string;
   };
+  /** 2-3 sentence continuity bridge for the next scene: where characters stand, what tension carries forward, what the reader expects */
+  continuity_anchor: string;
 }
 
 // ─── Consistency Check (retroactive N-1 review) ───
@@ -397,9 +399,17 @@ export interface SceneDevelopmentTarget {
   id: string;
   source_module: "hook" | "character" | "character_image" | "world" | "plot" | "scene";
   target: string;
-  status: "unaddressed" | "partially_addressed" | "addressed";
+  status: "unaddressed" | "partially_addressed" | "addressed" | "deferred";
   addressed_by?: string;
   notes?: string;
+  /** Which downstream module is best positioned to address this */
+  best_module_to_address?: "character" | "character_image" | "world" | "plot" | "scene" | "dialogue";
+  /** What specifically is missing or weak right now */
+  current_gap?: string;
+  /** Concrete actionable suggestion for how to address it */
+  suggestion?: string;
+  /** Quality of the fix when status is addressed or partially_addressed */
+  quality?: "weak" | "partial" | "strong";
 }
 
 // ─── Scene Staging State (per-scene user steering layer) ───

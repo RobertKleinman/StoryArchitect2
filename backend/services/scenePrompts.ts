@@ -278,7 +278,14 @@ WORD COUNT: Aim for 800-2000 words per scene depending on pacing type.
 - aftermath: 800-1500 (processing)
 - set_piece: 1500-2500 (the big moment gets room)
 
-OUTPUT: Return valid JSON with the VN scene structure and the screenplay-style readable text. Include delivery notes on how you executed the dramatic spine.`;
+OUTPUT FIELDS:
+Your JSON output contains:
+- vn_scene — The structured dialogue, narration, and stage directions
+- readable — A screenplay-formatted readable version of the same scene
+- delivery_notes — How you executed the dramatic spine (objective, scene question, value shift, exit hook)
+- continuity_anchor — 2-3 sentences: where the characters stand emotionally at scene end, what tension carries into the next scene, what the reader expects to happen next. This is NOT a summary of the scene. It is a bridge — the emotional and narrative state that the next scene must honor.
+
+Return valid JSON with all fields.`;
 
 // PREFIX: static/cacheable context that doesn't change between scenes
 export const SCENE_BUILDER_USER_PREFIX = `Write this scene.
@@ -563,3 +570,23 @@ export const SCENE_PLAN_CLARIFIER_USER_TEMPLATE = `The scene plan has been gener
 {{ENGINE_DIALS}}
 
 Present the plan. Determine if the user wants to steer or is ready to proceed.`;
+
+/** Version hashes for prompt tracing — update when any template above changes */
+export const SCENE_PROMPT_VERSIONS = {
+  planner_system: "v1.0",
+  planner_user_template: "v1.0",
+  clarifier_system: "v1.0",
+  clarifier_user_prefix: "v1.0",
+  clarifier_user_dynamic: "v1.0",
+  builder_system: "v1.0",
+  builder_user_prefix: "v1.0",
+  builder_user_dynamic: "v1.0",
+  minor_judge_system: "v1.0",
+  minor_judge_user_template: "v1.0",
+  final_judge_system: "v1.0",
+  final_judge_user_template: "v1.0",
+  divergence_system: "v1.0",
+  divergence_user_template: "v1.0",
+  plan_clarifier_system: "v1.0",
+  plan_clarifier_user_template: "v1.0",
+} as const;

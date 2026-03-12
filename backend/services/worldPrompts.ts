@@ -668,3 +668,19 @@ Generated world:
 {{WORLD_JSON}}
 
 Write the world summary (5-8 lines).`;
+
+/** Version hashes for prompt tracing — update when any template above changes */
+export const WORLD_PROMPT_VERSIONS = {
+  clarifier_system: "v1.0",
+  clarifier_user_prefix: "v1.0",
+  clarifier_user_dynamic: "v1.0",
+  builder_system: "v1.0",
+  builder_user_prefix: "v1.0",
+  builder_user_dynamic: "v1.0",
+  judge_system: "v1.0",
+  judge_user_template: "v1.0",
+  polish_system: "v1.0",
+  polish_user_template: "v1.0",
+  summary_system: "v1.0",
+  summary_user_template: "v1.0",
+} as const;

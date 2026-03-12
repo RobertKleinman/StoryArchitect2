@@ -357,8 +357,12 @@ export const SCENE_BUILDER_SCHEMA = {
       required: ["objective_delivered", "scene_question_status", "value_shift_executed", "exit_hook_planted"],
       additionalProperties: false,
     },
+    continuity_anchor: {
+      type: "string",
+      description: "2-3 sentence bridge for the next scene: where characters stand emotionally, what tension carries forward, what the reader expects next"
+    },
   },
-  required: ["scene_id", "vn_scene", "readable", "delivery_notes"],
+  required: ["scene_id", "vn_scene", "readable", "delivery_notes", "continuity_anchor"],
   additionalProperties: false,
 };
 

@@ -128,9 +128,17 @@ export interface DevelopmentTarget {
   id: string;                    // "dt1", "dt2", etc.
   source_module: "hook" | "character" | "character_image" | "world";
   target: string;                // what's weak: "antagonist moral logic", "protagonist lacks clear competence"
-  status: "unaddressed" | "partially_addressed" | "addressed";
+  status: "unaddressed" | "partially_addressed" | "addressed" | "deferred";
   addressed_by?: string;         // which module/turn addressed it
   notes?: string;                // how it was addressed
+  /** Which downstream module is best positioned to address this */
+  best_module_to_address?: "character" | "character_image" | "world" | "plot" | "scene" | "dialogue";
+  /** What specifically is missing or weak right now */
+  current_gap?: string;
+  /** Concrete actionable suggestion for how to address it */
+  suggestion?: string;
+  /** Quality of the fix when status is addressed or partially_addressed */
+  quality?: "weak" | "partial" | "strong";
 }
 
 // ─── Clarifier Response ───

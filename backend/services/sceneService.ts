@@ -962,14 +962,18 @@ export class SceneService {
     const previousScene = session.builtScenes.length > 0
       ? session.builtScenes[session.builtScenes.length - 1]
       : null;
-    // OPTIMIZATION: Item 15 - Use continuity summary instead of full scene text to reduce tokens
+    // OPTIMIZATION: Item 15 - Use continuity anchor from builder output for fresh continuity bridge between scenes
     const previousText = previousScene
       ? (() => {
-          // Check if the previous scene's plan has a continuity anchor
+          // Primary: Use the built scene's continuity_anchor (most recent/accurate for next scene)
+          if (previousScene.builder_output.continuity_anchor) {
+            return previousScene.builder_output.continuity_anchor;
+          }
+          // Secondary: Fall back to plan's continuity anchor from planning phase
           if (previousScene.plan.continuity_anchor) {
             return previousScene.plan.continuity_anchor;
           }
-          // Fallback: Create a short summary from the previous scene's emotional arc and exit hook
+          // Tertiary fallback: Create a short summary from the previous scene's emotional arc and exit hook
           const screenplay = previousScene.builder_output.readable.screenplay_text;
           const summary = `Previous scene "${previousScene.plan.title}" ended with emotion: ${previousScene.plan.emotion_arc.end}. Exit hook: ${previousScene.plan.exit_hook}. (Full scene text truncated — ${screenplay.length} chars total)`;
           return summary.length > 500 ? summary.slice(0, 500) + "..." : summary;
