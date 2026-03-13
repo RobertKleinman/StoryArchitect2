@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { sceneApi } from "../lib/sceneApi";
 import { PsychologyOverlay } from "./PsychologyOverlay";
 import { ModelSelector } from "./ModelSelector";
@@ -110,6 +110,9 @@ export function SceneWorkshop() {
   const [showManualInput, setShowManualInput] = useState(false);
 
   const [state, setState] = useState<WorkshopState>(initialState);
+  // Ref to track latest builtScenes — avoids stale closure in async buildCurrentScene
+  const builtScenesRef = useRef(state.builtScenes);
+  useEffect(() => { builtScenesRef.current = state.builtScenes; }, [state.builtScenes]);
   const [showPsych, setShowPsych] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
   const fetchPsych = useMemo(() => () => sceneApi.debugPsychology(projectId), [projectId]);
@@ -474,7 +477,7 @@ export function SceneWorkshop() {
     }));
     try {
       const result = await sceneApi.build(projectId);
-      const updatedScenes = [...state.builtScenes, result.scene];
+      const updatedScenes = [...builtScenesRef.current, result.scene];
 
       // Check if all scenes are built
       if (result.sceneIndex + 1 >= result.totalScenes) {

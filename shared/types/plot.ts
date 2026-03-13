@@ -227,6 +227,10 @@ export interface PlotJudgeOutput {
     target_id: string;
     status: "addressed" | "partially_addressed" | "unaddressed";
     notes?: string;
+    quality?: "weak" | "partial" | "strong";
+    current_gap?: string;
+    suggestion?: string;
+    best_module_to_address?: "character" | "character_image" | "world" | "plot" | "scene" | "dialogue";
   }>;
 }
 

@@ -21,6 +21,7 @@ import {
   UserInteractionHeuristics,
   SignalCategory,
   SignalStatus,
+  PsychologyModule,
   createEmptyLedger,
 } from "../../shared/types/userPsychology";
 
@@ -49,23 +50,29 @@ export function ensureLedgerShape(ledger: UserPsychologyLedger): UserPsychologyL
   return ledger;
 }
 
-// ─── Signal ID counter (per-session) ───
+// ─── Signal ID generation (per-ledger, not global) ───
 
-let nextSignalId = 1;
-
-/** Reset ID counter (call when starting a fresh session) */
-export function resetSignalIdCounter(): void {
-  nextSignalId = 1;
+/**
+ * Generate a unique signal ID scoped to the given ledger.
+ * Uses the ledger's own counter to avoid cross-session collisions.
+ */
+function generateSignalId(ledger: UserPsychologyLedger): string {
+  if (ledger.nextSignalId == null) {
+    // Bootstrap from existing signals for ledgers imported from older versions
+    const existingMax = ledger.signalStore.reduce((max, s) => {
+      const num = parseInt(s.id.replace(/^s/, ""), 10);
+      return Number.isFinite(num) && num > max ? num : max;
+    }, 0);
+    ledger.nextSignalId = existingMax + 1;
+  }
+  return `s${ledger.nextSignalId++}`;
 }
 
-/** @deprecated Use resetSignalIdCounter */
-export function resetHypothesisIdCounter(): void {
-  resetSignalIdCounter();
-}
+/** @deprecated No-op — signal IDs are now per-ledger */
+export function resetSignalIdCounter(): void { /* no-op */ }
 
-function generateSignalId(): string {
-  return `s${nextSignalId++}`;
-}
+/** @deprecated No-op — signal IDs are now per-ledger */
+export function resetHypothesisIdCounter(): void { /* no-op */ }
 
 // ─── Confidence computation ───
 
@@ -83,6 +90,8 @@ function computeConfidence(
   events: EvidenceEvent[],
   currentTurn: number,
 ): number {
+  if (events.length === 0) return 0;
+
   const supporting = events.filter(e => e.valence === "supports");
   const contradicting = events.filter(e => e.valence === "contradicts");
 
@@ -157,7 +166,7 @@ function computeStatus(
 export function recordSignals(
   ledger: UserPsychologyLedger,
   turnNumber: number,
-  module: "hook" | "character" | "character_image" | "world" | "plot" | "scene",
+  module: PsychologyModule,
   rawSignals: RawSignalObservation[],
   behaviorSummary: BehaviorSummary,
   adaptationPlan: AdaptationPlan,
@@ -211,7 +220,7 @@ export function recordSignals(
 export function recordHypotheses(
   ledger: UserPsychologyLedger,
   turnNumber: number,
-  module: "hook" | "character" | "character_image" | "world" | "plot" | "scene",
+  module: PsychologyModule,
   hypotheses: {
     hypothesis: string;
     evidence: string;
@@ -250,7 +259,7 @@ export function recordHypotheses(
 function processRawSignal(
   ledger: UserPsychologyLedger,
   turnNumber: number,
-  module: "hook" | "character" | "character_image" | "world" | "plot" | "scene",
+  module: PsychologyModule,
   raw: RawSignalObservation,
 ): void {
   const store = ledger.signalStore;
@@ -322,7 +331,7 @@ function processRawSignal(
       : "this_story") as "this_story" | "this_genre" | "global";
 
     const newSignal: BehaviorSignal = {
-      id: generateSignalId(),
+      id: generateSignalId(ledger),
       hypothesis: raw.hypothesis,
       evidenceEvents: [event],
       confidence: computeConfidence([event], turnNumber),
@@ -1009,12 +1018,10 @@ export function computeEngineDials(
   }
 
   // ── Content emphasis: from top signals ──
-  const emphasisCategories = new Set<string>();
   for (const s of activeSignals.slice(0, 3)) {
     if (s.adaptationConsequence) {
       defaults.contentEmphasis.push(s.adaptationConsequence);
     }
-    emphasisCategories.add(s.category);
   }
 
   // ── Avoidances: from suppressed signals ──
@@ -1086,7 +1093,7 @@ import type {
 export async function runConsolidation(
   ledger: UserPsychologyLedger,
   turnNumber: number,
-  module: "hook" | "character" | "character_image" | "world" | "plot" | "scene",
+  module: PsychologyModule,
   llm: LLMClient,
 ): Promise<ConsolidationSnapshot | null> {
   // Guard: skip if no signals to consolidate
@@ -1188,7 +1195,7 @@ ${po.outcome === "confirmed" ? "→ The probe worked. Consider probing a differe
     const result: ConsolidationResult = JSON.parse(raw);
 
     // Apply the consolidation to the ledger
-    applyConsolidation(ledger, result, turnNumber);
+    applyConsolidation(ledger, result, turnNumber, module);
 
     // Store the snapshot
     const snapshot: ConsolidationSnapshot = {
@@ -1221,10 +1228,11 @@ ${po.outcome === "confirmed" ? "→ The probe worked. Consider probing a differe
  * Replaces the signal store with the consolidated version,
  * preserving evidence events from the original signals.
  */
-function applyConsolidation(
+export function applyConsolidation(
   ledger: UserPsychologyLedger,
   result: ConsolidationResult,
   turnNumber: number,
+  module: PsychologyModule = "hook",
 ): void {
   if (!result.updatedSignals || result.updatedSignals.length === 0) {
     return; // LLM returned empty — don't wipe the store
@@ -1272,7 +1280,7 @@ function applyConsolidation(
     if (dedupedEvidence.length === 0) {
       dedupedEvidence.push({
         turn: turnNumber,
-        module: "hook", // best guess
+        module,
         action: "consolidated from prior observations",
         valence: "supports",
       });
@@ -1440,9 +1448,10 @@ export function evaluateProbeOutcome(ledger: UserPsychologyLedger): void {
   // Record in probe history for re-probe blocking
   if (!ledger.probeHistory) ledger.probeHistory = [];
   // Avoid duplicate entries for the same probe
+  const probeIds = [...(probe.targetSignalIds ?? [])].sort().join(",");
   const alreadyRecorded = ledger.probeHistory.some(
     ph => ph.injectedOnTurn === injectedTurn &&
-      ph.targetSignalIds.length === (probe.targetSignalIds?.length ?? 0)
+      [...ph.targetSignalIds].sort().join(",") === probeIds
   );
   if (!alreadyRecorded) {
     ledger.probeHistory.push({

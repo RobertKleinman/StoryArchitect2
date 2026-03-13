@@ -263,6 +263,10 @@ WRITING CRAFT — THE NON-NEGOTIABLE RULES:
 
 10. COMPULSION VECTOR. Know what pulls the reader through THIS scene and write toward it. A curiosity-driven scene plants questions. A dread-driven scene builds inevitability. A desire-driven scene creates ache. Write the specific pull, not generic "tension."
 
+11. DRAMATIC IRONY & MYSTERY. Pay off or sustain every active mystery hook. Make dramatic irony FELT — show the character making decisions that the reader knows are wrong. The reader should always have 2-3 open questions pulling them forward. If this scene resolves a question, plant a new one.
+
+12. THRESHOLD PRESSURE. If this scene pressures a character toward their threshold_statement ("I will never ___"), SHOW that pressure. The most powerful moments come from characters approaching or crossing their own lines.
+
 WHAT TO AVOID:
 - "As if" constructions that distance the reader from the moment
 - Characters explaining their feelings in dialogue ("I feel betrayed because you...")
@@ -307,6 +311,15 @@ export const SCENE_BUILDER_USER_PREFIX = `Write this scene.
 
 ═══ WORLD CONTEXT ═══
 {{WORLD_SUMMARY}}
+
+═══ RELATIONSHIP TENSIONS ═══
+{{RELATIONSHIP_TENSIONS}}
+
+═══ HOOK / EMOTIONAL PROMISE ═══
+{{HOOK_CONTEXT}}
+
+═══ DEVELOPMENT TARGETS (weaknesses to address) ═══
+{{DEVELOPMENT_TARGETS}}
 
 ═══ ACTIVE DRAMATIC IRONY ═══
 {{ACTIVE_IRONY_JSON}}
@@ -469,10 +482,19 @@ export const SCENE_FINAL_JUDGE_USER_TEMPLATE = `Review the complete visual novel
 ═══ CHARACTER PROFILES ═══
 {{CHARACTER_PROFILES_JSON}}
 
+═══ EMOTIONAL PROMISE (from hook) ═══
+{{EMOTIONAL_PROMISE}}
+
+═══ HOOK ═══
+{{HOOK_SENTENCE}}
+
+═══ USER PSYCHOLOGY SIGNALS ═══
+{{PSYCHOLOGY_SIGNALS}}
+
 ═══ TOTAL SCENES: {{TOTAL_SCENES}} ═══
 ═══ ENDING ENERGY: {{ENDING_ENERGY}} ═══
 
-Score all dimensions, flag specific scenes, identify arc issues and missing elements. Be honest.`;
+Score all dimensions, flag specific scenes, identify arc issues and missing elements. Check that the emotional promise from the hook is delivered across the arc. Be honest.`;
 
 // ═══════════════════════════════════════════════════════════════
 // SCENE DIVERGENCE — focused staging alternatives (3-5, not 15-20)
@@ -552,14 +574,17 @@ Keep it light. Most users will approve the plan quickly. Don't over-ask.
 
 OUTPUT: Return valid JSON matching the SceneClarifierResponse schema.`;
 
-export const SCENE_PLAN_CLARIFIER_USER_TEMPLATE = `The scene plan has been generated. Present it and gather user feedback.
+/** Static (cacheable) prefix — narrative preview and scene plan don't change between turns */
+export const SCENE_PLAN_CLARIFIER_USER_PREFIX = `The scene plan has been generated. Present it and gather user feedback.
 
 ═══ NARRATIVE PREVIEW ═══
 {{NARRATIVE_PREVIEW}}
 
 ═══ SCENE PLAN SUMMARY ═══
-{{SCENE_PLAN_SUMMARY}}
+{{SCENE_PLAN_SUMMARY}}`;
 
+/** Dynamic suffix template — changes each turn */
+export const SCENE_PLAN_CLARIFIER_USER_SUFFIX = `
 ═══ USER FEEDBACK (if any — empty on first turn) ═══
 {{USER_FEEDBACK}}
 

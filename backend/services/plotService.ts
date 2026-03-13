@@ -54,6 +54,7 @@ import {
   formatEngineDialsForPrompt,
   snapshotBaselineForNewModule,
   runConsolidation,
+  applyConsolidation,
   formatSuggestedProbeForPrompt,
   markProbeConsumed,
 } from "./psychologyEngine";
@@ -102,6 +103,7 @@ export class PlotServiceError extends Error {
     message: string
   ) {
     super(message);
+    this.name = "PlotServiceError";
     this.code = code;
   }
 }
@@ -539,7 +541,7 @@ export class PlotService {
 
     // ─── Fire background divergence exploration (non-blocking, throttled) ───
     if (shouldDivergeThrottled(turn, session!)) {
-      this.fireBackgroundDivergence(session!, turn.turnNumber, "plot")
+      this.fireBackgroundDivergence(session!.projectId, turn.turnNumber, "plot")
         .catch(err => console.error("[DIVERGENCE] Plot exploration fire failed:", err));
     }
 
@@ -569,18 +571,19 @@ export class PlotService {
     );
 
     if (snapshot) {
-      // Re-read the LATEST session to avoid overwriting concurrent changes.
-      // IMPORTANT: Only graft consolidation-owned fields — NOT the entire ledger.
-      // Divergence explorer may have saved lastDirectionMap concurrently;
-      // replacing the whole ledger would clobber it (and vice versa).
       const freshSession = await this.plotStore.get(projectId);
       if (!freshSession) return;
 
-      if (!freshSession.psychologyLedger) freshSession.psychologyLedger = sessionForConsolidation.psychologyLedger;
-      else {
-        freshSession.psychologyLedger.signalStore = sessionForConsolidation.psychologyLedger.signalStore;
-        freshSession.psychologyLedger.lastConsolidation = sessionForConsolidation.psychologyLedger.lastConsolidation;
-      }
+      if (!freshSession.psychologyLedger) freshSession.psychologyLedger = createEmptyLedger();
+
+      const staleIds = new Set(sessionForConsolidation.psychologyLedger!.signalStore.map(s => s.id));
+      const newSignals = freshSession.psychologyLedger.signalStore.filter(s => !staleIds.has(s.id));
+
+      applyConsolidation(freshSession.psychologyLedger, snapshot.result, turnNumber, module);
+      freshSession.psychologyLedger.signalStore.push(...newSignals);
+      freshSession.psychologyLedger.lastConsolidation = snapshot;
+      freshSession.psychologyLedger.signalCountAtLastConsolidation = freshSession.psychologyLedger.signalStore.length;
+
       freshSession.lastSavedAt = new Date().toISOString();
       await this.plotStore.save(freshSession);
     }
@@ -590,10 +593,14 @@ export class PlotService {
    * Fire-and-forget background divergence exploration for plot module.
    */
   private async fireBackgroundDivergence(
-    session: PlotSessionState,
+    projectId: string,
     turnNumber: number,
     module: "plot",
   ): Promise<void> {
+    // Re-read fresh session to avoid using a stale reference
+    const session = await this.plotStore.get(projectId);
+    if (!session) return;
+
     const psychSummary = formatPsychologyLedgerForPrompt(session.psychologyLedger);
     // Build a lightweight "current state" snapshot for the divergence explorer
     const currentState: Record<string, unknown> = {

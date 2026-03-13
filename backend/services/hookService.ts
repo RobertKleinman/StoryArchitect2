@@ -47,6 +47,7 @@ import {
   formatSignalsForBuilderJudge,
   formatEngineDialsForPrompt,
   runConsolidation,
+  applyConsolidation,
   formatSuggestedProbeForPrompt,
   markProbeConsumed,
 } from "./psychologyEngine";
@@ -104,11 +105,12 @@ export class HookService {
       throw new HookServiceError("NOT_FOUND", "Session not found");
     }
 
-    // If there's a userSelection, temporarily attach it to the last turn for prompt building
+    // If there's a userSelection, attach it to a cloned turn to avoid mutating the stored session
     if (userSelection && session.turns.length > 0) {
       const lastTurn = session.turns[session.turns.length - 1];
       if (!lastTurn.userSelection) {
-        lastTurn.userSelection = userSelection;
+        const previewTurn = { ...lastTurn, userSelection };
+        session = { ...session, turns: [...session.turns.slice(0, -1), previewTurn] };
       }
     }
 
@@ -367,7 +369,7 @@ export class HookService {
     }
 
     if (shouldDivergeThrottled(turn, session)) {
-      this.fireBackgroundDivergence(session, turn.turnNumber, "hook")
+      this.fireBackgroundDivergence(session.projectId, turn.turnNumber, "hook")
         .catch(err => console.error("[DIVERGENCE] Background exploration fire failed:", err));
     }
 
@@ -384,10 +386,14 @@ export class HookService {
    * Non-blocking — failures are logged and swallowed.
    */
   private async fireBackgroundDivergence(
-    session: HookSessionState,
+    projectId: string,
     turnNumber: number,
     module: "hook" | "character" | "character_image" | "world",
   ): Promise<void> {
+    // Re-read fresh session to avoid using a stale reference
+    const session = await this.store.get(projectId);
+    if (!session) return;
+
     const psychSummary = formatPsychologyLedgerForPrompt(session.psychologyLedger);
     const previousFamilyNames = session.psychologyLedger?.lastDirectionMap?.directionMap?.families
       ?.map(f => f.name) ?? [];
@@ -405,7 +411,7 @@ export class HookService {
 
     if (snapshot) {
       // Re-read the LATEST session to avoid overwriting concurrent changes.
-      const freshSession = await this.store.get(session.projectId);
+      const freshSession = await this.store.get(projectId);
       if (!freshSession) return;
 
       if (!freshSession.psychologyLedger) freshSession.psychologyLedger = createEmptyLedger();
@@ -437,19 +443,22 @@ export class HookService {
     );
 
     if (snapshot) {
-      // Re-read the LATEST session to avoid overwriting concurrent changes.
-      // IMPORTANT: Only graft consolidation-owned fields — NOT the entire ledger.
-      // Divergence explorer may have saved lastDirectionMap concurrently;
-      // replacing the whole ledger would clobber it (and vice versa).
+      // Re-read the LATEST session to avoid overwriting signals added by concurrent foreground turns.
       const freshSession = await this.store.get(projectId);
       if (!freshSession) return;
 
-      if (!freshSession.psychologyLedger) freshSession.psychologyLedger = sessionForConsolidation.psychologyLedger;
-      else {
-        // Graft only what consolidation owns
-        freshSession.psychologyLedger.signalStore = sessionForConsolidation.psychologyLedger.signalStore;
-        freshSession.psychologyLedger.lastConsolidation = sessionForConsolidation.psychologyLedger.lastConsolidation;
-      }
+      if (!freshSession.psychologyLedger) freshSession.psychologyLedger = createEmptyLedger();
+
+      // Find signals added by concurrent foreground turns (not in the stale snapshot)
+      const staleIds = new Set(sessionForConsolidation.psychologyLedger!.signalStore.map(s => s.id));
+      const newSignals = freshSession.psychologyLedger.signalStore.filter(s => !staleIds.has(s.id));
+
+      // Apply consolidation result to the fresh ledger, then re-append concurrent signals
+      applyConsolidation(freshSession.psychologyLedger, snapshot.result, turnNumber, module);
+      freshSession.psychologyLedger.signalStore.push(...newSignals);
+      freshSession.psychologyLedger.lastConsolidation = snapshot;
+      freshSession.psychologyLedger.signalCountAtLastConsolidation = freshSession.psychologyLedger.signalStore.length;
+
       freshSession.lastSavedAt = new Date().toISOString();
       await this.store.save(freshSession);
     }

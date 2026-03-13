@@ -125,6 +125,7 @@ export class LLMClient {
       }
     }
 
+    // Unreachable — loop always returns or throws — but satisfies TypeScript return type
     throw new Error(`LLM [${role}] failed after max retries`);
   }
 }

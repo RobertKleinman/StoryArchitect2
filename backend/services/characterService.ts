@@ -51,6 +51,7 @@ import {
   formatEngineDialsForPrompt,
   snapshotBaselineForNewModule,
   runConsolidation,
+  applyConsolidation,
   formatSuggestedProbeForPrompt,
   markProbeConsumed,
 } from "./psychologyEngine";
@@ -427,7 +428,7 @@ export class CharacterService {
     }
 
     if (shouldDivergeThrottled(turn, session)) {
-      this.fireBackgroundDivergence(session, turn.turnNumber, "character")
+      this.fireBackgroundDivergence(session.projectId, turn.turnNumber, "character")
         .catch(err => console.error("[DIVERGENCE] Character exploration fire failed:", err));
     }
 
@@ -457,18 +458,19 @@ export class CharacterService {
     );
 
     if (snapshot) {
-      // Re-read the LATEST session to avoid overwriting concurrent changes.
-      // IMPORTANT: Only graft consolidation-owned fields — NOT the entire ledger.
-      // Divergence explorer may have saved lastDirectionMap concurrently;
-      // replacing the whole ledger would clobber it (and vice versa).
       const freshSession = await this.charStore.get(projectId);
       if (!freshSession) return;
 
-      if (!freshSession.psychologyLedger) freshSession.psychologyLedger = sessionForConsolidation.psychologyLedger;
-      else {
-        freshSession.psychologyLedger.signalStore = sessionForConsolidation.psychologyLedger.signalStore;
-        freshSession.psychologyLedger.lastConsolidation = sessionForConsolidation.psychologyLedger.lastConsolidation;
-      }
+      if (!freshSession.psychologyLedger) freshSession.psychologyLedger = createEmptyLedger();
+
+      const staleIds = new Set(sessionForConsolidation.psychologyLedger!.signalStore.map(s => s.id));
+      const newSignals = freshSession.psychologyLedger.signalStore.filter(s => !staleIds.has(s.id));
+
+      applyConsolidation(freshSession.psychologyLedger, snapshot.result, turnNumber, module);
+      freshSession.psychologyLedger.signalStore.push(...newSignals);
+      freshSession.psychologyLedger.lastConsolidation = snapshot;
+      freshSession.psychologyLedger.signalCountAtLastConsolidation = freshSession.psychologyLedger.signalStore.length;
+
       freshSession.lastSavedAt = new Date().toISOString();
       await this.charStore.save(freshSession);
     }
@@ -478,10 +480,14 @@ export class CharacterService {
    * Fire-and-forget background divergence exploration for character module.
    */
   private async fireBackgroundDivergence(
-    session: CharacterSessionState,
+    projectId: string,
     turnNumber: number,
     module: "hook" | "character" | "character_image" | "world",
   ): Promise<void> {
+    // Re-read fresh session to avoid using a stale reference
+    const session = await this.charStore.get(projectId);
+    if (!session) return;
+
     const psychSummary = formatPsychologyLedgerForPrompt(session.psychologyLedger);
     // Build a state snapshot from character-module fields for divergence explorer
     const characterState: Record<string, unknown> = {};
@@ -1089,6 +1095,7 @@ export class CharacterService {
       .replace("{{CAST_JSON}}", JSON.stringify(cast))
       .replace("{{PREMISE}}", hook.locked.premise)
       .replace("{{EMOTIONAL_PROMISE}}", hook.locked.emotional_promise)
+      .replace("{{CHARACTER_SEED}}", session.characterSeed ?? "(no explicit seed — inferred from hook)")
       .replace("{{CAST_STATE_JSON}}", castStateJson)
       .replace("{{PSYCHOLOGY_SIGNALS}}", signalsText)
       .replace("{{UPSTREAM_DEVELOPMENT_TARGETS}}", upstreamTargets);

@@ -70,3 +70,24 @@ WHAT NOT TO DO:
   - Don't check in every turn — it breaks creative flow
   - Don't make the check-in feel like a survey ("Rate your satisfaction 1-5")
   - Don't use it as a stall tactic when you're not sure what to ask next — if you're stuck, make a bold proposal instead`;
+
+// ─────────────────────────────────────────────────────────────────
+// FRAGMENT: BANNED PHRASES
+// Used in: ALL module prompts (clarifier, builder, judge, polisher)
+// Purpose: Single source of truth for overused/generic phrases to reject
+// ─────────────────────────────────────────────────────────────────
+export const SHARED_BANNED_PHRASES = `"in a world where", "nothing is what it seems", "web of lies", "tension escalates", "dark secrets", "dangerous game", "everything changes", "must navigate", "finds themselves", "uncover the truth", "race against time", "underground scene", "power dynamics"`;
+
+// ─────────────────────────────────────────────────────────────────
+// FRAGMENT: NO CHARACTER NAMES
+// Used in: hook, character, world, plot, scene prompts
+// Purpose: Consistent instruction to use roles instead of proper names
+// ─────────────────────────────────────────────────────────────────
+export const SHARED_NO_CHARACTER_NAMES = `Never invent character names. Use roles ("the protagonist", "the mentor", "the rival") not proper names. Naming happens in a later stage.`;
+
+// ─────────────────────────────────────────────────────────────────
+// FRAGMENT: NOT A GENRE LABEL
+// Used in: hook builder, premise polish, and judge prompts
+// Purpose: Ensure premises are specific situations, not genre descriptions
+// ─────────────────────────────────────────────────────────────────
+export const SHARED_NOT_GENRE_LABEL = `The premise must be a specific "what if?" situation, not a genre label, setting description, or theme statement.`;

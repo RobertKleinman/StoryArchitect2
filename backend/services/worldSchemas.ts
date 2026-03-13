@@ -277,7 +277,7 @@ export const WORLD_BUILDER_SCHEMA = {
   },
   required: [
     "scope", "arena", "rules", "factions", "consequence_patterns",
-    "canon_register", "world_thesis", "pressure_summary"
+    "canon_register", "information_access", "volatility", "world_thesis", "pressure_summary"
   ],
   additionalProperties: false,
 } as const;

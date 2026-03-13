@@ -37,13 +37,17 @@ export type SignalStatus =
   | "stable"      // 4+ evidence events across 3+ turns, high confidence
   | "suppressed"; // contradicted or decayed
 
+// ─── Module identifier (used across evidence events, consolidation, etc.) ───
+
+export type PsychologyModule = "hook" | "character" | "character_image" | "world" | "plot" | "scene";
+
 // ─── Evidence event (references a specific user action) ───
 
 export interface EvidenceEvent {
   /** Turn number where the evidence occurred */
   turn: number;
   /** Module where observed */
-  module: "hook" | "character" | "character_image" | "world" | "plot";
+  module: PsychologyModule;
   /** What the user actually did */
   action: string;   // e.g. "chose 'dark romance' chip", "typed 'I want the villain to be sympathetic'"
   /** Whether this supports or contradicts the signal */
@@ -195,7 +199,7 @@ export interface StructuredUserRead {
 
 export interface UserPsychologyRead {
   turnNumber: number;
-  module: "hook" | "character" | "character_image" | "world" | "plot";
+  module: PsychologyModule;
   /** Raw signal observations from this turn */
   signals: RawSignalObservation[];
   /** Structured behavior summary */
@@ -364,7 +368,7 @@ export interface ConsolidationSnapshot {
   /** Which turn it ran after */
   afterTurn: number;
   /** Which module was active */
-  module: "hook" | "character" | "character_image" | "world" | "plot";
+  module: PsychologyModule;
   /** The full result */
   result: ConsolidationResult;
   /** Whether the suggestedProbe was consumed by the next clarifier turn */
@@ -440,7 +444,7 @@ export interface DirectionMapSnapshot {
   /** Which turn it ran after */
   afterTurn: number;
   /** Which module was active */
-  module: "hook" | "character" | "character_image" | "world" | "plot";
+  module: PsychologyModule;
   /** The direction map */
   directionMap: DirectionMap;
 }
@@ -472,6 +476,10 @@ export interface UserPsychologyLedger {
   lastDirectionMap?: DirectionMapSnapshot;
   /** History of probe injections and outcomes — used to prevent re-probing ignored targets */
   probeHistory?: ProbeHistoryEntry[];
+  /** Per-ledger signal ID counter — avoids global state collisions across sessions */
+  nextSignalId?: number;
+  /** Signal store length at last consolidation — used for backlog detection */
+  signalCountAtLastConsolidation?: number;
 
   // ─── Backward compat ───
   /** @deprecated Use signalStore */
@@ -492,5 +500,7 @@ export function createEmptyLedger(): UserPsychologyLedger {
     },
     signalStore: [],
     assumptionDeltas: [],
+    nextSignalId: 1,
+    signalCountAtLastConsolidation: 0,
   };
 }

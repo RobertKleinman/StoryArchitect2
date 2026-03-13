@@ -171,8 +171,8 @@ export function PlotWorkshop() {
 
         // Auto-select if only one locked session
         const lockedWorlds = result.sessions.filter(s => s.hasExport);
-        if (lockedWorlds.length === 1 && !selectedWorldId) {
-          setSelectedWorldId(lockedWorlds[0].projectId);
+        if (lockedWorlds.length === 1) {
+          setSelectedWorldId((prev) => prev || lockedWorlds[0].projectId);
         }
       })
       .catch((err) => {
@@ -353,11 +353,16 @@ export function PlotWorkshop() {
   };
 
   const submitTurn = async () => {
-    if (!state.selectedOptionId && !state.freeTextValue.trim()) return;
+    const hasOption = !!state.selectedOptionId;
+    const hasFreeText = !!state.freeTextValue.trim();
+    const hasAssumptions = Object.keys(state.assumptionResponses).length > 0;
+    if (!hasOption && !hasFreeText && !hasAssumptions) return;
 
-    const userSelection = state.freeTextValue.trim()
+    const userSelection = hasFreeText
       ? { type: "free_text" as const, label: state.freeTextValue.trim() }
-      : { type: "option" as const, optionId: state.selectedOptionId!, label: state.selectedOptionLabel! };
+      : hasOption
+        ? { type: "option" as const, optionId: state.selectedOptionId!, label: state.selectedOptionLabel! }
+        : { type: "option" as const, optionId: "assumptions_only", label: "Confirmed assumptions" };
 
     const assumptionResponses: PlotAssumptionResponse[] = [];
     for (const [id, resp] of Object.entries(state.assumptionResponses)) {
@@ -947,7 +952,7 @@ export function PlotWorkshop() {
       )}
 
       {/* ─── Phase: Generating ─── */}
-      {state.phase === "generating" && !state.loading && (
+      {state.phase === "generating" && (
         <div className="generating-phase">
           <p>Building your plot — tension chain, turning points, climax, mysteries...</p>
         </div>
@@ -1141,10 +1146,10 @@ export function PlotWorkshop() {
           )}
 
           <div className="action-row">
-            <button type="button" className="btn-accent" onClick={lockPlot}>
+            <button type="button" className="btn-accent" onClick={lockPlot} disabled={state.loading}>
               Lock Plot
             </button>
-            <button type="button" className="btn-ghost" onClick={rerollPlot}>
+            <button type="button" className="btn-ghost" onClick={rerollPlot} disabled={state.loading}>
               Regenerate Plot
             </button>
           </div>

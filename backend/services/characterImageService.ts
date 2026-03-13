@@ -46,6 +46,7 @@ import {
   formatEngineDialsForPrompt,
   snapshotBaselineForNewModule,
   runConsolidation,
+  applyConsolidation,
   formatSuggestedProbeForPrompt,
   markProbeConsumed,
 } from "./psychologyEngine";
@@ -400,7 +401,7 @@ export class CharacterImageService {
 
     // ─── Fire background divergence exploration (non-blocking) ───
     if (turn.turnNumber >= 2) {
-      this.fireBackgroundDivergence(session, turn.turnNumber, "character_image")
+      this.fireBackgroundDivergence(session.projectId, turn.turnNumber, "character_image")
         .catch(err => console.error("[DIVERGENCE] CharImage exploration fire failed:", err));
     }
 
@@ -430,18 +431,19 @@ export class CharacterImageService {
     );
 
     if (snapshot) {
-      // Re-read the LATEST session to avoid overwriting concurrent changes.
-      // IMPORTANT: Only graft consolidation-owned fields — NOT the entire ledger.
-      // Divergence explorer may have saved lastDirectionMap concurrently;
-      // replacing the whole ledger would clobber it (and vice versa).
       const freshSession = await this.imageStore.get(projectId);
       if (!freshSession) return;
 
-      if (!freshSession.psychologyLedger) freshSession.psychologyLedger = sessionForConsolidation.psychologyLedger;
-      else {
-        freshSession.psychologyLedger.signalStore = sessionForConsolidation.psychologyLedger.signalStore;
-        freshSession.psychologyLedger.lastConsolidation = sessionForConsolidation.psychologyLedger.lastConsolidation;
-      }
+      if (!freshSession.psychologyLedger) freshSession.psychologyLedger = createEmptyLedger();
+
+      const staleIds = new Set(sessionForConsolidation.psychologyLedger!.signalStore.map(s => s.id));
+      const newSignals = freshSession.psychologyLedger.signalStore.filter(s => !staleIds.has(s.id));
+
+      applyConsolidation(freshSession.psychologyLedger, snapshot.result, turnNumber, module);
+      freshSession.psychologyLedger.signalStore.push(...newSignals);
+      freshSession.psychologyLedger.lastConsolidation = snapshot;
+      freshSession.psychologyLedger.signalCountAtLastConsolidation = freshSession.psychologyLedger.signalStore.length;
+
       freshSession.lastSavedAt = new Date().toISOString();
       await this.imageStore.save(freshSession);
     }
@@ -451,10 +453,14 @@ export class CharacterImageService {
    * Fire-and-forget background divergence exploration for character image module.
    */
   private async fireBackgroundDivergence(
-    session: CharacterImageSessionState,
+    projectId: string,
     turnNumber: number,
     module: "hook" | "character" | "character_image" | "world",
   ): Promise<void> {
+    // Re-read fresh session to avoid using a stale reference
+    const session = await this.imageStore.get(projectId);
+    if (!session) return;
+
     const psychSummary = formatPsychologyLedgerForPrompt(session.psychologyLedger);
     // Build a state snapshot from character-image fields for divergence explorer
     const imageState: Record<string, unknown> = {};

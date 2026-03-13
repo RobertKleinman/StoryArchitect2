@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { hookApi } from "../lib/hookApi";
 import { PromptEditor } from "./PromptEditor";
 import { PsychologyOverlay } from "./PsychologyOverlay";
@@ -121,6 +121,14 @@ export function HookWorkshop() {
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [showPsych, setShowPsych] = useState(false);
   const fetchPsych = useMemo(() => () => hookApi.debugPsychology(projectId), [projectId]);
+
+  // Progress interval ref — cleared on unmount to prevent leaks
+  const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+    };
+  }, []);
 
   // Prompt preview state
   const [promptPreview, setPromptPreview] = useState<{
@@ -397,7 +405,7 @@ export function HookWorkshop() {
         error: null,
       }));
 
-      const progressInterval = setInterval(() => {
+      progressIntervalRef.current = setInterval(() => {
         step = Math.min(step + 1, progressMessages.length - 1);
         setState((prev) => ({ ...prev, loadingMessage: progressMessages[step] }));
       }, 4000);
@@ -408,7 +416,8 @@ export function HookWorkshop() {
           : undefined;
         const response = await hookApi.generate(projectId, tournamentOverrides);
 
-        clearInterval(progressInterval);
+        clearInterval(progressIntervalRef.current!);
+        progressIntervalRef.current = null;
         setPromptPreview(null);
         setBuilderPromptOverrides(undefined);
 
@@ -426,7 +435,8 @@ export function HookWorkshop() {
           error: null,
         }));
       } catch (err) {
-        clearInterval(progressInterval);
+        clearInterval(progressIntervalRef.current!);
+        progressIntervalRef.current = null;
         throw err;
       }
     });
@@ -452,7 +462,7 @@ export function HookWorkshop() {
         error: null,
       }));
 
-      const progressInterval = setInterval(() => {
+      progressIntervalRef.current = setInterval(() => {
         step = Math.min(step + 1, progressMessages.length - 1);
         setState((prev) => ({ ...prev, loadingMessage: progressMessages[step] }));
       }, 4000);
@@ -463,7 +473,8 @@ export function HookWorkshop() {
           : undefined;
         const response = await hookApi.reroll(projectId, tournamentOverrides);
 
-        clearInterval(progressInterval);
+        clearInterval(progressIntervalRef.current!);
+        progressIntervalRef.current = null;
         setState((prev) => ({
           ...prev,
           phase: "revealed",
@@ -477,7 +488,8 @@ export function HookWorkshop() {
           loadingMessage: "",
         }));
       } catch (err) {
-        clearInterval(progressInterval);
+        clearInterval(progressIntervalRef.current!);
+        progressIntervalRef.current = null;
         throw err;
       }
     });

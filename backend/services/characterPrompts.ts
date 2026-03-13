@@ -534,6 +534,9 @@ Hook context:
 Premise: "{{PREMISE}}"
 Emotional Promise: "{{EMOTIONAL_PROMISE}}"
 
+Character seed (user's original direction for characters):
+{{CHARACTER_SEED}}
+
 Story state:
 {{CAST_STATE_JSON}}
 

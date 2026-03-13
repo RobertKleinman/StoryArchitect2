@@ -74,7 +74,7 @@ export async function runDivergenceExploration(
       userPrompt,
       {
         temperature: 1.0, // High temp for maximum creativity
-        maxTokens: 4000,
+        maxTokens: 2500,
         jsonSchema: DIVERGENCE_EXPLORER_SCHEMA,
       },
     );

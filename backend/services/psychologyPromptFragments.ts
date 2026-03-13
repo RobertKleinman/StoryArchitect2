@@ -254,9 +254,6 @@ moves: 2-4 concrete actions, each targeting a specific pipeline stage.
 Your adaptationPlan directly shapes what you output. If your plan says 'focus on relationships'
 but your question is about plot mechanics, you failed.`;
 
-/** @deprecated Use ADAPTATION_PLAN_INSTRUCTIONS */
-export const PSYCHOLOGY_STRATEGY_INSTRUCTIONS = ADAPTATION_PLAN_INSTRUCTIONS;
-
 // ─────────────────────────────────────────────────────────────────
 // FRAGMENT: BUILDER/JUDGE SIGNAL INSTRUCTIONS
 // Used in: all builder and judge system prompts

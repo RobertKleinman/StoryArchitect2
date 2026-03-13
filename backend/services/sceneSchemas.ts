@@ -79,6 +79,8 @@ const compulsionVectorEnum = {
     "curiosity", "dread", "desire", "outrage", "tenderness",
     "anticipation", "taboo_fascination", "dramatic_irony",
     "defiance", "longing", "vindication",
+    "horror", "empathy", "bewilderment", "triumph",
+    "heartbreak", "suspense", "foreboding", "catharsis",
   ],
 };
 

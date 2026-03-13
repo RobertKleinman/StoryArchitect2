@@ -68,7 +68,7 @@ export function shouldConsolidate(
 
   const signalBacklog =
     (session.psychologyLedger?.signalStore?.length ?? 0) -
-    (session.psychologyLedger?.lastConsolidation?.turnNumber ?? 0) >= 5;
+    (session.psychologyLedger?.signalCountAtLastConsolidation ?? 0) >= 5;
 
   return meaningfulInput || assumptionChanged || cadenceFallback || signalBacklog;
 }

@@ -52,6 +52,7 @@ import {
   formatEngineDialsForPrompt,
   snapshotBaselineForNewModule,
   runConsolidation,
+  applyConsolidation,
   formatSuggestedProbeForPrompt,
   markProbeConsumed,
 } from "./psychologyEngine";
@@ -349,7 +350,7 @@ export class WorldService {
 
         // Record assumption deltas for psychology
         if (session.psychologyLedger) {
-          const offeredIds = assumptionResponses.map(r => r.assumptionId);
+          const offeredIds = previousTurn.clarifierResponse.assumptions?.map((a: any) => a.id) ?? assumptionResponses.map(r => r.assumptionId);
           const respondedIds = assumptionResponses
             .filter(r => r.action !== "not_ready")
             .map(r => r.assumptionId);
@@ -477,7 +478,7 @@ export class WorldService {
     }
 
     if (shouldDivergeThrottled(turn, session!)) {
-      this.fireBackgroundDivergence(session!, turn.turnNumber, "world")
+      this.fireBackgroundDivergence(session!.projectId, turn.turnNumber, "world")
         .catch(err => console.error("[DIVERGENCE] World exploration fire failed:", err));
     }
 
@@ -507,18 +508,19 @@ export class WorldService {
     );
 
     if (snapshot) {
-      // Re-read the LATEST session to avoid overwriting concurrent changes.
-      // IMPORTANT: Only graft consolidation-owned fields — NOT the entire ledger.
-      // Divergence explorer may have saved lastDirectionMap concurrently;
-      // replacing the whole ledger would clobber it (and vice versa).
       const freshSession = await this.worldStore.get(projectId);
       if (!freshSession) return;
 
-      if (!freshSession.psychologyLedger) freshSession.psychologyLedger = sessionForConsolidation.psychologyLedger;
-      else {
-        freshSession.psychologyLedger.signalStore = sessionForConsolidation.psychologyLedger.signalStore;
-        freshSession.psychologyLedger.lastConsolidation = sessionForConsolidation.psychologyLedger.lastConsolidation;
-      }
+      if (!freshSession.psychologyLedger) freshSession.psychologyLedger = createEmptyLedger();
+
+      const staleIds = new Set(sessionForConsolidation.psychologyLedger!.signalStore.map(s => s.id));
+      const newSignals = freshSession.psychologyLedger.signalStore.filter(s => !staleIds.has(s.id));
+
+      applyConsolidation(freshSession.psychologyLedger, snapshot.result, turnNumber, module);
+      freshSession.psychologyLedger.signalStore.push(...newSignals);
+      freshSession.psychologyLedger.lastConsolidation = snapshot;
+      freshSession.psychologyLedger.signalCountAtLastConsolidation = freshSession.psychologyLedger.signalStore.length;
+
       freshSession.lastSavedAt = new Date().toISOString();
       await this.worldStore.save(freshSession);
     }
@@ -528,10 +530,14 @@ export class WorldService {
    * Fire-and-forget background divergence exploration for world module.
    */
   private async fireBackgroundDivergence(
-    session: WorldSessionState,
+    projectId: string,
     turnNumber: number,
     module: "hook" | "character" | "character_image" | "world",
   ): Promise<void> {
+    // Re-read fresh session to avoid using a stale reference
+    const session = await this.worldStore.get(projectId);
+    if (!session) return;
+
     const psychSummary = formatPsychologyLedgerForPrompt(session.psychologyLedger);
     // Build a state snapshot from world-module fields for divergence explorer
     const worldState: Record<string, unknown> = {};
@@ -1361,19 +1367,30 @@ This is a suggestion, not a rule. If ${stuckFocus} still needs work, keep going.
   private updatePsychologyHeuristics(session: WorldSessionState): void {
     if (!session.psychologyLedger) return;
 
-    const lastTurn = session.turns[session.turns.length - 1];
-    if (!lastTurn?.userSelection) return;
+    let typedCount = 0;
+    let clickedCount = 0;
+    let totalAssumptions = 0;
+    let deferredAssumptions = 0;
+    let changedAssumptions = 0;
+    const responseLengths: number[] = [];
 
-    const typedCount = lastTurn.userSelection.type === "free_text" ? 1 : 0;
-    const clickedCount = lastTurn.userSelection.type === "option" || lastTurn.userSelection.type === "surprise_me" ? 1 : 0;
+    for (const turn of session.turns) {
+      if (!turn.userSelection) continue;
 
-    const assumptionStats = lastTurn.assumptionResponses ?? [];
-    const totalAssumptions = assumptionStats.length;
-    const deferredAssumptions = assumptionStats.filter(r => r.action === "not_ready").length;
-    const changedAssumptions = assumptionStats.filter(r => r.action === "alternative" || r.action === "freeform").length;
-    const responseLengths = lastTurn.userSelection.type === "free_text" && lastTurn.userSelection.label
-      ? [lastTurn.userSelection.label.length]
-      : [];
+      if (turn.userSelection.type === "free_text") {
+        typedCount++;
+        if (turn.userSelection.label) {
+          responseLengths.push(turn.userSelection.label.split(/\s+/).length);
+        }
+      } else {
+        clickedCount++;
+      }
+
+      const assumptionStats = turn.assumptionResponses ?? [];
+      totalAssumptions += assumptionStats.length;
+      deferredAssumptions += assumptionStats.filter(r => r.action === "not_ready").length;
+      changedAssumptions += assumptionStats.filter(r => r.action === "alternative" || r.action === "freeform").length;
+    }
 
     updateHeuristics(session.psychologyLedger, {
       typedCount,

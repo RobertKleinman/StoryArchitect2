@@ -71,7 +71,7 @@ import {
   SCENE_MINOR_JUDGE_SYSTEM, SCENE_MINOR_JUDGE_USER_TEMPLATE,
   SCENE_FINAL_JUDGE_SYSTEM, SCENE_FINAL_JUDGE_USER_TEMPLATE,
   SCENE_DIVERGENCE_SYSTEM, SCENE_DIVERGENCE_USER_TEMPLATE,
-  SCENE_PLAN_CLARIFIER_SYSTEM, SCENE_PLAN_CLARIFIER_USER_TEMPLATE,
+  SCENE_PLAN_CLARIFIER_SYSTEM, SCENE_PLAN_CLARIFIER_USER_PREFIX, SCENE_PLAN_CLARIFIER_USER_SUFFIX,
 } from "./scenePrompts";
 
 import {
@@ -144,7 +144,7 @@ export class SceneService {
     ]);
 
     if (!charExport?.characterPack) throw new SceneServiceError("NOT_FOUND", "Character export not found");
-    if (!hookExport) throw new SceneServiceError("NOT_FOUND", "Hook export not found");
+    if (!hookExport?.hookPack) throw new SceneServiceError("NOT_FOUND", "Hook export not found");
 
     const sourceCharacterPack = charExport.characterPack;
     const sourceWorldPack = worldExport?.worldPack ?? null;
@@ -159,9 +159,10 @@ export class SceneService {
       }
     }
 
-    // Import psychology ledger (cascade: plot > world > char > hook)
+    // Import psychology ledger (cascade: plot > world > charImage > char > hook)
     let importedPsychLedger = createEmptyLedger();
     const psychSource = plotPack.psychologyLedger
+      ?? sourceWorldPack?.psychologyLedger
       ?? sourceCharacterImagePack?.psychologyLedger
       ?? sourceCharacterPack.psychologyLedger
       ?? sourceHookPack.psychologyLedger;
@@ -343,7 +344,7 @@ export class SceneService {
     const planSummary = this.formatScenePlanSummary(session.scenePlan ?? []);
 
     // Static prefix — cacheable (narrative preview, scene plan summary don't change between turns)
-    const cacheablePrefix = SCENE_PLAN_CLARIFIER_USER_TEMPLATE
+    const cacheablePrefix = SCENE_PLAN_CLARIFIER_USER_PREFIX
       .replace("{{NARRATIVE_PREVIEW}}", session.narrativePreview?.trailer_text ?? "")
       .replace("{{SCENE_PLAN_SUMMARY}}", planSummary);
 
@@ -352,7 +353,10 @@ export class SceneService {
     const engineDials = formatEngineDialsForPrompt(session.psychologyLedger!);
     const userFeedback = userSelection ? `User said: "${userSelection.label}"` : "(no feedback yet)";
 
-    let dynamicSuffix = `\n\n═══ USER FEEDBACK ═══\n${userFeedback}\n\n═══ USER PSYCHOLOGY ═══\n${psychSignals}\n\n${engineDials}`;
+    const dynamicSuffix = SCENE_PLAN_CLARIFIER_USER_SUFFIX
+      .replace("{{USER_FEEDBACK}}", userFeedback)
+      .replace("{{PSYCHOLOGY_SIGNALS}}", psychSignals)
+      .replace("{{ENGINE_DIALS}}", engineDials);
 
     const system = promptOverrides?.system ?? SCENE_PLAN_CLARIFIER_SYSTEM;
     const user = promptOverrides?.user ?? (cacheablePrefix + dynamicSuffix);
@@ -416,7 +420,7 @@ export class SceneService {
         (userSelection?.type === "free_text") ||
         (assumptionResponses?.some(r => r.action !== "keep")) ||
         (turnNumber % 5 === 0) ||
-        ((session.psychologyLedger.signalStore?.length ?? 0) - (session.psychologyLedger.lastConsolidation?.turnNumber ?? 0) >= 5);
+        ((session.psychologyLedger.signalStore?.length ?? 0) - (session.psychologyLedger.signalCountAtLastConsolidation ?? 0) >= 5);
 
       if (shouldConsolidate) {
         runConsolidation(session.psychologyLedger, turnNumber, "scene", this.llm).catch(err =>
@@ -454,7 +458,7 @@ export class SceneService {
     assumptionResponses?: Array<{ assumptionId: string; action: string; originalValue: string; newValue: string }>,
     modelOverride?: string,
     promptOverrides?: ScenePromptOverrides,
-  ): Promise<{ clarifier: SceneClarifierResponse; sceneId: string; sceneIndex: number; totalScenes: number; autoPassApplied: boolean }> {
+  ): Promise<{ clarifier: SceneClarifierResponse; sceneId: string; sceneIndex: number; totalScenes: number; autoPassApplied: boolean; autoBuiltScene?: BuiltScene | null }> {
     const session = await this.sceneStore.get(projectId);
     if (!session) throw new SceneServiceError("NOT_FOUND", "Scene session not found");
     if (!session.scenePlanConfirmed || !session.scenePlan) {
@@ -608,8 +612,8 @@ export class SceneService {
       throw new SceneServiceError("LLM_PARSE_ERROR", "Failed to parse scene clarifier response");
     }
 
-    // Auto-pass requires BOTH: LLM says no input needed AND confidence >= 0.75
-    const AUTO_PASS_THRESHOLD = 0.75;
+    // Auto-pass requires BOTH: LLM says no input needed AND confidence >= 0.85
+    const AUTO_PASS_THRESHOLD = 0.85;
     const autoPassApplied = !clarifier.needs_input && clarifier.auto_pass_confidence >= AUTO_PASS_THRESHOLD;
     const turnNumber = session.writingTurns.length + 1;
 
@@ -696,7 +700,7 @@ export class SceneService {
         (userSelection?.type === "free_text") ||
         (assumptionResponses?.some(r => r.action !== "keep")) ||
         (turnNumber % 5 === 0) ||
-        ((session.psychologyLedger.signalStore?.length ?? 0) - (session.psychologyLedger.lastConsolidation?.turnNumber ?? 0) >= 5);
+        ((session.psychologyLedger.signalStore?.length ?? 0) - (session.psychologyLedger.signalCountAtLastConsolidation ?? 0) >= 5);
 
       if (shouldConsolidateScene) {
         runConsolidation(session.psychologyLedger, turnNumber, "scene", this.llm).catch(err =>
@@ -861,6 +865,9 @@ export class SceneService {
       .replace("{{THEME_JSON}}", JSON.stringify(plotPack.locked.theme_cluster))
       .replace("{{RESOLUTION_JSON}}", JSON.stringify(plotPack.locked.resolution))
       .replace("{{CHARACTER_PROFILES_JSON}}", JSON.stringify(relevantCharacters))
+      .replace("{{EMOTIONAL_PROMISE}}", session.sourceHookPack?.locked?.emotional_promise ?? "(not specified)")
+      .replace("{{HOOK_SENTENCE}}", session.sourceHookPack?.locked?.hook_sentence ?? "(not specified)")
+      .replace("{{PSYCHOLOGY_SIGNALS}}", formatPsychologyLedgerForPrompt(session.psychologyLedger!))
       .replace("{{TOTAL_SCENES}}", String(session.builtScenes.length))
       .replace("{{ENDING_ENERGY}}", plotPack.locked.resolution.ending_energy);
 
@@ -989,18 +996,35 @@ export class SceneService {
     // OPTIMIZATION: Item 15 - Use continuity anchor from builder output for fresh continuity bridge between scenes
     const previousText = previousScene
       ? (() => {
-          // Primary: Use the built scene's continuity_anchor (most recent/accurate for next scene)
+          const parts: string[] = [];
+
+          // Continuity anchor (primary bridge)
           if (previousScene.builder_output.continuity_anchor) {
-            return previousScene.builder_output.continuity_anchor;
+            parts.push(previousScene.builder_output.continuity_anchor);
+          } else if (previousScene.plan.continuity_anchor) {
+            parts.push(previousScene.plan.continuity_anchor);
+          } else {
+            parts.push(`Previous scene "${previousScene.plan.title}" ended with emotion: ${previousScene.plan.emotion_arc.end}.`);
           }
-          // Secondary: Fall back to plan's continuity anchor from planning phase
-          if (previousScene.plan.continuity_anchor) {
-            return previousScene.plan.continuity_anchor;
+
+          // Exit hook for forward momentum
+          if (previousScene.plan.exit_hook) {
+            parts.push(`Exit hook: ${previousScene.plan.exit_hook}`);
           }
-          // Tertiary fallback: Create a short summary from the previous scene's emotional arc and exit hook
-          const screenplay = previousScene.builder_output.readable.screenplay_text;
-          const summary = `Previous scene "${previousScene.plan.title}" ended with emotion: ${previousScene.plan.emotion_arc.end}. Exit hook: ${previousScene.plan.exit_hook}. (Full scene text truncated — ${screenplay.length} chars total)`;
-          return summary.length > 500 ? summary.slice(0, 500) + "..." : summary;
+
+          // Last 3 VN lines for voice continuity
+          const vnLines = previousScene.builder_output.vn_scene?.lines;
+          if (vnLines?.length) {
+            const lastLines = vnLines.slice(-3).map((l: any) =>
+              l.speaker === "NARRATION" ? `[${l.text?.slice(0, 80)}]` :
+              l.speaker === "INTERNAL" ? `*${l.text?.slice(0, 80)}*` :
+              `${l.speaker}: "${l.text?.slice(0, 80)}"`
+            ).join(" → ");
+            parts.push(`Last lines: ${lastLines}`);
+          }
+
+          const result = parts.join("\n");
+          return result.length > 600 ? result.slice(0, 597) + "..." : result;
         })()
       : "(first scene)";
 
@@ -1033,13 +1057,30 @@ export class SceneService {
       session.sourceCharacterPack.locked.characters,
       scenePlan.characters_present
     );
+    // Build rich world context instead of just state_summary
+    const worldContext = this.formatWorldForSceneBuilder(session);
+    // Build hook context with emotional promise
+    const hookContext = this.formatHookForSceneBuilder(session);
+    // Get relationship tensions
+    const relationshipTensions = session.sourceCharacterPack?.locked?.relationship_tensions
+      ? JSON.stringify(session.sourceCharacterPack.locked.relationship_tensions)
+      : "(none)";
+    // Get development targets relevant to scenes
+    const devTargets = (session.developmentTargets ?? [])
+      .filter(t => t.status !== "addressed")
+      .map(t => `[${t.id}] ${t.target}${t.current_gap ? ` (gap: ${t.current_gap})` : ""}${t.suggestion ? ` → ${t.suggestion}` : ""}`)
+      .join("\n") || "(none)";
+
     const cacheablePrefix = SCENE_BUILDER_USER_PREFIX
       .replace("{{SCENE_PLAN_JSON}}", JSON.stringify(scenePlan))
       .replace("{{USER_STEERING}}", userSteeringText)
       .replace("{{SCENE_CONSTRAINTS}}", sceneConstraints)
       .replace("{{CHARACTER_PROFILES_JSON}}", JSON.stringify(relevantCharacters))
       .replace("{{CHARACTER_VISUALS_JSON}}", charVisuals)
-      .replace("{{WORLD_SUMMARY}}", session.sourceWorldPack?.state_summary ?? "(no world context)")
+      .replace("{{WORLD_SUMMARY}}", worldContext)
+      .replace("{{RELATIONSHIP_TENSIONS}}", relationshipTensions)
+      .replace("{{HOOK_CONTEXT}}", hookContext)
+      .replace("{{DEVELOPMENT_TARGETS}}", devTargets)
       .replace("{{ACTIVE_IRONY_JSON}}", JSON.stringify(scenePlan.active_irony ?? []))
       .replace("{{ACTIVE_MYSTERY_JSON}}", JSON.stringify(scenePlan.mystery_hook_activity ?? []))
       .replace("{{MOTIF_NOTES}}", scenePlan.motif_notes ?? "(none)")
@@ -1213,14 +1254,29 @@ export class SceneService {
   // OPTIMIZATION: Item 16 - Filter character profiles to only relevant cast
   private filterCharacterProfiles(allCharacters: any, charactersInvolved: string[]): any {
     if (!charactersInvolved || charactersInvolved.length === 0) {
-      // Fallback: return all characters if no cast list is provided
       return allCharacters;
     }
 
     const filtered: Record<string, any> = {};
     for (const charId of charactersInvolved) {
+      // Try direct key match first (role-based keys)
       if (allCharacters[charId]) {
         filtered[charId] = allCharacters[charId];
+        continue;
+      }
+      // Fallback: search by character name/role fields (LLM-generated names)
+      const lowerCharId = charId.toLowerCase();
+      for (const [key, value] of Object.entries(allCharacters)) {
+        if (key in filtered) continue;
+        const v = value as any;
+        if (
+          v?.name?.toLowerCase() === lowerCharId ||
+          v?.role?.toLowerCase() === lowerCharId ||
+          key.toLowerCase() === lowerCharId
+        ) {
+          filtered[key] = value;
+          break;
+        }
       }
     }
 
@@ -1229,25 +1285,40 @@ export class SceneService {
 
   private createSceneDigest(builtScene: BuiltScene): { scene_id: string; title: string; digest: string; word_count: number; delivery_notes: any } {
     const screenplay = builtScene.builder_output.readable.screenplay_text;
+    const plan = builtScene.plan;
+    const notes = builtScene.builder_output.delivery_notes;
 
-    // Extract first 100 chars of key events
-    const keyEvents = screenplay.length > 100 ? screenplay.slice(0, 100) : screenplay;
+    // Extract key dialogue lines (first 3 character dialogue lines)
+    const dialogueLines = builtScene.builder_output.vn_scene?.lines
+      ?.filter((l: any) => l.speaker && l.speaker !== "NARRATION" && l.speaker !== "INTERNAL")
+      ?.slice(0, 3)
+      ?.map((l: any) => `${l.speaker}: "${l.text?.slice(0, 60)}${l.text?.length > 60 ? "..." : ""}"`)
+      ?.join(" | ") ?? "";
 
-    // Get emotional register from scene plan
-    const emotionalRegister = builtScene.plan.emotion_arc.end;
+    // Emotion arc summary
+    const emotionArc = `${plan.emotion_arc.start} → ${plan.emotion_arc.end}`;
 
-    // Get characters involved
-    const characters = builtScene.plan.characters_present.join(", ");
+    // Exit hook for forward momentum
+    const exitHook = plan.exit_hook ?? notes?.exit_hook_planted ?? "";
 
-    // Build compact digest
-    const digest = `[${builtScene.plan.pacing_type}] ${keyEvents}... (Characters: ${characters}, Emotion: ${emotionalRegister})`;
+    // Build enriched digest (~500 chars)
+    const parts = [
+      `[${plan.pacing_type}] ${plan.title}`,
+      `Characters: ${plan.characters_present.join(", ")}`,
+      `Emotion arc: ${emotionArc}`,
+      dialogueLines ? `Key lines: ${dialogueLines}` : "",
+      exitHook ? `Exit hook: ${exitHook}` : "",
+      notes?.scene_question_status ? `Scene question: ${notes.scene_question_status}` : "",
+    ].filter(Boolean);
+
+    const digest = parts.join(" | ");
 
     return {
       scene_id: builtScene.scene_id,
-      title: builtScene.plan.title,
-      digest: digest,
+      title: plan.title,
+      digest: digest.length > 600 ? digest.slice(0, 597) + "..." : digest,
       word_count: builtScene.builder_output.readable.word_count,
-      delivery_notes: builtScene.builder_output.delivery_notes,
+      delivery_notes: notes,
     };
   }
 
@@ -1351,11 +1422,46 @@ export class SceneService {
     const hasNoUserSteering = !staging?.user_selection && Object.keys(staging?.assumption_overrides ?? {}).length === 0;
     const isNotPivotal = !(scenePlan as any).pivotal && !(scenePlan as any).pivot_moment;
     const isNotLastScene = sceneIndex !== totalScenes - 1;
-    const pacingIsNotCritical = scenePlan.pacing_type !== "climax" && scenePlan.pacing_type !== "revelation";
+    const pacingIsNotCritical = scenePlan.pacing_type !== "set_piece" && scenePlan.pacing_type !== "pressure_cooker";
 
     const shouldSkip = wasAutoPassedWithoutUserSelection && hasNoUserSteering && isNotPivotal && isNotLastScene && pacingIsNotCritical;
 
     return !shouldSkip;
+  }
+
+  private formatWorldForSceneBuilder(session: SceneSessionState): string {
+    const wp = session.sourceWorldPack?.locked;
+    if (!wp) return session.sourceWorldPack?.state_summary ?? "(no world context)";
+
+    const parts: string[] = [];
+    if (wp.world_thesis) parts.push(`World thesis: ${wp.world_thesis}`);
+    if (wp.arena?.locations?.length) {
+      parts.push(`Locations: ${wp.arena.locations.map((l: any) => `${l.name} (${l.emotional_register})`).join(", ")}`);
+    }
+    if (wp.rules?.length) {
+      parts.push(`Active rules: ${wp.rules.map((r: any) => `${r.rule} [broken→${r.consequence_if_broken}]`).join("; ")}`);
+    }
+    if (wp.factions?.length) {
+      parts.push(`Factions: ${wp.factions.map((f: any) => `${f.name}: ${f.goal} (pressure: ${f.pressure_on_protagonist})`).join("; ")}`);
+    }
+    if (wp.consequence_patterns?.length) {
+      parts.push(`Consequence patterns: ${wp.consequence_patterns.map((c: any) => `${c.trigger}→${c.world_response}`).join("; ")}`);
+    }
+    if (wp.information_access?.length) {
+      parts.push(`Information asymmetry: ${wp.information_access.map((i: any) => `"${i.truth}" known by [${i.who_knows?.join(",")}]`).join("; ")}`);
+    }
+    return parts.join("\n") || (session.sourceWorldPack?.state_summary ?? "(no world context)");
+  }
+
+  private formatHookForSceneBuilder(session: SceneSessionState): string {
+    const hook = session.sourceHookPack?.locked;
+    if (!hook) return "(no hook context)";
+
+    const parts: string[] = [];
+    if (hook.emotional_promise) parts.push(`Emotional promise: ${hook.emotional_promise}`);
+    if (hook.hook_sentence) parts.push(`Hook: ${hook.hook_sentence}`);
+    if (hook.core_engine?.taboo_or_tension) parts.push(`Tension source: ${hook.core_engine.taboo_or_tension}`);
+    return parts.join("\n") || "(no hook context)";
   }
 
   private buildInitialPlanClarifier(planner: ScenePlannerOutput, psychLedger: UserPsychologyLedger): SceneClarifierResponse {

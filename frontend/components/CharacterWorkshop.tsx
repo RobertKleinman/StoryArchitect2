@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { characterApi } from "../lib/characterApi";
 import { PsychologyOverlay } from "./PsychologyOverlay";
 import { ModelSelector } from "./ModelSelector";
@@ -155,6 +155,14 @@ export function CharacterWorkshop() {
   const [recoverySession, setRecoverySession] = useState<any>(null);
   const [recoveryChecked, setRecoveryChecked] = useState(false);
   const [exportBanner, setExportBanner] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  // Banner timeout ref — cleared on unmount to prevent leaks
+  const bannerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (bannerTimeoutRef.current) clearTimeout(bannerTimeoutRef.current);
+    };
+  }, []);
 
   React.useEffect(() => {
     const savedCharId = loadSaved(CHAR_SESSION_KEY);
@@ -496,12 +504,14 @@ export function CharacterWorkshop() {
           loadingMessage: "",
         }));
         setExportBanner({ type: "success", message: "Cast exported successfully!" });
-        setTimeout(() => setExportBanner(null), 4000);
+        if (bannerTimeoutRef.current) clearTimeout(bannerTimeoutRef.current);
+        bannerTimeoutRef.current = setTimeout(() => setExportBanner(null), 4000);
       } catch (err: any) {
         setState((prev) => ({ ...prev, loading: false, loadingMessage: "" }));
         setExportBanner({ type: "error", message: `Export failed: ${err?.message ?? "Unknown error"}` });
-        setTimeout(() => setExportBanner(null), 6000);
-        throw err;
+        if (bannerTimeoutRef.current) clearTimeout(bannerTimeoutRef.current);
+        bannerTimeoutRef.current = setTimeout(() => setExportBanner(null), 6000);
+        // Don't re-throw — runAndTrack would display a duplicate error
       }
     });
   };
