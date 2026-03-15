@@ -1,6 +1,8 @@
 import React, { useMemo, useState } from "react";
 import { characterImageApi } from "../lib/characterImageApi";
+import { emitModuleStatus } from "./App";
 import { PsychologyOverlay } from "./PsychologyOverlay";
+import { EngineInsights } from "./EngineInsights";
 import { ModelSelector } from "./ModelSelector";
 import type {
   CharacterImageAssumptionResponse,
@@ -178,7 +180,9 @@ export function CharacterImageWorkshop() {
 
   const [state, setState] = useState<WorkshopState>(initialState);
   const [showPsych, setShowPsych] = useState(false);
+  const [showInsights, setShowInsights] = useState(false);
   const fetchPsych = useMemo(() => () => characterImageApi.debugPsychology(projectId), [projectId]);
+  const fetchInsights = useMemo(() => () => characterImageApi.debugInsights(projectId), [projectId]);
 
   // ─── Load available character sessions on mount ───
   React.useEffect(() => {
@@ -311,6 +315,7 @@ export function CharacterImageWorkshop() {
         selectedOptionLabel: null,
         freeTextValue: "",
       }));
+      emitModuleStatus("character_image", "active");
     } catch (err: any) {
       setState(s => ({ ...s, loading: false, error: err.message }));
     }
@@ -497,6 +502,7 @@ export function CharacterImageWorkshop() {
     try {
       await characterImageApi.lock(projectId);
       setState(s => ({ ...s, phase: "locked", loading: false }));
+      emitModuleStatus("character_image", "locked");
     } catch (err: any) {
       setState(s => ({ ...s, loading: false, error: err.message }));
     }
@@ -512,6 +518,7 @@ export function CharacterImageWorkshop() {
     setCharIdInput(loadSaved(CHAR_SESSION_KEY) ?? "");
     setCharValidated(false);
     setState(initialState);
+    emitModuleStatus("character_image", "idle");
   };
 
   // ─── Render helpers ───
@@ -568,7 +575,13 @@ export function CharacterImageWorkshop() {
   // ─── Render ───
 
   if (!recoveryChecked) {
-    return <div className="workshop"><p className="loading-text">Loading...</p></div>;
+    return (
+      <div className="workshop">
+        <div className="skeleton-card" />
+        <div className="skeleton-card" />
+        <div className="skeleton-card" />
+      </div>
+    );
   }
 
   return (
@@ -1227,11 +1240,22 @@ export function CharacterImageWorkshop() {
       <button type="button" className="psych-toggle" onClick={() => setShowPsych((v) => !v)}>
         {showPsych ? "Hide" : "Show"} Psychology
       </button>
+      <button type="button" className="insights-toggle" onClick={() => setShowInsights((v) => !v)}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+        Insights
+      </button>
       <PsychologyOverlay
         fetchPsychology={fetchPsych}
         projectId={projectId}
         visible={showPsych}
         onClose={() => setShowPsych(false)}
+      />
+      <EngineInsights
+        module="character_image"
+        projectId={projectId}
+        fetchInsights={fetchInsights}
+        visible={showInsights}
+        onClose={() => setShowInsights(false)}
       />
     </div>
   );

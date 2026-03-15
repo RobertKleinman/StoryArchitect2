@@ -9,6 +9,7 @@ import type {
   ScenePlanClarifyResponse,
   SceneClarifyResponse,
   SceneBuildResponse,
+  SceneGenerateAllResponse,
   SceneFinalJudgeResponse,
   SceneCompleteResponse,
   SceneDebugResponse,
@@ -113,6 +114,16 @@ export const sceneApi = {
       timeoutMs: 360_000, // 6 min — builder + minor judge
     }),
 
+  // ─── Generate All (batch build) ───
+
+  /** Build all scenes sequentially, skipping clarification */
+  generateAll: (projectId: string) =>
+    request<SceneGenerateAllResponse>("/scene/generate-all", {
+      method: "POST",
+      body: JSON.stringify({ projectId }),
+      timeoutMs: 600_000, // 10 min — builds all scenes sequentially
+    }),
+
   // ─── Phase 4: Final Judge ───
 
   /** Run intensive full-work assessment */
@@ -147,6 +158,20 @@ export const sceneApi = {
 
   debugPsychology: (projectId: string) =>
     request<{ psychologyLedger: UserPsychologyLedger | null }>(`/scene/debug/psychology/${projectId}`),
+
+  debugInsights: (projectId: string) =>
+    request<import("../../shared/types/api").EngineInsightsResponse>(`/scene/debug/insights/${projectId}`),
+
+  // ─── Pre-Scene Audit ───
+
+  getAudit: (projectId: string) =>
+    request<import("../../shared/types/api").PreSceneAuditResponse>(`/scene/audit/${projectId}`),
+
+  resolveAudit: (projectId: string, resolvedTargets: string[]) =>
+    request<import("../../shared/types/api").AuditResolveResponse>("/scene/audit/resolve", {
+      method: "POST",
+      body: JSON.stringify({ projectId, resolvedTargets }),
+    }),
 
   // ─── Upstream Discovery ───
 

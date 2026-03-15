@@ -321,7 +321,7 @@ FOR EACH CHARACTER, PRODUCE:
   - expression_baseline: resting expression (for default sprite face)
   - color_palette: 3-5 hex colors or descriptive color names — these drive the whole design
   - visual_vibe: 1-sentence energy of their design ("punk princess who raided a military surplus store")
-- image_generation_prompt: Natural language prompt optimized for anime image generation. Sent to a prompt enhancer that converts to anime art tags. Format: "1girl/1boy, full body, black background, [hair details], [eye details], [outfit from head to toe], [expression], [notable features]". Be HYPER-SPECIFIC about anime-relevant details: exact hair color and style, eye color, every clothing item. Include "full body, standing, black background, simple background" as baseline.
+- image_generation_prompt: Natural language prompt optimized for anime image generation. Sent to a prompt enhancer that converts to anime art tags. Format: Start with the correct tag based on the CHARACTER IDENTITIES presentation field: masculine → '1boy', feminine → '1girl', androgynous → '1person, androgynous'. Then: "full body, black background, [hair details], [eye details], [outfit from head to toe], [expression], [notable features]". Be HYPER-SPECIFIC about anime-relevant details: exact hair color and style, eye color, every clothing item. Include "full body, standing, black background, simple background" as baseline.
 
 ENSEMBLE RULES:
 - Characters must be VISUALLY DISTINCT — different hair, different palettes, different clothing styles, different silhouettes

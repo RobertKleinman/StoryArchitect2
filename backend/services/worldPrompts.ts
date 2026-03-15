@@ -276,7 +276,12 @@ BAD: ["Strict security", "Moderate security", "Loose security", "No security"]
 
 9. missing_signal — What world info is still needed.
 
-10. conflict_flag — Contradictions with earlier choices. Empty string if none.
+10. conflict_flag — If the user's choices create a problem, provide:
+   - A clear description of the conflict (1-2 sentences)
+   - severity: "soft" (informational, uncommon but workable) | "moderate" (should be addressed) | "hard" (will produce incoherent story)
+   - fix_options: Array of 2-3 concrete alternatives, each max 15 words. These should be story pivots, not abstract advice.
+   Example: { description: "Lighthearted comedy clashes with survival-stakes kidnapping", severity: "moderate", fix_options: ["Darken the tone to match the stakes", "Lower the stakes to match the comedy", "Lean into tonal whiplash as a feature"] }
+   If no conflict, use "".
 
 11. assumptions — World assumptions for the user to shape.
 

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { plotFeatureFlagGuard } from "../middleware/plotFeatureFlagGuard";
-import { plotService } from "../services/runtime";
+import { plotService, culturalStore } from "../services/runtime";
 import { PlotServiceError } from "../services/plotService";
 
 export const plotRoutes = Router();
@@ -118,14 +118,14 @@ plotRoutes.post("/generate", async (req, res) => {
 
 plotRoutes.post("/reroll", async (req, res) => {
   const modelOverride = getModelOverride(req.header("X-Model-Override"));
-  const { projectId, promptOverrides } = req.body ?? {};
+  const { projectId, promptOverrides, constraintOverrides } = req.body ?? {};
 
   if (!projectId || typeof projectId !== "string") {
     return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "projectId is required" });
   }
 
   try {
-    const result = await plotService.reroll(projectId, modelOverride, promptOverrides);
+    const result = await plotService.reroll(projectId, modelOverride, promptOverrides, constraintOverrides);
     return res.json(result);
   } catch (err) {
     return handleError(res, err);
@@ -173,6 +173,31 @@ plotRoutes.get("/debug/psychology/:projectId", async (req, res) => {
       return res.json({ psychologyLedger: null });
     }
     return res.json({ psychologyLedger: session.psychologyLedger });
+  } catch (err) {
+    return handleError(res, err);
+  }
+});
+
+/** GET /api/plot/debug/insights/:projectId — unified engine insights panel */
+plotRoutes.get("/debug/insights/:projectId", async (req, res) => {
+  try {
+    const session = await plotService.getSession(req.params.projectId);
+    const psychologyLedger = session?.psychologyLedger ?? null;
+
+    // Cultural brief
+    let culturalBrief = null;
+    try {
+      const turnNumber = session?.turns?.length ?? 0;
+      culturalBrief = await culturalStore.getCachedBrief(req.params.projectId, "plot", turnNumber);
+    } catch {}
+
+    // Divergence map from psychology ledger
+    const divergenceMap = psychologyLedger?.lastDirectionMap ?? null;
+
+    // Development targets from session
+    const developmentTargets = session?.developmentTargets ?? [];
+
+    return res.json({ psychologyLedger, culturalBrief, divergenceMap, developmentTargets });
   } catch (err) {
     return handleError(res, err);
   }

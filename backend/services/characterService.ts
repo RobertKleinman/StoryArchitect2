@@ -62,9 +62,10 @@ import {
   extractDivergenceContext,
   formatDirectionMapForPrompt,
 } from "./divergenceExplorer";
-import { culturalResearchService } from "./runtime";
+import { culturalResearchService, storyBibleService, projectStore as runtimeProjectStore } from "./runtime";
 import { detectDirectedReferences, shouldRunCulturalResearch } from "./culturalResearchService";
 import type { CulturalResearchContext } from "./culturalResearchService";
+import { buildMustHonorBlock, normalizeStringifiedFields } from "./mustHonorBlock";
 
 export class CharacterServiceError extends Error {
   code: "NOT_FOUND" | "INVALID_INPUT" | "LLM_PARSE_ERROR" | "LLM_CALL_FAILED";
@@ -311,6 +312,9 @@ export class CharacterService {
       throw new CharacterServiceError("LLM_PARSE_ERROR", "Failed to parse character clarifier response");
     }
 
+    // Normalize stringified JSON fields (user_read)
+    normalizeStringifiedFields(clarifier as unknown as Record<string, unknown>);
+
     // Record prompt history
     this.recordPromptHistory(
       session, "clarifier", prompt.system, prompt.user,
@@ -534,6 +538,135 @@ export class CharacterService {
     }
   }
 
+  // ─── Character Review (pre-builder review/edit) ───
+
+  async getCharacterReview(projectId: string): Promise<{
+    characters: Array<{
+      roleKey: string;
+      role: string;
+      presentation: string;
+      age_range: string;
+      ethnicity: string;
+      description_summary: string;
+      confirmed_traits: Record<string, string>;
+      inferred_traits: Record<string, string>;
+    }>;
+    ready: boolean;
+  }> {
+    const session = await this.charStore.get(projectId);
+    if (!session) throw new CharacterServiceError("NOT_FOUND", "Character session not found");
+
+    const characters: Array<{
+      roleKey: string;
+      role: string;
+      presentation: string;
+      age_range: string;
+      ethnicity: string;
+      description_summary: string;
+      confirmed_traits: Record<string, string>;
+      inferred_traits: Record<string, string>;
+    }> = [];
+
+    for (const [roleKey, charState] of Object.entries(session.characters ?? {})) {
+      const confirmed: Record<string, string> = {};
+      const inferred: Record<string, string> = {};
+
+      // Extract traits from constraint ledger for this character
+      for (const entry of session.constraintLedger ?? []) {
+        if (entry.key.includes(roleKey)) {
+          if (entry.confidence === "confirmed") {
+            confirmed[entry.key] = entry.value;
+          } else {
+            inferred[entry.key] = entry.value;
+          }
+        }
+      }
+
+      // Derive presentation, age_range, ethnicity from confirmed traits or defaults
+      const presentationEntry = session.constraintLedger?.find(
+        (e) => e.key.includes(roleKey) &&
+               (e.key.includes("presentation") || e.key.includes("gender"))
+      );
+      const ageEntry = session.constraintLedger?.find(
+        (e) => e.key.includes(roleKey) && e.key.includes("age")
+      );
+      const ethnicityEntry = session.constraintLedger?.find(
+        (e) => e.key.includes(roleKey) && e.key.includes("ethnicity")
+      );
+
+      // Build a description summary from available state
+      const descParts: string[] = [];
+      if (charState.want) descParts.push(`Wants: ${charState.want}`);
+      if (charState.misbelief) descParts.push(`Believes: ${charState.misbelief}`);
+      if (charState.stakes) descParts.push(`Stakes: ${charState.stakes}`);
+
+      characters.push({
+        roleKey,
+        role: roleKey,
+        presentation: presentationEntry?.value ?? "unspecified",
+        age_range: ageEntry?.value ?? "",
+        ethnicity: ethnicityEntry?.value ?? "",
+        description_summary: descParts.join(". ") || "(not yet developed)",
+        confirmed_traits: confirmed,
+        inferred_traits: inferred,
+      });
+    }
+
+    // Determine readiness based on the latest clarifier turn
+    const lastTurn = session.turns[session.turns.length - 1];
+    const ready = !!lastTurn?.clarifierResponse?.ready_for_characters;
+
+    return { characters, ready };
+  }
+
+  async applyCharacterReviewEdits(
+    projectId: string,
+    edits: Array<{ roleKey: string; field: string; value: string }>,
+  ): Promise<{ applied: number }> {
+    const session = await this.charStore.get(projectId);
+    if (!session) throw new CharacterServiceError("NOT_FOUND", "Character session not found");
+
+    if (!session.constraintLedger) session.constraintLedger = [];
+
+    let applied = 0;
+    for (const edit of edits) {
+      // Update or add the constraint ledger entry
+      const existingIdx = session.constraintLedger.findIndex(
+        (e) => e.key === `${edit.roleKey}.${edit.field}`,
+      );
+      const entry: CharacterLedgerEntry = {
+        key: `${edit.roleKey}.${edit.field}`,
+        value: edit.value,
+        source: "user_typed",
+        confidence: "confirmed",
+        turnNumber: session.turns.length,
+      };
+
+      if (existingIdx >= 0) {
+        session.constraintLedger[existingIdx] = entry;
+      } else {
+        session.constraintLedger.push(entry);
+      }
+
+      // Also update the character state directly if applicable
+      const charState = session.characters[edit.roleKey];
+      if (charState) {
+        if (edit.field === "presentation" || edit.field === "age_range" || edit.field === "ethnicity" || edit.field === "description") {
+          (charState as Record<string, unknown>)[edit.field] = edit.value;
+        }
+      }
+
+      applied++;
+    }
+
+    // Store the review edits for the builder prompt
+    (session as unknown as Record<string, unknown>).reviewEdits = edits;
+    session.lastSavedAt = new Date().toISOString();
+    await this.charStore.save(session);
+
+    return { applied };
+  }
+
   // ─── Generate (tournament: adaptive multi-candidate + judge) ───
 
   async runGenerate(
@@ -555,6 +688,7 @@ export class CharacterService {
     projectId: string,
     modelOverride?: string,
     promptOverrides?: { builder?: CharacterPromptOverrides; judge?: CharacterPromptOverrides },
+    constraintOverrides?: Record<string, string>,
   ): Promise<CharacterGenerateResponse> {
     const session = await this.charStore.get(projectId);
     if (!session) {
@@ -564,11 +698,49 @@ export class CharacterService {
       throw new CharacterServiceError("INVALID_INPUT", "Must be in revealed status to reroll");
     }
 
+    // Apply constraint overrides to the ledger before re-running the tournament
+    if (constraintOverrides && Object.keys(constraintOverrides).length > 0) {
+      this.applyConstraintOverrides(session, constraintOverrides);
+    }
+
     // Clear revealed state and regenerate
     session.revealedCharacters = undefined;
     session.revealedJudge = undefined;
 
     return this.executeTournament(session, modelOverride, false, promptOverrides);
+  }
+
+  /**
+   * Apply user-provided constraint overrides to the session's constraint ledger.
+   * Existing entries are updated in-place; new keys are appended as confirmed entries.
+   */
+  private applyConstraintOverrides(
+    session: CharacterSessionState,
+    overrides: Record<string, string>,
+  ): void {
+    if (!session.constraintLedger) session.constraintLedger = [];
+    const ledger = session.constraintLedger;
+    const turnNumber = session.turns.length;
+
+    for (const [key, value] of Object.entries(overrides)) {
+      const trimmed = value.trim();
+      if (!trimmed) continue;
+
+      const existingIdx = ledger.findIndex((e) => e.key === key);
+      const entry: CharacterLedgerEntry = {
+        key,
+        value: trimmed,
+        source: "user_freeform",
+        confidence: "confirmed",
+        turnNumber,
+      };
+
+      if (existingIdx >= 0) {
+        ledger[existingIdx] = entry;
+      } else {
+        ledger.push(entry);
+      }
+    }
   }
 
   /**
@@ -592,6 +764,7 @@ export class CharacterService {
       judgeResults: [],
       phase: "builders",
     };
+    session.buildProgress = { attempt: 1, maxAttempts: 3, status: "building" };
     session.lastSavedAt = new Date().toISOString();
     await this.charStore.save(session);
 
@@ -623,6 +796,10 @@ export class CharacterService {
 
     for (let i = 0; i < temperatures.length; i++) {
       const temp = temperatures[i];
+
+      // Update build progress
+      session.buildProgress = { attempt: i + 1, maxAttempts: temperatures.length, status: "building" };
+      await this.charStore.save(session);
 
       // Run builder for this candidate
       let builderRaw = "";
@@ -663,6 +840,9 @@ export class CharacterService {
       session.tournamentProgress!.builderResults.push({ raw: builderRaw, parsed: builderParsed });
 
       // Run judge for this candidate
+      session.buildProgress = { attempt: i + 1, maxAttempts: temperatures.length, status: "judging" };
+      await this.charStore.save(session);
+
       const judgePrompt = this.buildJudgePrompt(builderParsed, session);
       const judgeSystem = promptOverrides?.judge?.system ?? judgePrompt.system;
       const judgeUser = promptOverrides?.judge?.user ?? judgePrompt.user;
@@ -699,6 +879,7 @@ export class CharacterService {
       if (judgeParsed.pass && avgScore >= 8.5) {
         // Elite candidate: exit immediately
         candidates.push({ cast: builderParsed, judge: judgeParsed });
+        session.buildProgress = { attempt: i + 1, maxAttempts: temperatures.length, status: "passed" };
         console.log(`[TOURNAMENT] Character early-exit after ${i + 1} candidate(s), avgScore=${avgScore.toFixed(1)}`);
         session.lastSavedAt = new Date().toISOString();
         await this.charStore.save(session);
@@ -707,6 +888,7 @@ export class CharacterService {
         // Good candidate: continue to check next, then decide
         candidates.push({ cast: builderParsed, judge: judgeParsed });
         if (i === 1) {
+          session.buildProgress = { attempt: i + 1, maxAttempts: temperatures.length, status: "passed" };
           console.log(`[TOURNAMENT] Character early-exit after ${i + 1} candidate(s), avgScore=${avgScore.toFixed(1)}`);
           session.lastSavedAt = new Date().toISOString();
           await this.charStore.save(session);
@@ -714,6 +896,13 @@ export class CharacterService {
         }
       } else {
         candidates.push({ cast: builderParsed, judge: judgeParsed });
+        const failReason = judgeParsed.hard_fail_reasons?.[0] ?? judgeParsed.one_fix_instruction ?? "Quality below threshold";
+        if (i < temperatures.length - 1) {
+          session.buildProgress = { attempt: i + 1, maxAttempts: temperatures.length, status: "failed_retrying", lastFailReason: failReason };
+        } else {
+          session.buildProgress = { attempt: i + 1, maxAttempts: temperatures.length, status: "best_effort", lastFailReason: failReason };
+        }
+        await this.charStore.save(session);
       }
     }
 
@@ -734,6 +923,7 @@ export class CharacterService {
 
     if (candidates.length === 0) {
       session.tournamentProgress = undefined;
+      session.buildProgress = undefined;
       session.status = "clarifying";
       await this.charStore.save(session);
       throw new CharacterServiceError("LLM_PARSE_ERROR", "All character builder candidates failed to parse");
@@ -781,6 +971,7 @@ export class CharacterService {
       session.status = "revealed";
       session.rerollCount = resetRerollCount ? 0 : (session.rerollCount ?? 0) + 1;
       session.tournamentProgress = undefined;
+      session.buildProgress = undefined;
       session.lastSavedAt = new Date().toISOString();
       await this.charStore.save(session);
       return {
@@ -812,6 +1003,7 @@ export class CharacterService {
     session.status = "revealed";
     session.rerollCount = resetRerollCount ? 0 : (session.rerollCount ?? 0) + 1;
     session.tournamentProgress = undefined;  // Clear progress on success
+    session.buildProgress = undefined;       // Clear build progress on completion
     session.lastSavedAt = new Date().toISOString();
 
     await this.charStore.save(session);
@@ -921,6 +1113,9 @@ export class CharacterService {
       lockedCharacters[role] = {
         role: profile.role,
         description: profile.description,
+        presentation: profile.presentation ?? "unspecified",
+        age_range: profile.age_range,
+        ethnicity: profile.ethnicity,
         psychological_profile: {
           ...profile.core_dials,
           ...profile.secondary_dials,
@@ -971,6 +1166,20 @@ export class CharacterService {
     session.status = "locked";
     session.lastSavedAt = new Date().toISOString();
     await this.charStore.save(session);
+
+    // Generate/update story bible (non-fatal — session is already saved)
+    try {
+      const bibleKey = session.hookProjectId;
+      const existingBible = await runtimeProjectStore.getStoryBible(bibleKey);
+      const bible = await storyBibleService.generateBible(
+        bibleKey,
+        characterPack.state_summary ?? "",
+        existingBible ?? undefined,
+      );
+      await runtimeProjectStore.saveStoryBible(bibleKey, bible);
+    } catch (err) {
+      console.error("STORY BIBLE UPDATE ERROR (non-fatal):", err);
+    }
 
     return characterPack;
   }
@@ -1049,11 +1258,22 @@ export class CharacterService {
     dynamic += (probeText ? "\n\n" + probeText : "");
     dynamic += (directionMapText ? "\n\n" + directionMapText : "");
 
+    // ─── Story Bible injection ───
+    const storyBible = await runtimeProjectStore.getStoryBible(session.hookProjectId);
+    dynamic += "\n\n═══ STORY BIBLE (do NOT contradict — these are confirmed canonical facts) ═══\n" +
+      (storyBible || "(not yet available)");
+
     // ─── Cultural Intelligence Engine injection ───
     const culturalBrief = await this.getCulturalBrief(session, currentTurn);
     const culturalText = culturalResearchService.formatBriefForClarifier(culturalBrief);
     if (culturalText) {
       dynamic += "\n\n" + culturalText;
+    }
+
+    // ─── MUST HONOR constraint reinforcement (end of prompt = highest attention) ───
+    const mustHonor = buildMustHonorBlock(session.constraintLedger ?? []);
+    if (mustHonor) {
+      dynamic += "\n\n" + mustHonor;
     }
 
     return {
@@ -1088,16 +1308,34 @@ export class CharacterService {
     // Dynamic suffix — changes (prior turns, psychology signals, constraint ledger)
     const ledgerText = this.formatLedgerForPrompt(session.constraintLedger ?? [], false);
     const signalsText = formatSignalsForBuilderJudge(session.psychologyLedger);
+    // Format review edits if any
+    const reviewEdits = ((session as unknown as Record<string, unknown>).reviewEdits as Array<{ roleKey: string; field: string; value: string }>) ?? [];
+    const reviewEditsText = reviewEdits.length > 0
+      ? reviewEdits.map((e) => `${e.roleKey}.${e.field} = "${e.value}"`).join("\n")
+      : "(no review edits)";
+
     let dynamic = CHARACTER_BUILDER_USER_DYNAMIC
       .replace("{{PRIOR_TURNS}}", this.formatPriorTurns(session.turns))
       .replace("{{PSYCHOLOGY_SIGNALS}}", signalsText)
-      .replace("{{CONSTRAINT_LEDGER}}", ledgerText);
+      .replace("{{CONSTRAINT_LEDGER}}", ledgerText)
+      .replace("{{CHARACTER_REVIEW_EDITS}}", reviewEditsText);
+
+    // ─── Story Bible injection ───
+    const storyBible = await runtimeProjectStore.getStoryBible(session.hookProjectId);
+    dynamic += "\n\n═══ STORY BIBLE (do NOT contradict — these are confirmed canonical facts) ═══\n" +
+      (storyBible || "(not yet available)");
 
     // ─── Cultural Intelligence Engine injection ───
     const culturalBrief = await this.getCulturalBriefForBuilder(session);
     const culturalText = culturalResearchService.formatBriefForBuilder(culturalBrief);
     if (culturalText) {
       dynamic += "\n\n" + culturalText;
+    }
+
+    // ─── MUST HONOR constraint reinforcement (end of prompt = highest attention) ───
+    const mustHonor = buildMustHonorBlock(session.constraintLedger ?? []);
+    if (mustHonor) {
+      dynamic += "\n\n" + mustHonor;
     }
 
     return {

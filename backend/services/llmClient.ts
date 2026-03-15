@@ -35,10 +35,21 @@ export interface CallOptions {
   cacheableUserPrefix?: string;
 }
 
+// ── Token Usage ─────────────────────────────────────────────────────
+
+export interface TokenUsage {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  calls: number;
+}
+
 // ── LLMClient ───────────────────────────────────────────────────────
 
 export class LLMClient {
   private config: ModelConfig;
+  private sessionTokens: TokenUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, calls: 0 };
 
   constructor(config: ModelConfig) {
     this.config = config;
@@ -50,6 +61,11 @@ export class LLMClient {
 
   getConfig(): ModelConfig {
     return { ...this.config };
+  }
+
+  /** Returns accumulated token usage across all LLM calls in this process lifetime. */
+  getTokenUsage(): TokenUsage {
+    return { ...this.sessionTokens };
   }
 
   /**
@@ -95,6 +111,13 @@ export class LLMClient {
           `in=${u.inputTokens} out=${u.outputTokens} cache_read=${u.cacheReadTokens ?? 0} cache_write=${u.cacheWriteTokens ?? 0} | ` +
           `provider=${providerName} model=${model}`,
         );
+
+        // Accumulate token usage
+        this.sessionTokens.input += u.inputTokens ?? 0;
+        this.sessionTokens.output += u.outputTokens ?? 0;
+        this.sessionTokens.cacheRead += u.cacheReadTokens ?? 0;
+        this.sessionTokens.cacheWrite += u.cacheWriteTokens ?? 0;
+        this.sessionTokens.calls++;
 
         // Structured outputs = already valid JSON; otherwise strip fences
         return options?.jsonSchema ? response.text : stripJsonFences(response.text);

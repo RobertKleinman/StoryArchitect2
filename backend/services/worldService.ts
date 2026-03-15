@@ -63,9 +63,10 @@ import {
   extractDivergenceContext,
   formatDirectionMapForPrompt,
 } from "./divergenceExplorer";
-import { culturalResearchService } from "./runtime";
+import { culturalResearchService, storyBibleService, projectStore as runtimeProjectStore } from "./runtime";
 import { detectDirectedReferences, shouldRunCulturalResearch } from "./culturalResearchService";
 import type { CulturalResearchContext } from "./culturalResearchService";
+import { buildMustHonorBlock, normalizeStringifiedFields } from "./mustHonorBlock";
 
 // ─── API response types ───
 
@@ -405,6 +406,9 @@ export class WorldService {
       throw new WorldServiceError("LLM_PARSE_ERROR", "Failed to parse world clarifier output");
     }
 
+    // Normalize stringified JSON fields (user_read)
+    normalizeStringifiedFields(clarifier as unknown as Record<string, unknown>);
+
     // Ensure defaults
     if (!clarifier.missing_signal) clarifier.missing_signal = "";
     if (!clarifier.conflict_flag) clarifier.conflict_flag = "";
@@ -600,6 +604,7 @@ export class WorldService {
     }
 
     session.status = "generating";
+    session.buildProgress = { attempt: 1, maxAttempts: 1, status: "building" };
     await this.worldStore.save(session);
 
     // ─── Builder ───
@@ -643,6 +648,9 @@ export class WorldService {
     }
 
     // ─── Judge ───
+    session.buildProgress = { attempt: 1, maxAttempts: 1, status: "judging" };
+    await this.worldStore.save(session);
+
     const judgePrompt = this.buildJudgePrompt(builderResult, session);
     const judgeSystem = promptOverrides?.judge?.system ?? judgePrompt.system;
     const judgeUser = promptOverrides?.judge?.user ?? judgePrompt.user;
@@ -660,6 +668,7 @@ export class WorldService {
       // Non-fatal: reveal without judge
       session.revealedWorld = builderResult;
       session.status = "revealed";
+      session.buildProgress = undefined;
       session.lastSavedAt = new Date().toISOString();
       await this.worldStore.save(session);
       return { world: builderResult, judge: null };
@@ -707,6 +716,7 @@ export class WorldService {
     session.revealedWorld = builderResult;
     session.revealedJudge = judgeResult ?? undefined;
     session.status = "revealed";
+    session.buildProgress = undefined;
     session.lastSavedAt = new Date().toISOString();
 
     await this.worldStore.save(session);
@@ -731,6 +741,7 @@ export class WorldService {
     projectId: string,
     modelOverride?: string,
     promptOverrides?: { builder?: WorldPromptOverrides; judge?: WorldPromptOverrides },
+    constraintOverrides?: Record<string, string>,
   ): Promise<WorldGenerateResponse> {
     const session = await this.worldStore.get(projectId);
     if (!session) {
@@ -740,10 +751,49 @@ export class WorldService {
       throw new WorldServiceError("INVALID_INPUT", "Must be in revealed status to reroll");
     }
 
+    // Apply constraint overrides to the ledger before re-running the builder/judge
+    if (constraintOverrides && Object.keys(constraintOverrides).length > 0) {
+      this.applyConstraintOverrides(session, constraintOverrides);
+      await this.worldStore.save(session);
+    }
+
     session.revealedWorld = undefined;
     session.revealedJudge = undefined;
 
     return this.runGenerate(projectId, modelOverride, promptOverrides);
+  }
+
+  /**
+   * Apply user-provided constraint overrides to the session's constraint ledger.
+   * Existing entries are updated in-place; new keys are appended as confirmed entries.
+   */
+  private applyConstraintOverrides(
+    session: WorldSessionState,
+    overrides: Record<string, string>,
+  ): void {
+    if (!session.constraintLedger) session.constraintLedger = [];
+    const ledger = session.constraintLedger;
+    const turnNumber = session.turns.length;
+
+    for (const [key, value] of Object.entries(overrides)) {
+      const trimmed = value.trim();
+      if (!trimmed) continue;
+
+      const existingIdx = ledger.findIndex((e) => e.key === key);
+      const entry: WorldLedgerEntry = {
+        key,
+        value: trimmed,
+        source: "user_freeform",
+        confidence: "confirmed",
+        turnNumber,
+      };
+
+      if (existingIdx >= 0) {
+        ledger[existingIdx] = entry;
+      } else {
+        ledger.push(entry);
+      }
+    }
   }
 
   // ─── Lock World ───
@@ -849,6 +899,20 @@ export class WorldService {
     session.lastSavedAt = new Date().toISOString();
     await this.worldStore.save(session);
 
+    // Generate/update story bible (non-fatal — session is already saved)
+    try {
+      const bibleKey = session.hookProjectId;
+      const existingBible = await runtimeProjectStore.getStoryBible(bibleKey);
+      const bible = await storyBibleService.generateBible(
+        bibleKey,
+        worldPack.state_summary ?? "",
+        existingBible ?? undefined,
+      );
+      await runtimeProjectStore.saveStoryBible(bibleKey, bible);
+    } catch (err) {
+      console.error("STORY BIBLE UPDATE ERROR (non-fatal):", err);
+    }
+
     return worldPack;
   }
 
@@ -916,11 +980,22 @@ export class WorldService {
     dynamic += (probeText ? "\n\n" + probeText : "");
     dynamic += (directionMapText ? "\n\n" + directionMapText : "");
 
+    // ─── Story Bible injection ───
+    const storyBible = await runtimeProjectStore.getStoryBible(session.hookProjectId);
+    dynamic += "\n\n═══ STORY BIBLE (do NOT contradict — these are confirmed canonical facts) ═══\n" +
+      (storyBible || "(not yet available)");
+
     // ─── Cultural Intelligence Engine injection ───
     const culturalBrief = await this.getCulturalBrief(session, currentTurn);
     const culturalText = culturalResearchService.formatBriefForClarifier(culturalBrief);
     if (culturalText) {
       dynamic += "\n\n" + culturalText;
+    }
+
+    // ─── MUST HONOR constraint reinforcement (end of prompt = highest attention) ───
+    const mustHonor = buildMustHonorBlock(session.constraintLedger ?? []);
+    if (mustHonor) {
+      dynamic += "\n\n" + mustHonor;
     }
 
     return {
@@ -973,11 +1048,22 @@ export class WorldService {
       .replace("{{PSYCHOLOGY_SIGNALS}}", signalsText)
       .replace("{{CONSTRAINT_LEDGER}}", ledgerText);
 
+    // ─── Story Bible injection ───
+    const storyBible = await runtimeProjectStore.getStoryBible(session.hookProjectId);
+    dynamic += "\n\n═══ STORY BIBLE (do NOT contradict — these are confirmed canonical facts) ═══\n" +
+      (storyBible || "(not yet available)");
+
     // ─── Cultural Intelligence Engine injection ───
     const culturalBrief = await this.getCulturalBriefForBuilder(session);
     const culturalText = culturalResearchService.formatBriefForBuilder(culturalBrief);
     if (culturalText) {
       dynamic += "\n\n" + culturalText;
+    }
+
+    // ─── MUST HONOR constraint reinforcement (end of prompt = highest attention) ───
+    const mustHonor = buildMustHonorBlock(session.constraintLedger ?? []);
+    if (mustHonor) {
+      dynamic += "\n\n" + mustHonor;
     }
 
     return {

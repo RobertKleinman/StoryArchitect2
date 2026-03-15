@@ -62,8 +62,7 @@ export function detectProvider(model: string): LLMProvider {
   if (model.startsWith("gpt-") || model.startsWith("o4-") || model.startsWith("o3-") || model.startsWith("o1-")) return "openai";
   if (model.startsWith("gemini-")) return "gemini";
   if (model.startsWith("grok-")) return "grok";
-  // Default to anthropic for unknown models (backwards compat)
-  return "anthropic";
+  throw new Error(`Unknown model provider for model: "${model}". Supported prefixes: claude-, gpt-, o4-, o3-, o1-, gemini-, grok-`);
 }
 
 // ── Supported models per provider ───────────────────────────────────

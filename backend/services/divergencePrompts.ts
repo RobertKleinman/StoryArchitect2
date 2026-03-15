@@ -102,14 +102,10 @@ export const DIVERGENCE_EXPLORER_SCHEMA = {
                 label: { type: "string" },
                 sketch: { type: "string" },
                 emotionalPayoff: { type: "string" },
-                conflictPattern: {
-                  type: "string",
-                  enum: ["internal", "external", "relational", "institutional", "cosmic"],
-                },
-                powerDynamic: {
-                  type: "string",
-                  enum: ["dominance", "equality", "vulnerability", "reversal", "escalation"],
-                },
+                // Enums removed to keep compiled grammar within Anthropic limits.
+                // The prompt instructions still constrain valid values.
+                conflictPattern: { type: "string" },
+                powerDynamic: { type: "string" },
                 hook: { type: "string" },
               },
               required: ["label", "sketch", "emotionalPayoff", "conflictPattern", "powerDynamic", "hook"],

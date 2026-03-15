@@ -57,6 +57,20 @@ import {
   ReadableScene,
 } from "./scene";
 
+import type { CulturalBrief } from "./cultural";
+import type {
+  UserPsychologyLedger,
+  DirectionMapSnapshot,
+} from "./userPsychology";
+
+/** Build progress for tournament visibility — polled by frontend during generation */
+export interface BuildProgress {
+  attempt: number;
+  maxAttempts: number;
+  status: "building" | "judging" | "passed" | "failed_retrying" | "best_effort";
+  lastFailReason?: string;
+}
+
 /** Standard error shape for all endpoints */
 export interface ApiError {
   error: true;
@@ -274,6 +288,13 @@ export interface SceneBuildResponse {
   totalScenes: number;
 }
 
+/** POST /api/scene/generate-all — batch build all scenes */
+export interface SceneGenerateAllResponse {
+  builtScenes: BuiltScene[];
+  totalScenes: number;
+  skippedJudgeCount: number;
+}
+
 /** POST /api/scene/final-judge */
 export interface SceneFinalJudgeResponse {
   judge: FinalJudgeOutput;
@@ -292,4 +313,55 @@ export interface SceneDebugResponse {
   scenePlan: ScenePlannerOutput["scenes"] | null;
   narrativePreview: NarrativePreview | null;
   rhythmSnapshot: SceneSessionState["rhythmSnapshot"] | null;
+}
+
+// ─── Engine Insights Debug (Issue 4) ───
+
+/** GET /api/:module/debug/:projectId — unified debug/insights panel data */
+export interface EngineInsightsResponse {
+  psychologyLedger: UserPsychologyLedger | null;
+  culturalBrief: CulturalBrief | null;
+  divergenceMap: DirectionMapSnapshot | null;
+  developmentTargets: Array<{
+    id: string;
+    source_module: string;
+    target: string;
+    status: string;
+    addressed_by?: string;
+    notes?: string;
+    best_module_to_address?: string;
+    current_gap?: string;
+    suggestion?: string;
+    quality?: string;
+  }>;
+}
+
+// ─── Pre-Scene Audit (Issue 6) ───
+
+export interface AuditTarget {
+  id: string;
+  source_module: string;
+  target: string;
+  status: string;
+  severity: "critical" | "review" | "minor";
+  notes?: string;
+  current_gap?: string;
+  suggestion?: string;
+}
+
+export interface PreSceneAuditResponse {
+  critical: AuditTarget[];
+  review: AuditTarget[];
+  minor: AuditTarget[];
+  totalCount: number;
+}
+
+export interface AuditResolveRequest {
+  projectId: string;
+  resolvedTargets: string[];
+}
+
+export interface AuditResolveResponse {
+  resolved: string[];
+  remaining: number;
 }

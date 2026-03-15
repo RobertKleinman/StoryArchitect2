@@ -155,6 +155,9 @@ export const characterImageApi = {
   debugPsychology: (projectId: string) =>
     request<{ psychologyLedger: UserPsychologyLedger | null }>(`/character-image/debug/psychology/${projectId}`),
 
+  debugInsights: (projectId: string) =>
+    request<import("../../shared/types/api").EngineInsightsResponse>(`/character-image/debug/insights/${projectId}`),
+
   listCharacterSessions: () =>
     request<{
       sessions: Array<{

@@ -75,10 +75,10 @@ export const plotApi = {
       timeoutMs: 360_000, // 6 min — builder + judge
     }),
 
-  reroll: (projectId: string, promptOverrides?: { builder?: PlotPromptOverrides; judge?: PlotPromptOverrides }) =>
+  reroll: (projectId: string, promptOverrides?: { builder?: PlotPromptOverrides; judge?: PlotPromptOverrides }, constraintOverrides?: Record<string, string>) =>
     request<PlotGenerateResponse>("/plot/reroll", {
       method: "POST",
-      body: JSON.stringify({ projectId, promptOverrides }),
+      body: JSON.stringify({ projectId, promptOverrides, constraintOverrides }),
       timeoutMs: 360_000,
     }),
 
@@ -155,4 +155,7 @@ export const plotApi = {
 
   debugPsychology: (projectId: string) =>
     request<{ psychologyLedger: UserPsychologyLedger | null }>(`/plot/debug/psychology/${projectId}`),
+
+  debugInsights: (projectId: string) =>
+    request<import("../../shared/types/api").EngineInsightsResponse>(`/plot/debug/insights/${projectId}`),
 };

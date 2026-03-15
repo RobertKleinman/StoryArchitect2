@@ -3,75 +3,9 @@
  * Mirrors the TypeScript interfaces in shared/types/plot.ts.
  */
 
-// ─── Shared user_read schema (v4 signal format — reused across all modules) ───
-
-const USER_READ_SCHEMA = {
-  type: "object",
-  properties: {
-    signals: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          hypothesis: { type: "string" },
-          action: { type: "string" },
-          valence: { type: "string", enum: ["supports", "contradicts"] },
-          scope: { type: "string", enum: ["this_story", "this_genre", "global"] },
-          category: { type: "string", enum: ["content_preferences", "control_orientation", "power_dynamics", "tonal_risk", "narrative_ownership", "engagement_satisfaction"] },
-          adaptationConsequence: { type: "string" },
-          contradictionCriteria: { type: "string" },
-          contradictsSignalId: { type: "string" },
-          reinforcesSignalId: { type: "string" },
-        },
-        required: ["hypothesis", "action", "valence", "scope", "category", "adaptationConsequence", "contradictionCriteria"],
-        additionalProperties: false,
-      },
-    },
-    behaviorSummary: {
-      type: "object",
-      properties: {
-        orientation: { type: "string" },
-        currentFocus: { type: "string" },
-        engagementMode: { type: "string", enum: ["exploring", "converging", "stuck", "disengaged"] },
-        satisfaction: {
-          type: "object",
-          properties: {
-            score: { type: "number" },
-            trend: { type: "string", enum: ["rising", "stable", "declining"] },
-            reason: { type: "string" },
-          },
-          required: ["score", "trend", "reason"],
-          additionalProperties: false,
-        },
-      },
-      required: ["orientation", "currentFocus", "engagementMode", "satisfaction"],
-      additionalProperties: false,
-    },
-    adaptationPlan: {
-      type: "object",
-      properties: {
-        dominantNeed: { type: "string" },
-        moves: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              action: { type: "string" },
-              drivenBy: { type: "array", items: { type: "string" } },
-              target: { type: "string", enum: ["question", "options", "assumptions", "builder_tone", "builder_content", "judge_criteria"] },
-            },
-            required: ["action", "drivenBy", "target"],
-            additionalProperties: false,
-          },
-        },
-      },
-      required: ["dominantNeed", "moves"],
-      additionalProperties: false,
-    },
-  },
-  required: ["signals", "behaviorSummary", "adaptationPlan"],
-  additionalProperties: false,
-} as const;
+// user_read collapsed to JSON string to keep compiled grammar within Anthropic limits.
+// Parsed server-side after LLM response. Prompt instructions constrain the structure.
+const USER_READ_SCHEMA = { type: "string" } as const;
 
 // ─── Plot Clarifier Schema ───
 
@@ -94,7 +28,7 @@ export const PLOT_CLARIFIER_SCHEMA = {
       },
     },
     allow_free_text: { type: "boolean" },
-    plot_focus: { anyOf: [{ type: "string" }, { type: "null" }] },
+    plot_focus: { type: "string" },
     ready_for_plot: { type: "boolean" },
     readiness_pct: { type: "number" },
     readiness_note: { type: "string" },
@@ -183,7 +117,7 @@ export const PLOT_BUILDER_SCHEMA = {
       properties: {
         new_normal: { type: "string" },
         emotional_landing: { type: "string" },
-        ending_energy: { type: "string", enum: ["triumphant", "bittersweet", "dark", "ambiguous", "open"] },
+        ending_energy: { type: "string" },
       },
       required: ["new_normal", "emotional_landing", "ending_energy"],
       additionalProperties: false,
@@ -327,11 +261,11 @@ export const PLOT_JUDGE_SCHEMA = {
         type: "object",
         properties: {
           target_id: { type: "string" },
-          status: { type: "string", enum: ["addressed", "partially_addressed", "unaddressed", "deferred"] },
-          quality: { type: "string", enum: ["weak", "partial", "strong"] },
+          status: { type: "string" },
+          quality: { type: "string" },
           current_gap: { type: "string" },
           suggestion: { type: "string" },
-          best_module_to_address: { type: "string", enum: ["character", "character_image", "world", "plot", "scene", "dialogue"] },
+          best_module_to_address: { type: "string" },
           notes: { type: "string" },
         },
         required: ["target_id", "status"],

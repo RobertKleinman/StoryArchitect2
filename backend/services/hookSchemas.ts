@@ -60,77 +60,14 @@ export const HOOK_CLARIFIER_SCHEMA = {
       },
       additionalProperties: false,
     },
-    user_read: {
-      type: "object",
-      properties: {
-        signals: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              hypothesis: { type: "string" },
-              action: { type: "string" },
-              valence: { type: "string", enum: ["supports", "contradicts"] },
-              scope: { type: "string", enum: ["this_story", "this_genre", "global"] },
-              category: { type: "string", enum: ["content_preferences", "control_orientation", "power_dynamics", "tonal_risk", "narrative_ownership", "engagement_satisfaction"] },
-              adaptationConsequence: { type: "string" },
-              contradictionCriteria: { type: "string" },
-              contradictsSignalId: { type: "string" },
-              reinforcesSignalId: { type: "string" },
-            },
-            required: ["hypothesis", "action", "valence", "scope", "category", "adaptationConsequence", "contradictionCriteria"],
-            additionalProperties: false,
-          },
-        },
-        behaviorSummary: {
-          type: "object",
-          properties: {
-            orientation: { type: "string" },
-            currentFocus: { type: "string" },
-            engagementMode: { type: "string", enum: ["exploring", "converging", "stuck", "disengaged"] },
-            satisfaction: {
-              type: "object",
-              properties: {
-                score: { type: "number" },
-                trend: { type: "string", enum: ["rising", "stable", "declining"] },
-                reason: { type: "string" },
-              },
-              required: ["score", "trend", "reason"],
-              additionalProperties: false,
-            },
-          },
-          required: ["orientation", "currentFocus", "engagementMode", "satisfaction"],
-          additionalProperties: false,
-        },
-        adaptationPlan: {
-          type: "object",
-          properties: {
-            dominantNeed: { type: "string" },
-            moves: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  action: { type: "string" },
-                  drivenBy: { type: "array", items: { type: "string" } },
-                  target: { type: "string", enum: ["question", "options", "assumptions", "builder_tone", "builder_content", "judge_criteria"] },
-                },
-                required: ["action", "drivenBy", "target"],
-                additionalProperties: false,
-              },
-            },
-          },
-          required: ["dominantNeed", "moves"],
-          additionalProperties: false,
-        },
-      },
-      required: ["signals", "behaviorSummary", "adaptationPlan"],
-      additionalProperties: false,
-    },
+    // scope_recommendation & user_read collapsed to JSON strings to keep
+    // compiled grammar within Anthropic's size limit. Parsed server-side.
+    scope_recommendation: { type: "string" },
+    user_read: { type: "string" },
   },
   required: [
     "psychology_strategy", "hypothesis_line", "question", "options",
-    "allow_free_text", "ready_for_hook", "readiness_pct", "readiness_note", "missing_signal", "conflict_flag", "assumptions", "state_update", "user_read"
+    "allow_free_text", "ready_for_hook", "readiness_pct", "readiness_note", "missing_signal", "conflict_flag", "assumptions", "state_update", "user_read",
   ],
   additionalProperties: false,
 } as const;

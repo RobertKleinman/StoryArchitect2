@@ -1,6 +1,10 @@
 import React, { useMemo, useState } from "react";
 import { worldApi } from "../lib/worldApi";
+import { startBuildProgressPolling } from "../lib/buildProgressPoller";
+import { emitModuleStatus } from "./App";
 import { PsychologyOverlay } from "./PsychologyOverlay";
+import { EngineInsights } from "./EngineInsights";
+import { PackPreview } from "./PackPreview";
 import { ModelSelector } from "./ModelSelector";
 import type {
   WorldAssumptionResponse,
@@ -8,6 +12,7 @@ import type {
   WorldClarifierOption,
   WorldAssumption,
   WorldJudgeScores,
+  WorldPack,
   DevelopmentTarget,
 } from "../../shared/types/world";
 
@@ -97,6 +102,8 @@ interface CharImageSessionInfo {
   hasExport: boolean;
   artStyle: string;
   characterCount: number;
+  characterNames: string[];
+  hookPremise: string;
 }
 
 interface CharSessionInfo {
@@ -124,6 +131,23 @@ function saveTo(key: string, id: string) {
 }
 function clearSaved(key: string) {
   try { localStorage.removeItem(key); } catch {}
+}
+
+/**
+ * Parse constraint overrides from a simple text format: "key: value" per line.
+ */
+function parseConstraintOverrides(text: string): Record<string, string> | undefined {
+  const overrides: Record<string, string> = {};
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const colonIdx = trimmed.indexOf(":");
+    if (colonIdx <= 0) continue;
+    const key = trimmed.slice(0, colonIdx).trim();
+    const value = trimmed.slice(colonIdx + 1).trim();
+    if (key && value) overrides[key] = value;
+  }
+  return Object.keys(overrides).length > 0 ? overrides : undefined;
 }
 
 export function WorldWorkshop() {
@@ -165,7 +189,13 @@ export function WorldWorkshop() {
 
   const [state, setState] = useState<WorkshopState>(initialState);
   const [showPsych, setShowPsych] = useState(false);
+  const [showInsights, setShowInsights] = useState(false);
   const fetchPsych = useMemo(() => () => worldApi.debugPsychology(projectId), [projectId]);
+  const fetchInsights = useMemo(() => () => worldApi.debugInsights(projectId), [projectId]);
+
+  // Constraint override state for regeneration
+  const [showConstraintOverrides, setShowConstraintOverrides] = useState(false);
+  const [constraintOverridesText, setConstraintOverridesText] = useState("");
 
   // ─── Load available charImage and character sessions on mount ───
   React.useEffect(() => {
@@ -448,6 +478,7 @@ export function WorldWorkshop() {
         selectedOptionLabel: null,
         freeTextValue: "",
       }));
+      emitModuleStatus("world", "active");
     } catch (err: any) {
       setState(s => ({ ...s, loading: false, error: err.message }));
     }
@@ -511,8 +542,14 @@ export function WorldWorkshop() {
 
   const generateWorld = async () => {
     setState(s => ({ ...s, phase: "generating", loading: true, loadingMessage: "Building your world...", error: null }));
+    const stopPolling = startBuildProgressPolling(
+      () => worldApi.getSession(projectId),
+      "world",
+      (msg) => setState(s => ({ ...s, loadingMessage: msg })),
+    );
     try {
       const result = await worldApi.generate(projectId);
+      stopPolling();
       setState(s => ({
         ...s,
         phase: "revealed",
@@ -523,14 +560,22 @@ export function WorldWorkshop() {
         loading: false,
       }));
     } catch (err: any) {
+      stopPolling();
       setState(s => ({ ...s, phase: "clarifying", loading: false, error: err.message }));
     }
   };
 
   const rerollWorld = async () => {
     setState(s => ({ ...s, loading: true, loadingMessage: "Regenerating world...", error: null }));
+    const stopPolling = startBuildProgressPolling(
+      () => worldApi.getSession(projectId),
+      "world",
+      (msg) => setState(s => ({ ...s, loadingMessage: msg })),
+    );
     try {
-      const result = await worldApi.reroll(projectId);
+      const parsedOverrides = parseConstraintOverrides(constraintOverridesText);
+      const result = await worldApi.reroll(projectId, undefined, parsedOverrides);
+      stopPolling();
       setState(s => ({
         ...s,
         revealedWorld: result.world,
@@ -540,6 +585,7 @@ export function WorldWorkshop() {
         loading: false,
       }));
     } catch (err: any) {
+      stopPolling();
       setState(s => ({ ...s, loading: false, error: err.message }));
     }
   };
@@ -549,6 +595,7 @@ export function WorldWorkshop() {
     try {
       await worldApi.lock(projectId);
       setState(s => ({ ...s, phase: "locked", loading: false }));
+      emitModuleStatus("world", "locked");
     } catch (err: any) {
       setState(s => ({ ...s, loading: false, error: err.message }));
     }
@@ -573,6 +620,7 @@ export function WorldWorkshop() {
     setConnectMode("auto");
     setUpstreamValidated(false);
     setState(initialState);
+    emitModuleStatus("world", "idle");
     // Re-fetch sessions
     setSessionsLoading(true);
     Promise.all([
@@ -621,7 +669,13 @@ export function WorldWorkshop() {
   // ─── Render ───
 
   if (!recoveryChecked) {
-    return <div className="workshop"><p className="loading-text">Loading...</p></div>;
+    return (
+      <div className="workshop">
+        <div className="skeleton-card" />
+        <div className="skeleton-card" />
+        <div className="skeleton-card" />
+      </div>
+    );
   }
 
   return (
@@ -689,9 +743,21 @@ export function WorldWorkshop() {
                       </span>
                       <span className="session-cast-count">{s.characterCount} characters</span>
                     </div>
-                    {s.artStyle && (
+                    {s.characterNames.length > 0 && (
                       <div className="session-card-roles">
-                        <span className="role-chip">{s.artStyle}</span>
+                        {s.characterNames.map(name => (
+                          <span key={name} className="role-chip">{name}</span>
+                        ))}
+                      </div>
+                    )}
+                    {s.hookPremise && (
+                      <div className="session-card-premise">
+                        <em>{s.hookPremise}</em>
+                      </div>
+                    )}
+                    {s.artStyle && (
+                      <div className="session-card-style">
+                        <span className="role-chip" style={{ background: "#e0e7ff", color: "#4338ca" }}>{s.artStyle}</span>
                       </div>
                     )}
                     <div className="session-card-meta">
@@ -882,7 +948,7 @@ export function WorldWorkshop() {
           )}
 
           <div className="readiness-bar">
-            <div className="readiness-fill" style={{ width: `${state.readinessPct}%` }} />
+            <div className={`readiness-fill ${state.readinessPct < 30 ? "readiness-low" : state.readinessPct < 60 ? "readiness-mid" : state.readinessPct < 85 ? "readiness-high" : "readiness-ready"}`} style={{ width: `${state.readinessPct}%` }} />
             <span>{state.readinessPct}% — {state.readinessNote || "Shaping the world..."}</span>
           </div>
 
@@ -1286,7 +1352,34 @@ export function WorldWorkshop() {
             <button type="button" className="btn-ghost" onClick={rerollWorld}>
               Regenerate World
             </button>
+            <button
+              type="button"
+              className="btn-ghost"
+              disabled={state.loading}
+              onClick={() => setShowConstraintOverrides((v) => !v)}
+            >
+              {showConstraintOverrides ? "Hide" : "Show"} Constraints
+            </button>
           </div>
+
+          {showConstraintOverrides && (
+            <div className="constraint-overrides">
+              <label htmlFor="world-constraint-overrides">
+                <strong>Constraint Overrides</strong>
+                <span className="hint"> (one per line: key: value)</span>
+              </label>
+              <textarea
+                id="world-constraint-overrides"
+                rows={4}
+                placeholder={"arena.backroom.access: restricted to insiders\nrule.institutional.audit_schedule: weekly\nfaction.corporate.goal: monopoly"}
+                value={constraintOverridesText}
+                onChange={(e) => setConstraintOverridesText(e.target.value)}
+              />
+              <p className="hint">
+                Override or add constraint ledger entries before regenerating. Use scoped keys like: arena.backroom.access, rule.institutional.audit_schedule, faction.corporate.goal.
+              </p>
+            </div>
+          )}
         </div>
       )}
 
@@ -1294,7 +1387,7 @@ export function WorldWorkshop() {
       {state.phase === "locked" && (
         <div className="locked-phase">
           <h3>World Locked!</h3>
-          <p>Your world's arena, rules, factions, and consequences have been saved. These constraints will shape all downstream generation.</p>
+          <p>Your world&apos;s arena, rules, factions, and consequences have been saved. These constraints will shape all downstream generation.</p>
           <button type="button" className="btn-ghost" onClick={resetAll}>Start New Session</button>
         </div>
       )}
@@ -1302,11 +1395,22 @@ export function WorldWorkshop() {
       <button type="button" className="psych-toggle" onClick={() => setShowPsych((v) => !v)}>
         {showPsych ? "Hide" : "Show"} Psychology
       </button>
+      <button type="button" className="insights-toggle" onClick={() => setShowInsights((v) => !v)}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+        Insights
+      </button>
       <PsychologyOverlay
         fetchPsychology={fetchPsych}
         projectId={projectId}
         visible={showPsych}
         onClose={() => setShowPsych(false)}
+      />
+      <EngineInsights
+        module="world"
+        projectId={projectId}
+        fetchInsights={fetchInsights}
+        visible={showInsights}
+        onClose={() => setShowInsights(false)}
       />
     </div>
   );

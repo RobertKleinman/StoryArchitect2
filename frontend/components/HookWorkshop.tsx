@@ -1,7 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { hookApi } from "../lib/hookApi";
+import { startBuildProgressPolling } from "../lib/buildProgressPoller";
+import { emitModuleStatus } from "./App";
 import { PromptEditor } from "./PromptEditor";
 import { PsychologyOverlay } from "./PsychologyOverlay";
+import { EngineInsights } from "./EngineInsights";
+import { PackPreview } from "./PackPreview";
 import { ModelSelector } from "./ModelSelector";
 import type {
   AssumptionResponse,
@@ -9,6 +13,7 @@ import type {
   HookBuilderOutput,
   HookClarifierOption,
   HookJudgeScores,
+  HookPack,
   PromptOverrides,
 } from "../../shared/types/hook";
 
@@ -111,6 +116,24 @@ function clearSavedProjectId() {
   }
 }
 
+/**
+ * Parse constraint overrides from a simple text format: "key: value" per line.
+ * Returns a Record<string, string> or undefined if empty.
+ */
+function parseConstraintOverrides(text: string): Record<string, string> | undefined {
+  const overrides: Record<string, string> = {};
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const colonIdx = trimmed.indexOf(":");
+    if (colonIdx <= 0) continue;
+    const key = trimmed.slice(0, colonIdx).trim();
+    const value = trimmed.slice(colonIdx + 1).trim();
+    if (key && value) overrides[key] = value;
+  }
+  return Object.keys(overrides).length > 0 ? overrides : undefined;
+}
+
 export function HookWorkshop() {
   const [projectId, setProjectId] = useState(() => {
     return loadSavedProjectId() ?? makeProjectId();
@@ -120,7 +143,10 @@ export function HookWorkshop() {
   const [sourcesExpanded, setSourcesExpanded] = useState(false);
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [showPsych, setShowPsych] = useState(false);
+  const [showInsights, setShowInsights] = useState(false);
+  const [lockedPack, setLockedPack] = useState<HookPack | null>(null);
   const fetchPsych = useMemo(() => () => hookApi.debugPsychology(projectId), [projectId]);
+  const fetchInsights = useMemo(() => () => hookApi.debugInsights(projectId), [projectId]);
 
   // Progress interval ref — cleared on unmount to prevent leaks
   const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -138,6 +164,10 @@ export function HookWorkshop() {
   } | null>(null);
   const [promptOverrides, setPromptOverrides] = useState<PromptOverrides | undefined>(undefined);
   const [builderPromptOverrides, setBuilderPromptOverrides] = useState<PromptOverrides | undefined>(undefined);
+
+  // Constraint override state for regeneration
+  const [showConstraintOverrides, setShowConstraintOverrides] = useState(false);
+  const [constraintOverridesText, setConstraintOverridesText] = useState("");
 
   // Crash recovery state
   const [recoverySession, setRecoverySession] = useState<any>(null);
@@ -314,6 +344,7 @@ export function HookWorkshop() {
         loadingMessage: "",
         error: null,
       }));
+      emitModuleStatus("hook", "active");
     });
   };
 
@@ -387,28 +418,20 @@ export function HookWorkshop() {
 
   const generateHook = async () => {
     await runAndTrack(async () => {
-      const progressMessages = [
-        "Dreaming up 3 different hooks\u2026",
-        "Building candidate 1 of 3\u2026",
-        "Building candidate 2 of 3\u2026",
-        "Building candidate 3 of 3\u2026",
-        "Judging which hook is most addictive\u2026",
-        "Almost there \u2014 picking the winner\u2026",
-      ];
-      let step = 0;
-
       setState((prev) => ({
         ...prev,
         phase: "generating",
         loading: true,
-        loadingMessage: progressMessages[0],
+        loadingMessage: "Crafting hook... (candidate 1/3)",
         error: null,
       }));
 
-      progressIntervalRef.current = setInterval(() => {
-        step = Math.min(step + 1, progressMessages.length - 1);
-        setState((prev) => ({ ...prev, loadingMessage: progressMessages[step] }));
-      }, 4000);
+      // Poll build progress from session state
+      const stopPolling = startBuildProgressPolling(
+        () => hookApi.getSession(projectId),
+        "hook",
+        (msg) => setState((prev) => ({ ...prev, loadingMessage: msg })),
+      );
 
       try {
         const tournamentOverrides = builderPromptOverrides
@@ -416,8 +439,7 @@ export function HookWorkshop() {
           : undefined;
         const response = await hookApi.generate(projectId, tournamentOverrides);
 
-        clearInterval(progressIntervalRef.current!);
-        progressIntervalRef.current = null;
+        stopPolling();
         setPromptPreview(null);
         setBuilderPromptOverrides(undefined);
 
@@ -435,8 +457,7 @@ export function HookWorkshop() {
           error: null,
         }));
       } catch (err) {
-        clearInterval(progressIntervalRef.current!);
-        progressIntervalRef.current = null;
+        stopPolling();
         throw err;
       }
     });
@@ -444,37 +465,28 @@ export function HookWorkshop() {
 
   const reroll = async () => {
     await runAndTrack(async () => {
-      const progressMessages = [
-        "Trying a fresh angle\u2026",
-        "Building new candidate 1 of 3\u2026",
-        "Building new candidate 2 of 3\u2026",
-        "Building new candidate 3 of 3\u2026",
-        "Judging the new batch\u2026",
-        "Picking the best one\u2026",
-      ];
-      let step = 0;
-
       setState((prev) => ({
         ...prev,
         phase: "generating",
         loading: true,
-        loadingMessage: progressMessages[0],
+        loadingMessage: "Trying a fresh angle...",
         error: null,
       }));
 
-      progressIntervalRef.current = setInterval(() => {
-        step = Math.min(step + 1, progressMessages.length - 1);
-        setState((prev) => ({ ...prev, loadingMessage: progressMessages[step] }));
-      }, 4000);
+      const stopPolling = startBuildProgressPolling(
+        () => hookApi.getSession(projectId),
+        "hook",
+        (msg) => setState((prev) => ({ ...prev, loadingMessage: msg })),
+      );
 
       try {
         const tournamentOverrides = builderPromptOverrides
           ? { builder: builderPromptOverrides }
           : undefined;
-        const response = await hookApi.reroll(projectId, tournamentOverrides);
+        const parsedOverrides = parseConstraintOverrides(constraintOverridesText);
+        const response = await hookApi.reroll(projectId, tournamentOverrides, parsedOverrides);
 
-        clearInterval(progressIntervalRef.current!);
-        progressIntervalRef.current = null;
+        stopPolling();
         setState((prev) => ({
           ...prev,
           phase: "revealed",
@@ -488,8 +500,7 @@ export function HookWorkshop() {
           loadingMessage: "",
         }));
       } catch (err) {
-        clearInterval(progressIntervalRef.current!);
-        progressIntervalRef.current = null;
+        stopPolling();
         throw err;
       }
     });
@@ -499,6 +510,7 @@ export function HookWorkshop() {
     await runAndTrack(async () => {
       setState((prev) => ({ ...prev, loading: true, loadingMessage: "Locking your hook\u2026", error: null }));
       const pack = await hookApi.lock(projectId, edits);
+      setLockedPack(pack);
 
       setState((prev) => ({
         ...prev,
@@ -517,6 +529,7 @@ export function HookWorkshop() {
         loading: false,
         loadingMessage: "",
       }));
+      emitModuleStatus("hook", "locked");
     });
   };
 
@@ -533,6 +546,7 @@ export function HookWorkshop() {
       setPromptPreview(null);
       setPromptOverrides(undefined);
       setBuilderPromptOverrides(undefined);
+      emitModuleStatus("hook", "idle");
     });
   };
 
@@ -601,8 +615,10 @@ export function HookWorkshop() {
     return (
       <main className="workshop-shell">
         <section className="workshop-card">
-          <div className="loading-state">
-            <p>Loading...</p>
+          <div>
+            <div className="skeleton-card" />
+            <div className="skeleton-card" />
+            <div className="skeleton-card" />
           </div>
         </section>
       </main>
@@ -715,7 +731,7 @@ export function HookWorkshop() {
               <div className="readiness-progress">
                 <div className="readiness-bar">
                   <div
-                    className="readiness-fill"
+                    className={`readiness-fill ${state.readinessPct < 30 ? "readiness-low" : state.readinessPct < 60 ? "readiness-mid" : state.readinessPct < 85 ? "readiness-high" : "readiness-ready"}`}
                     style={{ width: `${Math.min(state.readinessPct, 100)}%` }}
                   />
                 </div>
@@ -994,12 +1010,14 @@ export function HookWorkshop() {
 
         {state.phase === "clarifying" && state.loading && (
           <section className="loading-state">
+            <div className="loading-spinner" />
             <p>\u23F3 {loadingLabel || "Thinking\u2026"}</p>
           </section>
         )}
 
         {state.phase === "generating" && (
           <section className="loading-state">
+            <div className="loading-spinner" />
             <p>\u23F3 {loadingLabel || "Building 3 hook candidates and judging them\u2026"}</p>
           </section>
         )}
@@ -1109,19 +1127,49 @@ export function HookWorkshop() {
                 <button type="button" className="primary" disabled={state.loading} onClick={() => void lock()}>
                   \u2705 Lock it
                 </button>
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  disabled={state.loading}
+                  onClick={() => setShowConstraintOverrides((v) => !v)}
+                >
+                  {showConstraintOverrides ? "Hide" : "Show"} Constraints
+                </button>
+              </div>
+            )}
+
+            {state.phase === "revealed" && showConstraintOverrides && (
+              <div className="constraint-overrides">
+                <label htmlFor="hook-constraint-overrides">
+                  <strong>Constraint Overrides</strong>
+                  <span className="hint"> (one per line: key: value)</span>
+                </label>
+                <textarea
+                  id="hook-constraint-overrides"
+                  rows={4}
+                  placeholder={"setting: deep-space station\ntone: noir\nstakes: survival"}
+                  value={constraintOverridesText}
+                  onChange={(e) => setConstraintOverridesText(e.target.value)}
+                />
+                <p className="hint">
+                  Override or add constraint ledger entries before rerolling. Use keys like: setting, tone, stakes, hook_engine, character_role, antagonist, taboo_or_tension.
+                </p>
               </div>
             )}
 
             {state.phase === "locked" && (
-              <div className="actions-row">
-                <p>\u2705 Hook locked &mdash; ready for character module</p>
-                <button type="button" disabled={state.loading} onClick={() => void exportFullSession()}>
-                  \uD83D\uDCE6 Export full session
-                </button>
-                <button type="button" disabled={state.loading} onClick={() => void startOver()}>
-                  Start over
-                </button>
-              </div>
+              <>
+                {lockedPack && <PackPreview pack={lockedPack} defaultExpanded />}
+                <div className="actions-row">
+                  <p>Hook locked -- ready for character module</p>
+                  <button type="button" disabled={state.loading} onClick={() => void exportFullSession()}>
+                    Export full session
+                  </button>
+                  <button type="button" disabled={state.loading} onClick={() => void startOver()}>
+                    Start over
+                  </button>
+                </div>
+              </>
             )}
           </section>
         )}
@@ -1143,11 +1191,22 @@ export function HookWorkshop() {
       <button type="button" className="psych-toggle" onClick={() => setShowPsych((v) => !v)}>
         {showPsych ? "Hide" : "Show"} Psychology
       </button>
+      <button type="button" className="insights-toggle" onClick={() => setShowInsights((v) => !v)}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+        Insights
+      </button>
       <PsychologyOverlay
         fetchPsychology={fetchPsych}
         projectId={projectId}
         visible={showPsych}
         onClose={() => setShowPsych(false)}
+      />
+      <EngineInsights
+        module="hook"
+        projectId={projectId}
+        fetchInsights={fetchInsights}
+        visible={showInsights}
+        onClose={() => setShowInsights(false)}
       />
     </main>
   );

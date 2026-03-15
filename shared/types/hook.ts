@@ -40,6 +40,7 @@ export interface HookStateUpdate {
   setting_anchor?: string;
   protagonist_role?: string;
   antagonist_form?: string;
+  cast_scale?: "duo" | "triangle" | "small_ensemble" | "large_ensemble";
   tone_chips?: string[];
   bans?: string[];
 }
@@ -57,6 +58,18 @@ export interface HookClarifierResponse {
   conflict_flag: string;
   assumptions: HookAssumption[];
   state_update: HookStateUpdate;
+  scope_recommendation?: {
+    recommended_cast: "duo" | "triangle" | "small_ensemble" | "large_ensemble";
+    recommended_length: "short" | "medium" | "long" | "epic";
+    reasoning: string;
+    experience_note: string;
+    alternative: {
+      cast: string;
+      length: string;
+      reasoning: string;
+      experience_note: string;
+    };
+  } | null;
   /** Structured behavior signals about the user */
   user_read: import("./userPsychology").StructuredUserRead;
 }
@@ -200,6 +213,8 @@ export interface HookSessionState {
   consecutiveHighReadiness?: number;
   /** User psychology ledger — accumulates LLM reads + interaction heuristics */
   psychologyLedger?: import("./userPsychology").UserPsychologyLedger;
+  /** Live build/judge progress — polled by frontend during generation */
+  buildProgress?: import("./api").BuildProgress;
 }
 
 export interface HookTurn {

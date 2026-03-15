@@ -22,7 +22,8 @@ export const CHARACTER_IMAGE_CLARIFIER_SCHEMA = {
       },
     },
     allow_free_text: { type: "boolean" },
-    character_focus: { anyOf: [{ type: "string" }, { type: "null" }] },
+    // character_focus is optional string (no anyOf to avoid grammar bloat)
+    character_focus: { type: "string" },
     ready_for_images: { type: "boolean" },
     readiness_pct: { type: "number" },
     readiness_note: { type: "string" },
@@ -40,80 +41,15 @@ export const CHARACTER_IMAGE_CLARIFIER_SCHEMA = {
           alternatives: {
             type: "array",
             items: { type: "string" },
-
           },
         },
         required: ["id", "characterRole", "category", "assumption", "alternatives"],
         additionalProperties: false,
       },
     },
-    user_read: {
-      type: "object",
-      properties: {
-        signals: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              hypothesis: { type: "string" },
-              action: { type: "string" },
-              valence: { type: "string", enum: ["supports", "contradicts"] },
-              scope: { type: "string", enum: ["this_story", "this_genre", "global"] },
-              category: { type: "string", enum: ["content_preferences", "control_orientation", "power_dynamics", "tonal_risk", "narrative_ownership", "engagement_satisfaction"] },
-              adaptationConsequence: { type: "string" },
-              contradictionCriteria: { type: "string" },
-              contradictsSignalId: { type: "string" },
-              reinforcesSignalId: { type: "string" },
-            },
-            required: ["hypothesis", "action", "valence", "scope", "category", "adaptationConsequence", "contradictionCriteria"],
-            additionalProperties: false,
-          },
-        },
-        behaviorSummary: {
-          type: "object",
-          properties: {
-            orientation: { type: "string" },
-            currentFocus: { type: "string" },
-            engagementMode: { type: "string", enum: ["exploring", "converging", "stuck", "disengaged"] },
-            satisfaction: {
-              type: "object",
-              properties: {
-                score: { type: "number" },
-                trend: { type: "string", enum: ["rising", "stable", "declining"] },
-                reason: { type: "string" },
-              },
-              required: ["score", "trend", "reason"],
-              additionalProperties: false,
-            },
-          },
-          required: ["orientation", "currentFocus", "engagementMode", "satisfaction"],
-          additionalProperties: false,
-        },
-        adaptationPlan: {
-          type: "object",
-          properties: {
-            dominantNeed: { type: "string" },
-            moves: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  action: { type: "string" },
-                  drivenBy: { type: "array", items: { type: "string" } },
-                  target: { type: "string", enum: ["question", "options", "assumptions", "builder_tone", "builder_content", "judge_criteria"] },
-                },
-                required: ["action", "drivenBy", "target"],
-                additionalProperties: false,
-              },
-            },
-          },
-          required: ["dominantNeed", "moves"],
-          additionalProperties: false,
-        },
-      },
-      required: ["signals", "behaviorSummary", "adaptationPlan"],
-      additionalProperties: false,
-    },
+    // user_read collapsed to JSON string to keep compiled grammar within Anthropic limits.
+    // Parsed server-side after LLM response.
+    user_read: { type: "string" },
   },
   required: [
     "psychology_strategy", "hypothesis_line", "question", "options", "allow_free_text",

@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { sceneApi } from "../lib/sceneApi";
+import { emitModuleStatus } from "./App";
 import { PsychologyOverlay } from "./PsychologyOverlay";
+import { EngineInsights } from "./EngineInsights";
 import { ModelSelector } from "./ModelSelector";
 import type {
   SceneClarifierResponse,
@@ -115,7 +117,9 @@ export function SceneWorkshop() {
   useEffect(() => { builtScenesRef.current = state.builtScenes; }, [state.builtScenes]);
   const [showPsych, setShowPsych] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
+  const [showInsights, setShowInsights] = useState(false);
   const fetchPsych = useMemo(() => () => sceneApi.debugPsychology(projectId), [projectId]);
+  const fetchInsights = useMemo(() => () => sceneApi.debugInsights(projectId), [projectId]);
 
   // ─── Recovery check ───
   const [recoveryChecked, setRecoveryChecked] = useState(false);
@@ -241,6 +245,7 @@ export function SceneWorkshop() {
         planTurnNumber: result.turnNumber,
         loading: false,
       }));
+      emitModuleStatus("scene", "active");
     } catch (err: any) {
       setState(s => ({ ...s, loading: false, error: err.message, phase: "connect" }));
     }
@@ -382,6 +387,28 @@ export function SceneWorkshop() {
       }));
     } catch (err: any) {
       setState(s => ({ ...s, loading: false, error: err.message }));
+    }
+  };
+
+  const generateAllScenes = async () => {
+    setState(s => ({
+      ...s,
+      loading: true,
+      loadingMessage: "Generating all scenes...",
+      error: null,
+      phase: "building",
+    }));
+    try {
+      const result = await sceneApi.generateAll(projectId);
+      setState(s => ({
+        ...s,
+        phase: "reviewing",
+        builtScenes: result.builtScenes,
+        totalScenes: result.totalScenes,
+        loading: false,
+      }));
+    } catch (err: any) {
+      setState(s => ({ ...s, loading: false, error: err.message, phase: "plan_confirmed" }));
     }
   };
 
@@ -582,6 +609,7 @@ export function SceneWorkshop() {
     try {
       await sceneApi.complete(projectId);
       setState(s => ({ ...s, phase: "complete", loading: false }));
+      emitModuleStatus("scene", "locked");
     } catch (err: any) {
       setState(s => ({ ...s, loading: false, error: err.message }));
     }
@@ -598,6 +626,7 @@ export function SceneWorkshop() {
     setUpstreamValidated(false);
     setShowManualInput(false);
     setState(initialState);
+    emitModuleStatus("scene", "idle");
   };
 
   // ─── Render helpers ───
@@ -771,6 +800,35 @@ export function SceneWorkshop() {
     );
   };
 
+  const renderScreenplay = (text: string): React.ReactNode => {
+    if (!text) return null;
+
+    const lines = text.split('\n');
+    return lines.map((line, i) => {
+      const trimmed = line.trim();
+      if (!trimmed) return <br key={i} />;
+
+      // ALL CAPS line = character name
+      if (/^[A-Z][A-Z\s\-'\.]+$/.test(trimmed) && trimmed.length < 40) {
+        return <span key={i} className="character-name">{trimmed}</span>;
+      }
+      // Parenthetical (in parentheses at start of line)
+      if (/^\(.*\)$/.test(trimmed)) {
+        return <span key={i} className="parenthetical">{trimmed}</span>;
+      }
+      // Stage direction [in brackets]
+      if (/^\[.*\]$/.test(trimmed)) {
+        return <span key={i} className="stage-direction">{trimmed}</span>;
+      }
+      // Internal monologue (italic markers)
+      if (trimmed.startsWith('*') && trimmed.endsWith('*')) {
+        return <span key={i} className="internal-monologue">{trimmed.slice(1, -1)}</span>;
+      }
+      // Regular dialogue/text
+      return <span key={i} className="dialogue">{trimmed}</span>;
+    });
+  };
+
   const renderBuiltScenes = () => {
     if (state.builtScenes.length === 0) return null;
     return (
@@ -786,10 +844,8 @@ export function SceneWorkshop() {
                 </span>
               )}
             </div>
-            <div className="screenplay-text">
-              {scene.builder_output.readable.screenplay_text.split("\n").map((line, j) => (
-                <p key={j} className={line.startsWith("  ") ? "dialogue-line" : "direction-line"}>{line}</p>
-              ))}
+            <div className="screenplay-container">
+              {renderScreenplay(scene.builder_output.readable.screenplay_text)}
             </div>
             <div className="scene-word-count">
               {scene.builder_output.readable.word_count} words
@@ -840,7 +896,13 @@ export function SceneWorkshop() {
   // ─── Main Render ───
 
   if (!recoveryChecked) {
-    return <div className="workshop"><p className="loading-text">Loading...</p></div>;
+    return (
+      <div className="workshop">
+        <div className="skeleton-card" />
+        <div className="skeleton-card" />
+        <div className="skeleton-card" />
+      </div>
+    );
   }
 
   return (
@@ -963,6 +1025,14 @@ export function SceneWorkshop() {
             >
               Start Scene-by-Scene
             </button>
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={generateAllScenes}
+              disabled={state.loading}
+            >
+              Generate All Scenes
+            </button>
           </div>
         </div>
       )}
@@ -1075,11 +1145,22 @@ export function SceneWorkshop() {
       )}
 
       {/* ═══ Psychology Overlay ═══ */}
+      <button type="button" className="insights-toggle" onClick={() => setShowInsights((v) => !v)}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+        Insights
+      </button>
       <PsychologyOverlay
         fetchPsychology={fetchPsych}
         projectId={projectId}
         visible={showPsych}
         onClose={() => setShowPsych(false)}
+      />
+      <EngineInsights
+        module="scene"
+        projectId={projectId}
+        fetchInsights={fetchInsights}
+        visible={showInsights}
+        onClose={() => setShowInsights(false)}
       />
     </div>
   );

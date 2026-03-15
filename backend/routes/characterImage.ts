@@ -2,7 +2,7 @@ import { Router } from "express";
 import fs from "fs/promises";
 import nodePath from "path";
 import { characterImageFeatureFlagGuard } from "../middleware/characterImageFeatureFlagGuard";
-import { characterImageService, characterImageStore, animeGenClient } from "../services/runtime";
+import { characterImageService, characterImageStore, animeGenClient, culturalStore } from "../services/runtime";
 import { CharacterImageServiceError } from "../services/characterImageService";
 
 export const characterImageRoutes = Router();
@@ -259,6 +259,31 @@ characterImageRoutes.get("/debug/psychology/:projectId", async (req, res) => {
   }
 });
 
+/** GET /api/character-image/debug/insights/:projectId — unified engine insights panel */
+characterImageRoutes.get("/debug/insights/:projectId", async (req, res) => {
+  try {
+    const session = await characterImageService.getSession(req.params.projectId);
+    const psychologyLedger = session?.psychologyLedger ?? null;
+
+    // Cultural brief
+    let culturalBrief = null;
+    try {
+      const turnNumber = session?.turns?.length ?? 0;
+      culturalBrief = await culturalStore.getCachedBrief(req.params.projectId, "character_image", turnNumber);
+    } catch {}
+
+    // Divergence map from psychology ledger
+    const divergenceMap = psychologyLedger?.lastDirectionMap ?? null;
+
+    // CharacterImage module has no formal developmentTargets array
+    const developmentTargets: any[] = [];
+
+    return res.json({ psychologyLedger, culturalBrief, divergenceMap, developmentTargets });
+  } catch (err) {
+    return handleError(res, err);
+  }
+});
+
 /** Get a character-image module export by project ID */
 characterImageRoutes.get("/export-session/:projectId", async (req, res) => {
   try {
@@ -300,6 +325,8 @@ characterImageRoutes.get("/list-sessions", async (_req, res) => {
       hasExport: boolean;
       artStyle: string;
       characterCount: number;
+      characterNames: string[];
+      hookPremise: string;
     }> = [];
 
     for (const file of sessionFiles) {
@@ -317,14 +344,33 @@ characterImageRoutes.get("/list-sessions", async (_req, res) => {
           ? Object.keys(session.revealedSpecs.characters ?? {}).length
           : 0;
 
+        // Extract character names from upstream character pack
+        const characterNames: string[] = [];
+        const charPack = session.sourceCharacterPack;
+        if (charPack?.locked?.characters) {
+          for (const [role, char] of Object.entries(charPack.locked.characters as Record<string, any>)) {
+            characterNames.push(char.role ?? role);
+          }
+        }
+
+        // Extract hook premise from upstream character pack's hook reference or state summary
+        let hookPremise = "";
+        if (charPack?.state_summary) {
+          // Use first sentence of state_summary as a concise preview
+          const firstSentence = charPack.state_summary.split(/[.!?]\s/)[0];
+          hookPremise = firstSentence ? firstSentence.substring(0, 120) : "";
+        }
+
         sessions.push({
           projectId: session.projectId,
           characterProjectId: session.characterProjectId ?? "",
           status: session.status,
           turnCount: session.turns?.length ?? 0,
           hasExport,
-          artStyle: session.artStyle ?? "",
+          artStyle: session.artStylePreference?.style ?? session.artStyle ?? "",
           characterCount: charCount,
+          characterNames,
+          hookPremise,
         });
       } catch { /* skip corrupt files */ }
     }

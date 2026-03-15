@@ -34,6 +34,7 @@ import type {
   SceneStagingState,
   PacingType,
   CompulsionVector,
+  ClarifySceneResult,
 } from "../../shared/types/scene";
 import type { PlotPack, TensionBeat } from "../../shared/types/plot";
 import type { CharacterPack } from "../../shared/types/character";
@@ -85,6 +86,7 @@ import {
 import { culturalResearchService } from "./runtime";
 import { detectDirectedReferences, shouldRunCulturalResearch } from "./culturalResearchService";
 import type { CulturalResearchContext } from "./culturalResearchService";
+import { buildMustHonorBlock, normalizeStringifiedFields } from "./mustHonorBlock";
 
 // ─── Error class ───
 
@@ -152,6 +154,7 @@ export class SceneService {
     const sourceCharacterPack = charExport.characterPack;
     const sourceWorldPack = worldExport?.worldPack ?? null;
     const sourceHookPack = hookExport.hookPack;
+    if (!sourceHookPack) throw new SceneServiceError("NOT_FOUND", "Hook pack not found in export");
 
     // Load character image pack if available
     let sourceCharacterImagePack: any = undefined;
@@ -368,6 +371,12 @@ export class SceneService {
       dynamicSuffix += "\n\n" + planCulturalText;
     }
 
+    // ─── MUST HONOR constraint reinforcement (end of prompt = highest attention) ───
+    const planMustHonor = buildMustHonorBlock(session.constraintLedger ?? []);
+    if (planMustHonor) {
+      dynamicSuffix += "\n\n" + planMustHonor;
+    }
+
     const system = promptOverrides?.system ?? SCENE_PLAN_CLARIFIER_SYSTEM;
     const user = promptOverrides?.user ?? (cacheablePrefix + dynamicSuffix);
 
@@ -392,6 +401,9 @@ export class SceneService {
     if (!clarifier) {
       throw new SceneServiceError("LLM_PARSE_ERROR", "Failed to parse plan clarifier response");
     }
+
+    // Normalize stringified JSON fields (user_read)
+    normalizeStringifiedFields(clarifier as unknown as Record<string, unknown>);
 
     // Check if plan is confirmed (user confirmed or auto-pass confidence is very high)
     const planConfirmed = !clarifier.needs_input && clarifier.auto_pass_confidence >= 0.85;
@@ -433,9 +445,17 @@ export class SceneService {
         ((session.psychologyLedger.signalStore?.length ?? 0) - (session.psychologyLedger.signalCountAtLastConsolidation ?? 0) >= 5);
 
       if (shouldConsolidate) {
-        runConsolidation(session.psychologyLedger, turnNumber, "scene", this.llm).catch(err =>
-          console.error("SCENE PLAN CONSOLIDATION ERROR (non-fatal):", err)
-        );
+        const bgProjId = session.projectId;
+        const ledgerCopy = JSON.parse(JSON.stringify(session.psychologyLedger));
+        runConsolidation(ledgerCopy, turnNumber, "scene", this.llm)
+          .then(async () => {
+            const fresh = await this.sceneStore.get(bgProjId);
+            if (fresh) {
+              fresh.psychologyLedger = ledgerCopy;
+              await this.sceneStore.save(fresh);
+            }
+          })
+          .catch(err => console.error("SCENE PLAN CONSOLIDATION ERROR (non-fatal):", err));
       }
 
       // ─── Cultural Intelligence Engine: background research ───
@@ -475,7 +495,7 @@ export class SceneService {
     assumptionResponses?: Array<{ assumptionId: string; action: string; originalValue: string; newValue: string }>,
     modelOverride?: string,
     promptOverrides?: ScenePromptOverrides,
-  ): Promise<{ clarifier: SceneClarifierResponse; sceneId: string; sceneIndex: number; totalScenes: number; autoPassApplied: boolean; autoBuiltScene?: BuiltScene | null }> {
+  ): Promise<ClarifySceneResult> {
     const session = await this.sceneStore.get(projectId);
     if (!session) throw new SceneServiceError("NOT_FOUND", "Scene session not found");
     if (!session.scenePlanConfirmed || !session.scenePlan) {
@@ -611,6 +631,12 @@ export class SceneService {
       dynamicSuffix += "\n\n" + sceneCulturalText;
     }
 
+    // ─── MUST HONOR constraint reinforcement (end of prompt = highest attention) ───
+    const sceneMustHonor = buildMustHonorBlock(session.constraintLedger ?? []);
+    if (sceneMustHonor) {
+      dynamicSuffix += "\n\n" + sceneMustHonor;
+    }
+
     const system = promptOverrides?.system ?? SCENE_CLARIFIER_SYSTEM;
     const user = promptOverrides?.user ?? (cacheablePrefix + dynamicSuffix);
 
@@ -636,8 +662,12 @@ export class SceneService {
       throw new SceneServiceError("LLM_PARSE_ERROR", "Failed to parse scene clarifier response");
     }
 
-    // Auto-pass requires BOTH: LLM says no input needed AND confidence >= 0.85
-    const AUTO_PASS_THRESHOLD = 0.85;
+    // Normalize stringified JSON fields (user_read)
+    normalizeStringifiedFields(clarifier as unknown as Record<string, unknown>);
+
+    // Auto-pass requires BOTH: LLM says no input needed AND confidence >= threshold
+    // Turning-point scenes require higher confidence; non-turning-point scenes pass more easily
+    const AUTO_PASS_THRESHOLD = scenePlan.turning_point_ref ? 0.85 : 0.70;
     const autoPassApplied = !clarifier.needs_input && clarifier.auto_pass_confidence >= AUTO_PASS_THRESHOLD;
     const turnNumber = session.writingTurns.length + 1;
 
@@ -727,9 +757,17 @@ export class SceneService {
         ((session.psychologyLedger.signalStore?.length ?? 0) - (session.psychologyLedger.signalCountAtLastConsolidation ?? 0) >= 5);
 
       if (shouldConsolidateScene) {
-        runConsolidation(session.psychologyLedger, turnNumber, "scene", this.llm).catch(err =>
-          console.error("SCENE CONSOLIDATION ERROR (non-fatal):", err)
-        );
+        const bgProjId = session.projectId;
+        const ledgerCopy = JSON.parse(JSON.stringify(session.psychologyLedger));
+        runConsolidation(ledgerCopy, turnNumber, "scene", this.llm)
+          .then(async () => {
+            const fresh = await this.sceneStore.get(bgProjId);
+            if (fresh) {
+              fresh.psychologyLedger = ledgerCopy;
+              await this.sceneStore.save(fresh);
+            }
+          })
+          .catch(err => console.error("SCENE CONSOLIDATION ERROR (non-fatal):", err));
       }
 
       // ─── Cultural Intelligence Engine: background research ───
@@ -784,10 +822,12 @@ export class SceneService {
     const sceneIndex = session.currentSceneIndex;
     const canonicalPlan = session.scenePlan![sceneIndex];
 
-    // Enforce: clarifier must be resolved before building
+    // Check staging state — if user explicitly called build, treat as implicit acceptance
     const staging = session.sceneStagingStates?.[canonicalPlan.scene_id];
     if (staging && !staging.resolved) {
-      throw new SceneServiceError("INVALID_INPUT", `Scene "${canonicalPlan.scene_id}" clarifier has not been resolved. Submit or auto-pass the clarifier first.`);
+      // User clicked "Build" without submitting steering — this IS acceptance of defaults
+      staging.resolved = true;
+      console.log(`[SCENE] Implicitly resolving clarifier for scene "${canonicalPlan.scene_id}" — user triggered build directly`);
     }
 
     // Use effective plan (with user steering merged in) if available, else canonical
@@ -997,6 +1037,154 @@ export class SceneService {
   }
 
   // ═══════════════════════════════════════════════════════════════
+  // GENERATE ALL — skip clarification, build all scenes sequentially
+  // ═══════════════════════════════════════════════════════════════
+
+  async generateAllScenes(
+    projectId: string,
+    modelOverride?: string,
+  ): Promise<{ builtScenes: BuiltScene[]; totalScenes: number; skippedJudgeCount: number }> {
+    const session = await this.sceneStore.get(projectId);
+    if (!session) throw new SceneServiceError("NOT_FOUND", "Scene session not found");
+
+    // Phase 0 must be complete — plan must be confirmed
+    if (!session.scenePlanConfirmed || !session.scenePlan) {
+      throw new SceneServiceError("INVALID_INPUT", "Scene plan must be confirmed before generating all scenes. Complete Phase 0 first.");
+    }
+
+    // Allow from plan_confirmed or writing (if partially built)
+    if (session.status !== "plan_confirmed" && session.status !== "writing") {
+      throw new SceneServiceError("INVALID_INPUT", `Cannot generate all scenes in status: ${session.status}. Status must be plan_confirmed or writing.`);
+    }
+
+    session.status = "writing";
+    await this.sceneStore.save(session);
+
+    const totalScenes = session.scenePlan.length;
+    let skippedJudgeCount = 0;
+
+    // Iterate through remaining scenes (supports partial resume)
+    while (session.currentSceneIndex < totalScenes) {
+      const sceneIndex = session.currentSceneIndex;
+      const scenePlan = session.scenePlan[sceneIndex];
+
+      console.log(`[GENERATE ALL] Building scene ${sceneIndex + 1}/${totalScenes}: "${scenePlan.title}"`);
+
+      // Create a staging state with auto-pass (skip clarification entirely)
+      if (!session.sceneStagingStates) session.sceneStagingStates = {};
+      const stagingState: SceneStagingState = {
+        scene_id: scenePlan.scene_id,
+        assumption_overrides: {},
+        effective_plan: { ...scenePlan },
+        resolved: true,
+      };
+      session.sceneStagingStates[scenePlan.scene_id] = stagingState;
+
+      // Record a writing turn for this scene (auto-pass)
+      const turnNumber = session.writingTurns.length + 1;
+      session.writingTurns.push({
+        turnNumber,
+        phase: "scene_clarify",
+        sceneId: scenePlan.scene_id,
+        clarifierResponse: {
+          psychology_strategy: "Generate-all mode — skipping clarification",
+          scene_summary: scenePlan.purpose,
+          needs_input: false,
+          allow_free_text: false,
+          auto_pass_confidence: 1.0,
+          user_read: {
+            signals: [],
+            behaviorSummary: {
+              orientation: "Generate-all batch mode",
+              currentFocus: scenePlan.title,
+              engagementMode: "converging",
+              satisfaction: { score: 0.8, trend: "stable", reason: "Batch generation" },
+            },
+            adaptationPlan: {
+              dominantNeed: "Fast batch generation",
+              moves: [],
+            },
+          },
+        },
+        userSelection: { type: "auto_pass", label: "(generate-all)" },
+      });
+
+      // Compute rhythm snapshot for variety tracking
+      session.rhythmSnapshot = this.computeRhythmSnapshot(session);
+
+      // Save before building (in case of crash, we can resume)
+      session.lastSavedAt = new Date().toISOString();
+      await this.sceneStore.save(session);
+
+      // Build the scene using the effective plan
+      const rhythmSnapshot = session.rhythmSnapshot;
+      const builderOutput = await this.runBuilder(session, scenePlan, rhythmSnapshot, modelOverride);
+
+      // Skip minor judge for non-turning-point scenes
+      let minorJudge: SceneMinorJudgeOutput | null = null;
+      const isTurningPoint = !!scenePlan.turning_point_ref;
+      const isLastScene = sceneIndex === totalScenes - 1;
+
+      if (isTurningPoint || isLastScene) {
+        try {
+          minorJudge = await this.runMinorJudge(session, scenePlan, builderOutput, sceneIndex, modelOverride);
+        } catch (err) {
+          console.error(`[GENERATE ALL] Minor judge failed for scene ${scenePlan.scene_id} (non-fatal):`, err);
+        }
+      } else {
+        skippedJudgeCount++;
+        console.log(`[GENERATE ALL] Skipping minor judge for scene ${scenePlan.scene_id} (no turning_point_ref)`);
+      }
+
+      // Check retroactive consistency
+      const retroactiveFlags: BuiltScene["retroactive_flags"] = [];
+      if (sceneIndex > 0 && minorJudge?.consistency?.issues) {
+        for (const issue of minorJudge.consistency.issues) {
+          if (issue.affects_scene && issue.affects_scene !== scenePlan.scene_id) {
+            retroactiveFlags.push({
+              affects_scene_id: issue.affects_scene,
+              issue: issue.description,
+              severity: issue.severity,
+            });
+          }
+        }
+      }
+
+      const builtScene: BuiltScene = {
+        scene_id: scenePlan.scene_id,
+        plan: scenePlan,
+        builder_output: builderOutput,
+        minor_judge: minorJudge,
+        consistency_check: minorJudge?.consistency ?? null,
+        retroactive_flags: retroactiveFlags,
+        built_at: new Date().toISOString(),
+      };
+
+      session.builtScenes.push(builtScene);
+      session.currentSceneIndex++;
+
+      // Save after each scene (progress tracking + crash recovery)
+      session.lastSavedAt = new Date().toISOString();
+      await this.sceneStore.save(session);
+
+      console.log(`[GENERATE ALL] Scene ${sceneIndex + 1}/${totalScenes} built successfully`);
+    }
+
+    // All scenes built — transition to reviewing
+    session.status = "reviewing";
+    session.lastSavedAt = new Date().toISOString();
+    await this.sceneStore.save(session);
+
+    console.log(`[GENERATE ALL] Complete: ${totalScenes} scenes built, ${skippedJudgeCount} judges skipped`);
+
+    return {
+      builtScenes: session.builtScenes,
+      totalScenes,
+      skippedJudgeCount,
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════════
   // Session Management
   // ═══════════════════════════════════════════════════════════════
 
@@ -1133,6 +1321,12 @@ export class SceneService {
     const builderCulturalText = culturalResearchService.formatBriefForBuilder(builderCulturalBrief);
     if (builderCulturalText) {
       dynamicSuffix += "\n\n" + builderCulturalText;
+    }
+
+    // ─── MUST HONOR constraint reinforcement (end of prompt = highest attention) ───
+    const builderMustHonor = buildMustHonorBlock(session.constraintLedger ?? []);
+    if (builderMustHonor) {
+      dynamicSuffix += "\n\n" + builderMustHonor;
     }
 
     const system = promptOverrides?.system ?? SCENE_BUILDER_SYSTEM;

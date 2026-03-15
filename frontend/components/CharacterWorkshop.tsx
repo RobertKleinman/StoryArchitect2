@@ -1,6 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { characterApi } from "../lib/characterApi";
+import { startBuildProgressPolling } from "../lib/buildProgressPoller";
+import { emitModuleStatus } from "./App";
 import { PsychologyOverlay } from "./PsychologyOverlay";
+import { EngineInsights } from "./EngineInsights";
+import { PackPreview } from "./PackPreview";
 import { ModelSelector } from "./ModelSelector";
 import type {
   CharacterAssumptionResponse,
@@ -8,11 +12,12 @@ import type {
   CharacterClarifierOption,
   CharacterAssumption,
   CharacterJudgeScores,
+  CharacterPack,
   CharacterRelationshipUpdate,
   CharacterSurfaced,
 } from "../../shared/types/character";
 
-type Phase = "connect" | "start" | "seeding" | "clarifying" | "generating" | "revealed" | "locked";
+type Phase = "connect" | "start" | "seeding" | "clarifying" | "reviewing" | "generating" | "revealed" | "locked";
 
 interface CharacterWorkshopState {
   phase: Phase;
@@ -45,6 +50,17 @@ interface CharacterWorkshopState {
   selectedOptionId: string | null;
   selectedOptionLabel: string | null;
   characterSeedValue: string;
+  reviewCharacters: Array<{
+    roleKey: string;
+    role: string;
+    presentation: string;
+    age_range: string;
+    ethnicity: string;
+    description_summary: string;
+    confirmed_traits: Record<string, string>;
+    inferred_traits: Record<string, string>;
+  }>;
+  reviewEdits: Record<string, Record<string, string>>;
 }
 
 const initialState: CharacterWorkshopState = {
@@ -72,6 +88,8 @@ const initialState: CharacterWorkshopState = {
   selectedOptionId: null,
   selectedOptionLabel: null,
   characterSeedValue: "",
+  reviewCharacters: [],
+  reviewEdits: {},
 };
 
 const CHAR_SESSION_KEY = "characterWorkshop_projectId";
@@ -95,6 +113,23 @@ function clearSaved(key: string) {
   try { localStorage.removeItem(key); } catch {}
 }
 
+/**
+ * Parse constraint overrides from a simple text format: "key: value" per line.
+ */
+function parseConstraintOverrides(text: string): Record<string, string> | undefined {
+  const overrides: Record<string, string> = {};
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const colonIdx = trimmed.indexOf(":");
+    if (colonIdx <= 0) continue;
+    const key = trimmed.slice(0, colonIdx).trim();
+    const value = trimmed.slice(colonIdx + 1).trim();
+    if (key && value) overrides[key] = value;
+  }
+  return Object.keys(overrides).length > 0 ? overrides : undefined;
+}
+
 export function CharacterWorkshop() {
   const [projectId, setProjectId] = useState(() => {
     return loadSaved(CHAR_SESSION_KEY) ?? makeProjectId();
@@ -110,7 +145,10 @@ export function CharacterWorkshop() {
   const [hookValidated, setHookValidated] = useState(false);
   const [hookPreview, setHookPreview] = useState<{ seedInput: string; premise: string } | null>(null);
   const [showPsych, setShowPsych] = useState(false);
+  const [showInsights, setShowInsights] = useState(false);
+  const [lockedPack, setLockedPack] = useState<CharacterPack | null>(null);
   const fetchPsych = useMemo(() => () => characterApi.debugPsychology(projectId), [projectId]);
+  const fetchInsights = useMemo(() => () => characterApi.debugInsights(projectId), [projectId]);
 
   // Available hook sessions for the connect phase
   interface HookSessionInfo {
@@ -131,6 +169,10 @@ export function CharacterWorkshop() {
   const [state, setState] = useState<CharacterWorkshopState>(initialState);
   const [lastAction, setLastAction] = useState<null | (() => Promise<void>)>(null);
   const [sourcesExpanded, setSourcesExpanded] = useState(false);
+
+  // Constraint override state for regeneration
+  const [showConstraintOverrides, setShowConstraintOverrides] = useState(false);
+  const [constraintOverridesText, setConstraintOverridesText] = useState("");
 
   // Load hook sessions on mount
   React.useEffect(() => {
@@ -369,6 +411,7 @@ export function CharacterWorkshop() {
         loadingMessage: "",
         error: null,
       }));
+      emitModuleStatus("character", "active");
     });
   };
 
@@ -422,36 +465,77 @@ export function CharacterWorkshop() {
     });
   };
 
+  // ─── Review (pre-builder review/edit) ───
+
+  const startReview = async () => {
+    await runAndTrack(async () => {
+      setState((prev) => ({ ...prev, loading: true, loadingMessage: "Loading character review..." }));
+      try {
+        const review = await characterApi.getReview(projectId);
+        setState((prev) => ({
+          ...prev,
+          phase: "reviewing",
+          reviewCharacters: review.characters,
+          reviewEdits: {},
+          loading: false,
+          loadingMessage: "",
+        }));
+      } catch {
+        // If review endpoint fails, fall through to generate directly
+        await actuallyGenerate();
+      }
+    });
+  };
+
+  const submitReviewEdits = async () => {
+    // Collect all edits into array format
+    const edits: Array<{ roleKey: string; field: string; value: string }> = [];
+    for (const [roleKey, fields] of Object.entries(state.reviewEdits)) {
+      for (const [field, value] of Object.entries(fields)) {
+        edits.push({ roleKey, field, value });
+      }
+    }
+    if (edits.length > 0) {
+      await characterApi.applyReviewEdits(projectId, edits);
+    }
+    await actuallyGenerate();
+  };
+
+  const updateReviewField = (roleKey: string, field: string, value: string) => {
+    setState((prev) => ({
+      ...prev,
+      reviewEdits: {
+        ...prev.reviewEdits,
+        [roleKey]: { ...(prev.reviewEdits[roleKey] ?? {}), [field]: value },
+      },
+    }));
+  };
+
   // ─── Generate ───
 
   const generateCharacters = async () => {
-    await runAndTrack(async () => {
-      const progressMessages = [
-        "Building your cast from the creative brief...",
-        "Crafting psychological profiles...",
-        "Weaving relationship dynamics...",
-        "Quality checking the ensemble...",
-        "Polishing descriptions...",
-        "Almost there...",
-      ];
-      let step = 0;
+    await startReview();
+  };
 
+  const actuallyGenerate = async () => {
+    await runAndTrack(async () => {
       setState((prev) => ({
         ...prev,
         phase: "generating",
         loading: true,
-        loadingMessage: progressMessages[0],
+        loadingMessage: "Building your cast from the creative brief...",
         error: null,
       }));
 
-      const progressInterval = setInterval(() => {
-        step = Math.min(step + 1, progressMessages.length - 1);
-        setState((prev) => ({ ...prev, loadingMessage: progressMessages[step] }));
-      }, 5000);
+      const stopPolling = startBuildProgressPolling(
+        () => characterApi.getSession(projectId),
+        "cast",
+        (msg) => setState((prev) => ({ ...prev, loadingMessage: msg })),
+      );
 
       try {
         const response = await characterApi.generate(projectId);
-        clearInterval(progressInterval);
+        stopPolling();
 
         setState((prev) => ({
           ...prev,
@@ -463,7 +547,7 @@ export function CharacterWorkshop() {
           error: null,
         }));
       } catch (err) {
-        clearInterval(progressInterval);
+        stopPolling();
         throw err;
       }
     });
@@ -479,16 +563,29 @@ export function CharacterWorkshop() {
         error: null,
       }));
 
-      const response = await characterApi.reroll(projectId);
+      const stopPolling = startBuildProgressPolling(
+        () => characterApi.getSession(projectId),
+        "cast",
+        (msg) => setState((prev) => ({ ...prev, loadingMessage: msg })),
+      );
 
-      setState((prev) => ({
-        ...prev,
-        phase: "revealed",
-        revealedCharacters: response.characters,
-        judgeInfo: response.judge,
-        loading: false,
-        loadingMessage: "",
-      }));
+      try {
+        const parsedOverrides = parseConstraintOverrides(constraintOverridesText);
+        const response = await characterApi.reroll(projectId, undefined, parsedOverrides);
+        stopPolling();
+
+        setState((prev) => ({
+          ...prev,
+          phase: "revealed",
+          revealedCharacters: response.characters,
+          judgeInfo: response.judge,
+          loading: false,
+          loadingMessage: "",
+        }));
+      } catch (err) {
+        stopPolling();
+        throw err;
+      }
     });
   };
 
@@ -496,13 +593,15 @@ export function CharacterWorkshop() {
     await runAndTrack(async () => {
       setState((prev) => ({ ...prev, loading: true, loadingMessage: "Locking your cast...", error: null }));
       try {
-        await characterApi.lock(projectId);
+        const pack = await characterApi.lock(projectId);
+        setLockedPack(pack);
         setState((prev) => ({
           ...prev,
           phase: "locked",
           loading: false,
           loadingMessage: "",
         }));
+        emitModuleStatus("character", "locked");
         setExportBanner({ type: "success", message: "Cast exported successfully!" });
         if (bannerTimeoutRef.current) clearTimeout(bannerTimeoutRef.current);
         bannerTimeoutRef.current = setTimeout(() => setExportBanner(null), 4000);
@@ -525,6 +624,7 @@ export function CharacterWorkshop() {
       const newId = makeProjectId();
       setProjectId(newId);
       setState({ ...initialState, phase: "start" });
+      emitModuleStatus("character", "idle");
     });
   };
 
@@ -536,7 +636,11 @@ export function CharacterWorkshop() {
     return (
       <main className="workshop-shell">
         <section className="workshop-card">
-          <div className="loading-state"><p>Loading...</p></div>
+          <div>
+            <div className="skeleton-card" />
+            <div className="skeleton-card" />
+            <div className="skeleton-card" />
+          </div>
         </section>
       </main>
     );
@@ -763,6 +867,7 @@ export function CharacterWorkshop() {
 
         {state.phase === "seeding" && state.loading && (
           <section className="loading-state">
+            <div className="loading-spinner" />
             <p>{state.loadingMessage || "Reading your hook and preparing cast questions..."}</p>
           </section>
         )}
@@ -773,7 +878,7 @@ export function CharacterWorkshop() {
             {state.readinessPct > 0 && (
               <div className="readiness-progress">
                 <div className="readiness-bar">
-                  <div className="readiness-fill" style={{ width: `${Math.min(state.readinessPct, 100)}%` }} />
+                  <div className={`readiness-fill ${state.readinessPct < 30 ? "readiness-low" : state.readinessPct < 60 ? "readiness-mid" : state.readinessPct < 85 ? "readiness-high" : "readiness-ready"}`} style={{ width: `${Math.min(state.readinessPct, 100)}%` }} />
                 </div>
                 <span className="readiness-label">
                   {state.readinessPct < 30 ? "Meeting the cast" : state.readinessPct < 60 ? "Characters forming" : state.readinessPct < 85 ? "Almost there" : "Ready!"} ({state.readinessPct}%)
@@ -983,12 +1088,108 @@ export function CharacterWorkshop() {
 
         {state.phase === "clarifying" && state.loading && (
           <section className="loading-state">
+            <div className="loading-spinner" />
             <p>{state.loadingMessage || "Thinking..."}</p>
+          </section>
+        )}
+
+        {/* ─── Review Phase ─── */}
+        {state.phase === "reviewing" && !state.loading && (
+          <section>
+            <article className="hook-output-card">
+              <h3>Meet Your Cast — Any Last Tweaks?</h3>
+              <p style={{ color: "#888", marginBottom: "1rem" }}>
+                Here's who I think your characters are. You can adjust presentation, age, ethnicity, or anything else before I build them out.
+              </p>
+
+              {state.reviewCharacters.map((char) => {
+                const edits = state.reviewEdits[char.roleKey] ?? {};
+                return (
+                  <div key={char.roleKey} style={{ border: "1px solid #333", borderRadius: "8px", padding: "1rem", marginBottom: "1rem" }}>
+                    <h4 style={{ textTransform: "capitalize", marginBottom: "0.5rem" }}>{char.roleKey.replace(/_/g, " ")}</h4>
+                    {char.description_summary && <p style={{ color: "#aaa", fontSize: "0.9rem", marginBottom: "0.75rem" }}>{char.description_summary}</p>}
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.5rem" }}>
+                      <label style={{ fontSize: "0.85rem" }}>
+                        Presentation
+                        <select
+                          value={edits.presentation ?? char.presentation}
+                          onChange={(e) => updateReviewField(char.roleKey, "presentation", e.target.value)}
+                          style={{ width: "100%", padding: "4px", marginTop: "2px" }}
+                        >
+                          <option value="masculine">Masculine</option>
+                          <option value="feminine">Feminine</option>
+                          <option value="androgynous">Androgynous</option>
+                          <option value="unspecified">Not specified</option>
+                        </select>
+                      </label>
+
+                      <label style={{ fontSize: "0.85rem" }}>
+                        Age Range
+                        <select
+                          value={edits.age_range ?? (char.age_range || "")}
+                          onChange={(e) => updateReviewField(char.roleKey, "age_range", e.target.value)}
+                          style={{ width: "100%", padding: "4px", marginTop: "2px" }}
+                        >
+                          <option value="">Unspecified</option>
+                          <option value="child">Child</option>
+                          <option value="teen">Teen</option>
+                          <option value="young_adult">Young Adult</option>
+                          <option value="adult">Adult</option>
+                          <option value="middle_aged">Middle Aged</option>
+                          <option value="elderly">Elderly</option>
+                        </select>
+                      </label>
+
+                      <label style={{ fontSize: "0.85rem" }}>
+                        Ethnicity
+                        <input
+                          type="text"
+                          placeholder="e.g. Japanese, Nigerian..."
+                          value={edits.ethnicity ?? char.ethnicity}
+                          onChange={(e) => updateReviewField(char.roleKey, "ethnicity", e.target.value)}
+                          style={{ width: "100%", padding: "4px", marginTop: "2px" }}
+                        />
+                      </label>
+                    </div>
+
+                    {Object.keys(char.confirmed_traits).length > 0 && (
+                      <details style={{ marginTop: "0.5rem", fontSize: "0.8rem", color: "#888" }}>
+                        <summary>Confirmed traits ({Object.keys(char.confirmed_traits).length})</summary>
+                        <ul style={{ margin: "0.25rem 0", paddingLeft: "1.5rem" }}>
+                          {Object.entries(char.confirmed_traits).map(([k, v]) => (
+                            <li key={k}>{k}: {v}</li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+                  </div>
+                );
+              })}
+
+              <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
+                <button
+                  type="button"
+                  className="primary full"
+                  onClick={() => void submitReviewEdits()}
+                >
+                  Looks great, build!
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => setState((prev) => ({ ...prev, phase: "clarifying" }))}
+                >
+                  Back to clarifier
+                </button>
+              </div>
+            </article>
           </section>
         )}
 
         {state.phase === "generating" && (
           <section className="loading-state">
+            <div className="loading-spinner" />
             <p>{state.loadingMessage || "Building your cast..."}</p>
           </section>
         )}
@@ -1093,17 +1294,47 @@ export function CharacterWorkshop() {
                 <button type="button" disabled={state.loading} onClick={() => void reroll()}>
                   {state.loading ? "Working..." : "Reroll cast"}
                 </button>
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  disabled={state.loading}
+                  onClick={() => setShowConstraintOverrides((v) => !v)}
+                >
+                  {showConstraintOverrides ? "Hide" : "Show"} Constraints
+                </button>
                 <button type="button" className="primary" disabled={state.loading} onClick={() => void lockCharacters()}>
                   Lock the cast
                 </button>
               </div>
             )}
 
-            {state.phase === "locked" && (
-              <div className="actions-row">
-                <p>Cast locked &mdash; ready for visual design module</p>
-                <button type="button" disabled={state.loading} onClick={() => void startOver()}>Start over</button>
+            {state.phase === "revealed" && showConstraintOverrides && (
+              <div className="constraint-overrides">
+                <label htmlFor="char-constraint-overrides">
+                  <strong>Constraint Overrides</strong>
+                  <span className="hint"> (one per line: key: value)</span>
+                </label>
+                <textarea
+                  id="char-constraint-overrides"
+                  rows={4}
+                  placeholder={"protagonist.want: revenge\nantagonist.moral_logic: ends justify means\nrelationship.protagonist_antagonist: former allies"}
+                  value={constraintOverridesText}
+                  onChange={(e) => setConstraintOverridesText(e.target.value)}
+                />
+                <p className="hint">
+                  Override or add constraint ledger entries before rerolling. Use scoped keys like: protagonist.want, antagonist.moral_logic, relationship.protagonist_antagonist.
+                </p>
               </div>
+            )}
+
+            {state.phase === "locked" && (
+              <>
+                {lockedPack && <PackPreview pack={lockedPack} defaultExpanded />}
+                <div className="actions-row">
+                  <p>Cast locked -- ready for visual design module</p>
+                  <button type="button" disabled={state.loading} onClick={() => void startOver()}>Start over</button>
+                </div>
+              </>
             )}
           </section>
         )}
@@ -1112,11 +1343,22 @@ export function CharacterWorkshop() {
       <button type="button" className="psych-toggle" onClick={() => setShowPsych((v) => !v)}>
         {showPsych ? "Hide" : "Show"} Psychology
       </button>
+      <button type="button" className="insights-toggle" onClick={() => setShowInsights((v) => !v)}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+        Insights
+      </button>
       <PsychologyOverlay
         fetchPsychology={fetchPsych}
         projectId={projectId}
         visible={showPsych}
         onClose={() => setShowPsych(false)}
+      />
+      <EngineInsights
+        module="character"
+        projectId={projectId}
+        fetchInsights={fetchInsights}
+        visible={showInsights}
+        onClose={() => setShowInsights(false)}
       />
     </main>
   );

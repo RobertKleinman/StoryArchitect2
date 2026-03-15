@@ -84,10 +84,10 @@ export const hookApi = {
       timeoutMs: 360_000, // 6 min — tournament runs parallel builders + judges + polish
     }),
 
-  reroll: (projectId: string, promptOverrides?: { builder?: PromptOverrides; judge?: PromptOverrides }) =>
+  reroll: (projectId: string, promptOverrides?: { builder?: PromptOverrides; judge?: PromptOverrides }, constraintOverrides?: Record<string, string>) =>
     request<GenerateResponse>("/hook/reroll", {
       method: "POST",
-      body: JSON.stringify({ projectId, promptOverrides }),
+      body: JSON.stringify({ projectId, promptOverrides, constraintOverrides }),
       timeoutMs: 360_000,
     }),
 
@@ -111,6 +111,9 @@ export const hookApi = {
 
   debugPsychology: (projectId: string) =>
     request<{ psychologyLedger: UserPsychologyLedger | null }>(`/hook/debug/psychology/${projectId}`),
+
+  debugInsights: (projectId: string) =>
+    request<import("../../shared/types/api").EngineInsightsResponse>(`/hook/debug/insights/${projectId}`),
 
   getModels: () => request<ModelConfig>("/models"),
 

@@ -397,6 +397,8 @@ export interface PlotSessionState {
   promptHistory?: PlotPromptHistoryEntry[];
   tournamentProgress?: PlotTournamentProgress;
   lastSavedAt?: string;
+  /** Live build/judge progress — polled by frontend during generation */
+  buildProgress?: import("./api").BuildProgress;
 }
 
 // ─── Plot Pack (module handoff to downstream) ───

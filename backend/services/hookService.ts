@@ -58,9 +58,10 @@ import {
   extractDivergenceContext,
   formatDirectionMapForPrompt,
 } from "./divergenceExplorer";
-import { culturalResearchService } from "./runtime";
+import { culturalResearchService, storyBibleService, projectStore as runtimeProjectStore } from "./runtime";
 import { detectDirectedReferences, shouldRunCulturalResearch } from "./culturalResearchService";
 import type { CulturalResearchContext } from "./culturalResearchService";
+import { buildMustHonorBlock, normalizeStringifiedFields } from "./mustHonorBlock";
 
 export class HookServiceError extends Error {
   code: "NOT_FOUND" | "INVALID_INPUT" | "LLM_PARSE_ERROR" | "LLM_CALL_FAILED";
@@ -285,6 +286,9 @@ export class HookService {
       throw new HookServiceError("LLM_PARSE_ERROR", "Failed to parse clarifier response");
     }
 
+    // Normalize stringified JSON fields (user_read, scope_recommendation)
+    normalizeStringifiedFields(clarifier);
+
     // Record prompt history
     this.recordPromptHistory(
       session, "clarifier", prompt.system, prompt.user, promptOverrides,
@@ -491,7 +495,8 @@ export class HookService {
   async reroll(
     projectId: string,
     modelOverride?: string,
-    promptOverrides?: { builder?: PromptOverrides; judge?: PromptOverrides }
+    promptOverrides?: { builder?: PromptOverrides; judge?: PromptOverrides },
+    constraintOverrides?: Record<string, string>,
   ): Promise<GenerateResponse> {
     const session = await this.store.get(projectId);
     if (!session) {
@@ -501,7 +506,46 @@ export class HookService {
       throw new HookServiceError("INVALID_INPUT", "Session must be in revealed status to reroll");
     }
 
+    // Apply constraint overrides to the ledger before re-running the tournament
+    if (constraintOverrides && Object.keys(constraintOverrides).length > 0) {
+      this.applyConstraintOverrides(session, constraintOverrides);
+      await this.store.save(session);
+    }
+
     return this.executeTournament(session, modelOverride, false, promptOverrides);
+  }
+
+  /**
+   * Apply user-provided constraint overrides to the session's constraint ledger.
+   * Existing entries are updated in-place; new keys are appended as confirmed entries.
+   */
+  private applyConstraintOverrides(
+    session: HookSessionState,
+    overrides: Record<string, string>,
+  ): void {
+    if (!session.constraintLedger) session.constraintLedger = [];
+    const ledger = session.constraintLedger;
+    const turnNumber = session.turns.length;
+
+    for (const [key, value] of Object.entries(overrides)) {
+      const trimmed = value.trim();
+      if (!trimmed) continue;
+
+      const existingIdx = ledger.findIndex((e) => e.key === key);
+      const entry: ConstraintLedgerEntry = {
+        key,
+        value: trimmed,
+        source: "user_freeform",
+        confidence: "confirmed",
+        turnNumber,
+      };
+
+      if (existingIdx >= 0) {
+        ledger[existingIdx] = entry;
+      } else {
+        ledger.push(entry);
+      }
+    }
   }
 
   private async executeTournament(
@@ -519,6 +563,7 @@ export class HookService {
       judgeResults: [],
       phase: "builders",
     };
+    session.buildProgress = { attempt: 1, maxAttempts: 3, status: "building" };
     session.lastSavedAt = new Date().toISOString();
     await this.store.save(session);
 
@@ -533,6 +578,10 @@ export class HookService {
 
     for (let i = 0; i < temperatures.length; i++) {
       const temp = temperatures[i];
+
+      // Update build progress
+      session.buildProgress = { attempt: i + 1, maxAttempts: temperatures.length, status: "building" };
+      await this.store.save(session);
 
       // Run builder for this candidate
       let builderRaw = "";
@@ -562,6 +611,9 @@ export class HookService {
       session.tournamentProgress!.builderResults.push({ raw: builderRaw, parsed: builderParsed });
 
       // Run judge for this candidate
+      session.buildProgress = { attempt: i + 1, maxAttempts: temperatures.length, status: "judging" };
+      await this.store.save(session);
+
       const judgePrompt = this.buildJudgePrompt(builderParsed, session.currentState, session.psychologyLedger);
       const judgeSystem = promptOverrides?.judge?.system ?? judgePrompt.system;
       const judgeUser = promptOverrides?.judge?.user ?? judgePrompt.user;
@@ -599,6 +651,7 @@ export class HookService {
       if (judgeParsed.pass && avgScore >= 8.5) {
         // Elite candidate: exit immediately
         candidates.push({ hook: builderParsed, judge: judgeParsed });
+        session.buildProgress = { attempt: i + 1, maxAttempts: temperatures.length, status: "passed" };
         console.log(`[TOURNAMENT] Hook early-exit after ${i + 1} candidate(s), avgScore=${avgScore.toFixed(1)}`);
         session.lastSavedAt = new Date().toISOString();
         await this.store.save(session);
@@ -608,6 +661,7 @@ export class HookService {
         candidates.push({ hook: builderParsed, judge: judgeParsed });
         // If this is candidate 2, we can decide to exit after evaluating it
         if (i === 1) {
+          session.buildProgress = { attempt: i + 1, maxAttempts: temperatures.length, status: "passed" };
           console.log(`[TOURNAMENT] Hook early-exit after ${i + 1} candidate(s), avgScore=${avgScore.toFixed(1)}`);
           session.lastSavedAt = new Date().toISOString();
           await this.store.save(session);
@@ -616,6 +670,13 @@ export class HookService {
       } else {
         // Failed candidate: store and continue
         candidates.push({ hook: builderParsed, judge: judgeParsed });
+        const failReason = judgeParsed.hard_fail_reasons?.[0] ?? judgeParsed.one_fix_instruction ?? "Quality below threshold";
+        if (i < temperatures.length - 1) {
+          session.buildProgress = { attempt: i + 1, maxAttempts: temperatures.length, status: "failed_retrying", lastFailReason: failReason };
+        } else {
+          session.buildProgress = { attempt: i + 1, maxAttempts: temperatures.length, status: "best_effort", lastFailReason: failReason };
+        }
+        await this.store.save(session);
       }
     }
 
@@ -652,6 +713,7 @@ export class HookService {
     // Validate we have candidates
     if (candidates.length === 0) {
       session.tournamentProgress = undefined;
+      session.buildProgress = undefined;
       await this.store.save(session);
       throw new HookServiceError("LLM_PARSE_ERROR", "All builder candidates failed to parse");
     }
@@ -677,6 +739,7 @@ export class HookService {
       session.status = "revealed";
       session.rerollCount = resetRerollCount ? 0 : session.rerollCount + 1;
       session.tournamentProgress = undefined;
+      session.buildProgress = undefined;
       session.lastSavedAt = new Date().toISOString();
       await this.store.save(session);
       return {
@@ -710,6 +773,7 @@ export class HookService {
     session.status = "revealed";
     session.rerollCount = resetRerollCount ? 0 : session.rerollCount + 1;
     session.tournamentProgress = undefined;  // Clear progress on success
+    session.buildProgress = undefined;       // Clear build progress on completion
     session.lastSavedAt = new Date().toISOString();
 
     await this.store.save(session);
@@ -795,6 +859,51 @@ export class HookService {
       : typedVsClicked === "mostly_clicked" ? "explorer" as const
       : "mixed" as const;
 
+    // ─── Filter tone_chips against user rejections ───
+    // Layer 1: Remove chips that match explicit bans
+    const rawChips = session.currentState.tone_chips ?? [];
+    const bans = session.currentState.bans ?? [];
+    const bansLower = bans.map((b: string) => b.toLowerCase());
+
+    // Layer 2: Extract rejected keywords from constraint ledger freeform entries
+    // Catches cases like "ensemble but not underground" where the clarifier
+    // didn't populate the bans array but the user clearly rejected a concept.
+    const rejectedKeywords: string[] = [];
+    const negationPattern = /\b(?:not|no|never|avoid|without|don'?t|exclude|ban|reject|hate|dislike)\s+(?:an?\s+)?(\w[\w\s-]{1,30})/gi;
+
+    for (const entry of session.constraintLedger ?? []) {
+      if (entry.source === "user_freeform" || entry.source === "user_typed") {
+        let match: RegExpExecArray | null;
+        while ((match = negationPattern.exec(entry.value)) !== null) {
+          rejectedKeywords.push(match[1].trim().toLowerCase());
+        }
+      }
+    }
+
+    // Also scan user free-text selections from turns for negation patterns
+    for (const turn of session.turns) {
+      if (turn.userSelection?.type === "free_text" && turn.userSelection.label) {
+        let match: RegExpExecArray | null;
+        negationPattern.lastIndex = 0;
+        while ((match = negationPattern.exec(turn.userSelection.label)) !== null) {
+          rejectedKeywords.push(match[1].trim().toLowerCase());
+        }
+      }
+    }
+
+    const filteredChips = rawChips.filter((chip: string) => {
+      const chipLower = chip.toLowerCase();
+      // Layer 1: exact/substring match against bans
+      if (bansLower.some((ban: string) => chipLower.includes(ban) || ban.includes(chipLower))) {
+        return false;
+      }
+      // Layer 2: substring match against rejected keywords from freeform entries
+      if (rejectedKeywords.some((kw) => chipLower.includes(kw) || kw.includes(chipLower))) {
+        return false;
+      }
+      return true;
+    });
+
     const hookPack: HookPack = {
       module: "hook",
       locked: {
@@ -813,7 +922,7 @@ export class HookService {
         },
       },
       preferences: {
-        tone_chips: session.currentState.tone_chips ?? [],
+        tone_chips: filteredChips,
         bans: session.currentState.bans ?? [],
       },
       source_dna: revealedHook.collision_sources,
@@ -842,6 +951,19 @@ export class HookService {
     } catch (err) {
       // Non-fatal: the session is saved, export is a bonus
       console.error("AUTO-EXPORT ERROR (session saved, export failed):", err);
+    }
+
+    // Generate/update story bible (non-fatal — session is already saved)
+    try {
+      const existingBible = await runtimeProjectStore.getStoryBible(session.projectId);
+      const bible = await storyBibleService.generateBible(
+        session.projectId,
+        hookPack.state_summary ?? "",
+        existingBible ?? undefined,
+      );
+      await runtimeProjectStore.saveStoryBible(session.projectId, bible);
+    } catch (err) {
+      console.error("STORY BIBLE UPDATE ERROR (non-fatal):", err);
     }
 
     return hookPack;
@@ -904,11 +1026,22 @@ export class HookService {
     dynamic += (probeText ? "\n\n" + probeText : "");
     dynamic += (directionMapText ? "\n\n" + directionMapText : "");
 
+    // ─── Story Bible injection ───
+    const storyBible = await runtimeProjectStore.getStoryBible(session.projectId);
+    dynamic += "\n\n═══ STORY BIBLE (do NOT contradict — these are confirmed canonical facts) ═══\n" +
+      (storyBible || "(not yet available)");
+
     // ─── Cultural Intelligence Engine injection ───
     const culturalBrief = await this.getCulturalBrief(session, currentTurn);
     const culturalText = culturalResearchService.formatBriefForClarifier(culturalBrief);
     if (culturalText) {
       dynamic += "\n\n" + culturalText;
+    }
+
+    // ─── MUST HONOR constraint reinforcement (end of prompt = highest attention) ───
+    const mustHonor = buildMustHonorBlock(session.constraintLedger ?? []);
+    if (mustHonor) {
+      dynamic += "\n\n" + mustHonor;
     }
 
     return {
@@ -938,11 +1071,22 @@ export class HookService {
       .replace("{{CONSTRAINT_LEDGER}}", ledgerText)
       .replace("{{PSYCHOLOGY_SIGNALS}}", signalsText);
 
+    // ─── Story Bible injection ───
+    const storyBible = await runtimeProjectStore.getStoryBible(session.projectId);
+    dynamic += "\n\n═══ STORY BIBLE (do NOT contradict — these are confirmed canonical facts) ═══\n" +
+      (storyBible || "(not yet available)");
+
     // ─── Cultural Intelligence Engine injection ───
     const culturalBrief = await this.getCulturalBriefForBuilder(session);
     const culturalText = culturalResearchService.formatBriefForBuilder(culturalBrief);
     if (culturalText) {
       dynamic += "\n\n" + culturalText;
+    }
+
+    // ─── MUST HONOR constraint reinforcement (end of prompt = highest attention) ───
+    const mustHonor = buildMustHonorBlock(session.constraintLedger ?? []);
+    if (mustHonor) {
+      dynamic += "\n\n" + mustHonor;
     }
 
     return {

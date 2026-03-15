@@ -72,10 +72,10 @@ export const characterApi = {
       timeoutMs: 360_000, // 6 min — builder + judge + polish
     }),
 
-  reroll: (projectId: string, promptOverrides?: { builder?: CharacterPromptOverrides; judge?: CharacterPromptOverrides }) =>
+  reroll: (projectId: string, promptOverrides?: { builder?: CharacterPromptOverrides; judge?: CharacterPromptOverrides }, constraintOverrides?: Record<string, string>) =>
     request<CharacterGenerateResponse>("/character/reroll", {
       method: "POST",
-      body: JSON.stringify({ projectId, promptOverrides }),
+      body: JSON.stringify({ projectId, promptOverrides, constraintOverrides }),
       timeoutMs: 360_000,
     }),
 
@@ -83,6 +83,27 @@ export const characterApi = {
     request<CharacterPack>("/character/lock", {
       method: "POST",
       body: JSON.stringify({ projectId }),
+    }),
+
+  getReview: (projectId: string) =>
+    request<{
+      characters: Array<{
+        roleKey: string;
+        role: string;
+        presentation: string;
+        age_range: string;
+        ethnicity: string;
+        description_summary: string;
+        confirmed_traits: Record<string, string>;
+        inferred_traits: Record<string, string>;
+      }>;
+      ready: boolean;
+    }>(`/character/review/${projectId}`),
+
+  applyReviewEdits: (projectId: string, edits: Array<{ roleKey: string; field: string; value: string }>) =>
+    request<{ applied: number }>("/character/review", {
+      method: "POST",
+      body: JSON.stringify({ projectId, edits }),
     }),
 
   getSession: (projectId: string) =>
@@ -107,6 +128,9 @@ export const characterApi = {
   /** List all available hook sessions (for session discovery in the connect phase) */
   debugPsychology: (projectId: string) =>
     request<{ psychologyLedger: UserPsychologyLedger | null }>(`/character/debug/psychology/${projectId}`),
+
+  debugInsights: (projectId: string) =>
+    request<import("../../shared/types/api").EngineInsightsResponse>(`/character/debug/insights/${projectId}`),
 
   listHookSessions: () =>
     request<{

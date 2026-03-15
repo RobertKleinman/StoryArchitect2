@@ -2,7 +2,7 @@ import { Router } from "express";
 import fs from "fs/promises";
 import nodePath from "path";
 import { featureFlagGuard } from "../middleware/featureFlagGuard";
-import { hookService, projectStore } from "../services/runtime";
+import { hookService, projectStore, culturalStore } from "../services/runtime";
 import { HookServiceError } from "../services/hookService";
 
 export const hookRoutes = Router();
@@ -77,14 +77,14 @@ hookRoutes.post("/generate", async (req, res) => {
 
 hookRoutes.post("/reroll", async (req, res) => {
   const modelOverride = getModelOverride(req.header("X-Model-Override"));
-  const { projectId, promptOverrides } = req.body ?? {};
+  const { projectId, promptOverrides, constraintOverrides } = req.body ?? {};
 
   if (!projectId || typeof projectId !== "string") {
     return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "projectId is required" });
   }
 
   try {
-    const result = await hookService.reroll(projectId, modelOverride, promptOverrides);
+    const result = await hookService.reroll(projectId, modelOverride, promptOverrides, constraintOverrides);
     return res.json(result);
   } catch (err) {
     return handleError(res, err);
@@ -227,6 +227,31 @@ hookRoutes.get("/debug/psychology/:projectId", async (req, res) => {
       return res.json({ psychologyLedger: null });
     }
     return res.json({ psychologyLedger: session.psychologyLedger });
+  } catch (err) {
+    return handleError(res, err);
+  }
+});
+
+/** GET /api/hook/debug/insights/:projectId — unified engine insights panel */
+hookRoutes.get("/debug/insights/:projectId", async (req, res) => {
+  try {
+    const session = await hookService.getSession(req.params.projectId);
+    const psychologyLedger = session?.psychologyLedger ?? null;
+
+    // Cultural brief — get most recent cached brief for this module
+    let culturalBrief = null;
+    try {
+      const turnNumber = session?.turns?.length ?? 0;
+      culturalBrief = await culturalStore.getCachedBrief(req.params.projectId, "hook", turnNumber);
+    } catch {}
+
+    // Divergence map from psychology ledger
+    const divergenceMap = psychologyLedger?.lastDirectionMap ?? null;
+
+    // Hook module has no development targets (it's the first module)
+    const developmentTargets: any[] = [];
+
+    return res.json({ psychologyLedger, culturalBrief, divergenceMap, developmentTargets });
   } catch (err) {
     return handleError(res, err);
   }

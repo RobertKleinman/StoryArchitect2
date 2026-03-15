@@ -1,6 +1,9 @@
 import React, { useMemo, useState } from "react";
 import { plotApi } from "../lib/plotApi";
+import { startBuildProgressPolling } from "../lib/buildProgressPoller";
+import { emitModuleStatus } from "./App";
 import { PsychologyOverlay } from "./PsychologyOverlay";
+import { EngineInsights } from "./EngineInsights";
 import { ModelSelector } from "./ModelSelector";
 import type {
   PlotAssumptionResponse,
@@ -120,6 +123,23 @@ function clearSaved(key: string) {
   try { localStorage.removeItem(key); } catch {}
 }
 
+/**
+ * Parse constraint overrides from a simple text format: "key: value" per line.
+ */
+function parseConstraintOverrides(text: string): Record<string, string> | undefined {
+  const overrides: Record<string, string> = {};
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const colonIdx = trimmed.indexOf(":");
+    if (colonIdx <= 0) continue;
+    const key = trimmed.slice(0, colonIdx).trim();
+    const value = trimmed.slice(colonIdx + 1).trim();
+    if (key && value) overrides[key] = value;
+  }
+  return Object.keys(overrides).length > 0 ? overrides : undefined;
+}
+
 export function PlotWorkshop() {
   const [projectId, setProjectId] = useState(() => {
     return loadSaved(PLOT_SESSION_KEY) ?? makeProjectId();
@@ -159,7 +179,13 @@ export function PlotWorkshop() {
 
   const [state, setState] = useState<WorkshopState>(initialState);
   const [showPsych, setShowPsych] = useState(false);
+  const [showInsights, setShowInsights] = useState(false);
   const fetchPsych = useMemo(() => () => plotApi.debugPsychology(projectId), [projectId]);
+  const fetchInsights = useMemo(() => () => plotApi.debugInsights(projectId), [projectId]);
+
+  // Constraint override state for regeneration
+  const [showConstraintOverrides, setShowConstraintOverrides] = useState(false);
+  const [constraintOverridesText, setConstraintOverridesText] = useState("");
 
   // ─── Load available world sessions on mount ───
   React.useEffect(() => {
@@ -347,6 +373,7 @@ export function PlotWorkshop() {
         selectedOptionLabel: null,
         freeTextValue: "",
       }));
+      emitModuleStatus("plot", "active");
     } catch (err: any) {
       setState(s => ({ ...s, loading: false, error: err.message }));
     }
@@ -416,8 +443,14 @@ export function PlotWorkshop() {
 
   const generatePlot = async () => {
     setState(s => ({ ...s, phase: "generating", loading: true, loadingMessage: "Building your plot...", error: null }));
+    const stopPolling = startBuildProgressPolling(
+      () => plotApi.getSession(projectId),
+      "plot",
+      (msg) => setState(s => ({ ...s, loadingMessage: msg })),
+    );
     try {
       const result = await plotApi.generate(projectId);
+      stopPolling();
       setState(s => ({
         ...s,
         phase: "revealed",
@@ -428,14 +461,22 @@ export function PlotWorkshop() {
         loading: false,
       }));
     } catch (err: any) {
+      stopPolling();
       setState(s => ({ ...s, phase: "clarifying", loading: false, error: err.message }));
     }
   };
 
   const rerollPlot = async () => {
     setState(s => ({ ...s, loading: true, loadingMessage: "Regenerating plot...", error: null }));
+    const stopPolling = startBuildProgressPolling(
+      () => plotApi.getSession(projectId),
+      "plot",
+      (msg) => setState(s => ({ ...s, loadingMessage: msg })),
+    );
     try {
-      const result = await plotApi.reroll(projectId);
+      const parsedOverrides = parseConstraintOverrides(constraintOverridesText);
+      const result = await plotApi.reroll(projectId, undefined, parsedOverrides);
+      stopPolling();
       setState(s => ({
         ...s,
         revealedPlot: result.plot,
@@ -445,6 +486,7 @@ export function PlotWorkshop() {
         loading: false,
       }));
     } catch (err: any) {
+      stopPolling();
       setState(s => ({ ...s, loading: false, error: err.message }));
     }
   };
@@ -454,6 +496,7 @@ export function PlotWorkshop() {
     try {
       await plotApi.lock(projectId);
       setState(s => ({ ...s, phase: "locked", loading: false }));
+      emitModuleStatus("plot", "locked");
     } catch (err: any) {
       setState(s => ({ ...s, loading: false, error: err.message }));
     }
@@ -479,6 +522,7 @@ export function PlotWorkshop() {
     setShowManualInput(false);
     setUpstreamValidated(false);
     setState(initialState);
+    emitModuleStatus("plot", "idle");
     // Re-fetch sessions
     setSessionsLoading(true);
     plotApi.listWorldSessions()
@@ -603,7 +647,13 @@ export function PlotWorkshop() {
   // ─── Render ───
 
   if (!recoveryChecked) {
-    return <div className="workshop"><p className="loading-text">Loading...</p></div>;
+    return (
+      <div className="workshop">
+        <div className="skeleton-card" />
+        <div className="skeleton-card" />
+        <div className="skeleton-card" />
+      </div>
+    );
   }
 
   return (
@@ -806,7 +856,7 @@ export function PlotWorkshop() {
           )}
 
           <div className="readiness-bar">
-            <div className="readiness-fill" style={{ width: `${state.readinessPct}%` }} />
+            <div className={`readiness-fill ${state.readinessPct < 30 ? "readiness-low" : state.readinessPct < 60 ? "readiness-mid" : state.readinessPct < 85 ? "readiness-high" : "readiness-ready"}`} style={{ width: `${state.readinessPct}%` }} />
             <span>{state.readinessPct}% — {state.readinessNote || "Shaping the plot..."}</span>
           </div>
 
@@ -1152,7 +1202,34 @@ export function PlotWorkshop() {
             <button type="button" className="btn-ghost" onClick={rerollPlot} disabled={state.loading}>
               Regenerate Plot
             </button>
+            <button
+              type="button"
+              className="btn-ghost"
+              disabled={state.loading}
+              onClick={() => setShowConstraintOverrides((v) => !v)}
+            >
+              {showConstraintOverrides ? "Hide" : "Show"} Constraints
+            </button>
           </div>
+
+          {showConstraintOverrides && (
+            <div className="constraint-overrides">
+              <label htmlFor="plot-constraint-overrides">
+                <strong>Constraint Overrides</strong>
+                <span className="hint"> (one per line: key: value)</span>
+              </label>
+              <textarea
+                id="plot-constraint-overrides"
+                rows={4}
+                placeholder={"pacing.preference: slow burn\ntwist.midpoint_reversal: betrayal by ally\nstakes.ceiling: civilization-ending\nending.energy: bittersweet"}
+                value={constraintOverridesText}
+                onChange={(e) => setConstraintOverridesText(e.target.value)}
+              />
+              <p className="hint">
+                Override or add constraint ledger entries before regenerating. Use scoped keys like: pacing.preference, twist.midpoint_reversal, stakes.ceiling, ending.energy.
+              </p>
+            </div>
+          )}
         </div>
       )}
 
@@ -1160,7 +1237,7 @@ export function PlotWorkshop() {
       {state.phase === "locked" && (
         <div className="locked-phase">
           <h3>Plot Locked!</h3>
-          <p>Your plot's tension chain, turning points, climax, and mysteries have been saved. These will drive all downstream generation.</p>
+          <p>Your plot&apos;s tension chain, turning points, climax, and mysteries have been saved. These will drive all downstream generation.</p>
           <button type="button" className="btn-ghost" onClick={resetAll}>Start New Session</button>
         </div>
       )}
@@ -1168,11 +1245,22 @@ export function PlotWorkshop() {
       <button type="button" className="psych-toggle" onClick={() => setShowPsych((v) => !v)}>
         {showPsych ? "Hide" : "Show"} Psychology
       </button>
+      <button type="button" className="insights-toggle" onClick={() => setShowInsights((v) => !v)}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+        Insights
+      </button>
       <PsychologyOverlay
         fetchPsychology={fetchPsych}
         projectId={projectId}
         visible={showPsych}
         onClose={() => setShowPsych(false)}
+      />
+      <EngineInsights
+        module="plot"
+        projectId={projectId}
+        fetchInsights={fetchInsights}
+        visible={showInsights}
+        onClose={() => setShowInsights(false)}
       />
     </div>
   );

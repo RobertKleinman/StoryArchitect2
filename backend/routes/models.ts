@@ -14,6 +14,8 @@ const MODEL_CONFIG_KEYS: ReadonlySet<string> = new Set<keyof ModelConfig>([
   "scene_planner", "scene_clarifier", "scene_builder", "scene_minor_judge", "scene_final_judge", "scene_divergence",
   "psych_consolidator",
   "divergence_explorer",
+  "cultural_summarizer",
+  "cultural_researcher",
 ]);
 
 /** GET /api/models — current per-role model config */
@@ -68,4 +70,9 @@ modelRoutes.put("/models", (req, res) => {
 
   llmClient.updateConfig(partial);
   return res.json(llmClient.getConfig());
+});
+
+/** GET /api/debug/tokens — accumulated token usage across all LLM calls */
+modelRoutes.get("/debug/tokens", (_req, res) => {
+  return res.json(llmClient.getTokenUsage());
 });

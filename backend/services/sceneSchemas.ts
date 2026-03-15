@@ -73,21 +73,10 @@ const informationDeltaSchema = {
   additionalProperties: false,
 };
 
-const compulsionVectorEnum = {
-  type: "string",
-  enum: [
-    "curiosity", "dread", "desire", "outrage", "tenderness",
-    "anticipation", "taboo_fascination", "dramatic_irony",
-    "defiance", "longing", "vindication",
-    "horror", "empathy", "bewilderment", "triumph",
-    "heartbreak", "suspense", "foreboding", "catharsis",
-  ],
-};
-
-const pacingTypeEnum = {
-  type: "string",
-  enum: ["pressure_cooker", "slow_burn", "whiplash", "aftermath", "set_piece"],
-};
+// Enums removed to keep compiled grammar within Anthropic limits.
+// The prompt instructions still constrain valid values.
+const compulsionVectorEnum = { type: "string" };
+const pacingTypeEnum = { type: "string" };
 
 const scenePlanSchema = {
   type: "object",
@@ -138,7 +127,7 @@ const scenePlanSchema = {
         type: "object",
         properties: {
           hook_question: { type: "string" },
-          action: { type: "string", enum: ["planted", "paid_off", "sustained"] },
+          action: { type: "string" },
         },
         required: ["hook_question", "action"],
         additionalProperties: false,
@@ -182,20 +171,16 @@ export const SCENE_PLANNER_SCHEMA = {
 
 // ═══ CLARIFIER SCHEMA ═══
 
+// Enums removed to keep compiled grammar within Anthropic limits.
+// The prompt instructions still constrain valid values.
 const signalSchema = {
   type: "object",
   properties: {
     hypothesis: { type: "string" },
     action: { type: "string" },
-    valence: { type: "string", enum: ["supports", "contradicts"] },
-    scope: { type: "string", enum: ["this_story", "this_genre", "global"] },
-    category: {
-      type: "string",
-      enum: [
-        "content_preferences", "control_orientation", "power_dynamics",
-        "tonal_risk", "narrative_ownership", "engagement_satisfaction",
-      ],
-    },
+    valence: { type: "string" },
+    scope: { type: "string" },
+    category: { type: "string" },
     adaptationConsequence: { type: "string" },
     contradictionCriteria: { type: "string" },
     contradictsSignalId: { type: "string" },
@@ -239,58 +224,9 @@ export const SCENE_CLARIFIER_SCHEMA = {
       },
     },
     auto_pass_confidence: { type: "number" },
-    user_read: {
-      type: "object",
-      properties: {
-        signals: { type: "array", items: signalSchema },
-        behaviorSummary: {
-          type: "object",
-          properties: {
-            orientation: { type: "string" },
-            currentFocus: { type: "string" },
-            engagementMode: { type: "string", enum: ["exploring", "converging", "stuck", "disengaged"] },
-            satisfaction: {
-              type: "object",
-              properties: {
-                score: { type: "number" },
-                trend: { type: "string", enum: ["rising", "stable", "declining"] },
-                reason: { type: "string" },
-              },
-              required: ["score", "trend", "reason"],
-              additionalProperties: false,
-            },
-          },
-          required: ["orientation", "currentFocus", "engagementMode", "satisfaction"],
-          additionalProperties: false,
-        },
-        adaptationPlan: {
-          type: "object",
-          properties: {
-            dominantNeed: { type: "string" },
-            moves: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  action: { type: "string" },
-                  drivenBy: { type: "array", items: { type: "string" } },
-                  target: {
-                    type: "string",
-                    enum: ["question", "options", "assumptions", "builder_tone", "builder_content", "judge_criteria"],
-                  },
-                },
-                required: ["action", "drivenBy", "target"],
-                additionalProperties: false,
-              },
-            },
-          },
-          required: ["dominantNeed", "moves"],
-          additionalProperties: false,
-        },
-      },
-      required: ["signals", "behaviorSummary", "adaptationPlan"],
-      additionalProperties: false,
-    },
+    // user_read collapsed to JSON string to keep compiled grammar within Anthropic limits.
+    // Parsed server-side after LLM response.
+    user_read: { type: "string" },
   },
   required: ["psychology_strategy", "scene_summary", "needs_input", "allow_free_text", "auto_pass_confidence", "user_read"],
   additionalProperties: false,
@@ -352,7 +288,7 @@ export const SCENE_BUILDER_SCHEMA = {
       type: "object",
       properties: {
         objective_delivered: { type: "string" },
-        scene_question_status: { type: "string", enum: ["answered", "mutated", "sustained"] },
+        scene_question_status: { type: "string" },
         value_shift_executed: { type: "string" },
         exit_hook_planted: { type: "string" },
       },
@@ -391,9 +327,9 @@ export const SCENE_MINOR_JUDGE_SCHEMA = {
           items: {
             type: "object",
             properties: {
-              type: { type: "string", enum: ["continuity", "voice", "information", "causal"] },
+              type: { type: "string" },
               description: { type: "string" },
-              severity: { type: "string", enum: ["minor", "major"] },
+              severity: { type: "string" },
               affects_scene: { type: "string" },
             },
             required: ["type", "description", "severity"],
@@ -442,7 +378,7 @@ export const SCENE_FINAL_JUDGE_SCHEMA = {
         properties: {
           scene_id: { type: "string" },
           issue: { type: "string" },
-          severity: { type: "string", enum: ["suggestion", "should_fix", "must_fix"] },
+          severity: { type: "string" },
         },
         required: ["scene_id", "issue", "severity"],
         additionalProperties: false,
@@ -455,7 +391,7 @@ export const SCENE_FINAL_JUDGE_SCHEMA = {
         properties: {
           issue: { type: "string" },
           affected_scenes: { type: "array", items: { type: "string" } },
-          severity: { type: "string", enum: ["suggestion", "should_fix", "must_fix"] },
+          severity: { type: "string" },
         },
         required: ["issue", "affected_scenes", "severity"],
         additionalProperties: false,

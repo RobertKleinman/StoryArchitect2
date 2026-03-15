@@ -104,6 +104,12 @@ export interface CharacterClarifierResponse {
 export interface CharacterProfile {
   role: string;
   description: string;           // 1-2 paragraphs, user-facing
+  /** Character's visual presentation for image generation */
+  presentation: "masculine" | "feminine" | "androgynous" | "unspecified";
+  /** Approximate age range */
+  age_range?: "child" | "teen" | "young_adult" | "adult" | "middle_aged" | "elderly";
+  /** Ethnicity/race if relevant to the story */
+  ethnicity?: string;
   core_dials: {
     want: string;
     want_urgency: string;
@@ -164,6 +170,12 @@ export interface CharacterBuilderOutput {
     explanation: string;
   };
   collision_sources: CharacterCollisionSource[];
+  differentiation_matrix: Record<string, {
+    stress_response: string;
+    communication_style: string;
+    core_value: string;
+    power_strategy: string;
+  }>;
 }
 
 // ─── Judge Output ───
@@ -199,6 +211,9 @@ export interface CharacterPack {
     characters: Record<string, {
       role: string;
       description: string;
+      presentation: "masculine" | "feminine" | "androgynous" | "unspecified";
+      age_range?: string;
+      ethnicity?: string;
       psychological_profile: CharacterProfile["core_dials"] & CharacterProfile["secondary_dials"];
       antagonist_dials?: CharacterProfile["antagonist_dials"];
       supporting_dials?: CharacterProfile["supporting_dials"];
@@ -288,6 +303,8 @@ export interface CharacterSessionState {
   };
   /** User psychology ledger — imported from hook module + accumulated here */
   psychologyLedger?: import("./userPsychology").UserPsychologyLedger;
+  /** Live build/judge progress — polled by frontend during generation */
+  buildProgress?: import("./api").BuildProgress;
 }
 
 export interface CharacterTurn {

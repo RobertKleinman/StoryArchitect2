@@ -42,14 +42,18 @@ export interface ModuleExport {
 export class ProjectStore {
   private dataDir: string;
   private exportDir: string;
+  private bibleDir: string;
 
   constructor(dataDir = "./data") {
     this.dataDir = dataDir;
     this.exportDir = path.join(dataDir, "exports");
+    this.bibleDir = path.join(dataDir, "bibles");
     fs.mkdir(dataDir, { recursive: true }).catch((e) =>
       console.error(`[ProjectStore] mkdir failed: ${dataDir}`, e.message));
     fs.mkdir(this.exportDir, { recursive: true }).catch((e) =>
       console.error(`[ProjectStore] mkdir failed: ${this.exportDir}`, e.message));
+    fs.mkdir(this.bibleDir, { recursive: true }).catch((e) =>
+      console.error(`[ProjectStore] mkdir failed: ${this.bibleDir}`, e.message));
   }
 
   private filePath(projectId: string): string {
@@ -136,5 +140,40 @@ export class ProjectStore {
       }
       return null;
     }
+  }
+
+  // ─── Story Bible ───
+
+  private biblePath(projectId: string): string {
+    const safe = projectId.replace(/[^a-zA-Z0-9_-]/g, "");
+    return path.join(this.bibleDir, `${safe}.json`);
+  }
+
+  /** Get the story bible for a project (keyed by hook project ID) */
+  async getStoryBible(projectId: string): Promise<string | null> {
+    const fp = this.biblePath(projectId);
+    try {
+      const raw = await fs.readFile(fp, "utf-8");
+      const data = JSON.parse(raw);
+      return data.bible ?? null;
+    } catch (e: any) {
+      if (e.code !== "ENOENT") {
+        console.error(`[ProjectStore] getStoryBible failed: ${fp}`, e.code === undefined ? "parse error" : e.code, e.message);
+      }
+      return null;
+    }
+  }
+
+  /** Save the story bible for a project (keyed by hook project ID) */
+  async saveStoryBible(projectId: string, bible: string): Promise<void> {
+    const fp = this.biblePath(projectId);
+    const tmp = fp + ".tmp";
+    const data = {
+      projectId,
+      bible,
+      updatedAt: new Date().toISOString(),
+    };
+    await fs.writeFile(tmp, JSON.stringify(data, null, 2));
+    await fs.rename(tmp, fp);
   }
 }

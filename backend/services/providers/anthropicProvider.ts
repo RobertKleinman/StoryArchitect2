@@ -2,8 +2,6 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { LLMProvider, ProviderCallOptions, ProviderResponse } from "./types";
 import { ProviderHttpError } from "./types";
 
-const STRUCTURED_OUTPUTS_BETA = "structured-outputs-2025-11-13";
-
 export class AnthropicProvider implements LLMProvider {
   readonly name = "anthropic";
   private client: Anthropic | null = null;
@@ -68,9 +66,11 @@ export class AnthropicProvider implements LLMProvider {
     };
 
     if (options?.jsonSchema) {
-      params.output_format = {
-        type: "json_schema",
-        schema: options.jsonSchema,
+      params.output_config = {
+        format: {
+          type: "json_schema",
+          schema: options.jsonSchema,
+        },
       };
     }
 
@@ -78,31 +78,19 @@ export class AnthropicProvider implements LLMProvider {
     // With streaming, the connection is established quickly and content
     // arrives incrementally — no more UND_ERR_HEADERS_TIMEOUT.
     try {
-      const betas: string[] = [];
-      if (options?.jsonSchema) {
-        betas.push(STRUCTURED_OUTPUTS_BETA);
-      }
-
       // Use stream() to get incremental content — avoids the headers timeout
       // that kills raw fetch() on long-running structured output calls.
-      const stream = client.messages.stream(
-        {
-          model: params.model as string,
-          max_tokens: params.max_tokens as number,
-          temperature: params.temperature as number,
-          system: params.system as Anthropic.Messages.TextBlockParam[],
-          messages: params.messages as Anthropic.Messages.MessageParam[],
-          ...(options?.jsonSchema
-            ? {
-                // @ts-ignore — output_format is available under the structured-outputs beta
-                output_format: params.output_format,
-              }
-            : {}),
-        },
-        {
-          headers: betas.length > 0 ? { "anthropic-beta": betas.join(",") } : undefined,
-        },
-      );
+      const stream = client.messages.stream({
+        model: params.model as string,
+        max_tokens: params.max_tokens as number,
+        temperature: params.temperature as number,
+        system: params.system as Anthropic.Messages.TextBlockParam[],
+        messages: params.messages as Anthropic.Messages.MessageParam[],
+        // @ts-ignore — output_config is the GA structured output parameter
+        ...(options?.jsonSchema
+          ? { output_config: params.output_config }
+          : {}),
+      });
 
       const finalMessage = await stream.finalMessage();
 

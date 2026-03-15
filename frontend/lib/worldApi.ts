@@ -74,10 +74,10 @@ export const worldApi = {
       timeoutMs: 360_000, // 6 min — builder + judge
     }),
 
-  reroll: (projectId: string, promptOverrides?: { builder?: WorldPromptOverrides; judge?: WorldPromptOverrides }) =>
+  reroll: (projectId: string, promptOverrides?: { builder?: WorldPromptOverrides; judge?: WorldPromptOverrides }, constraintOverrides?: Record<string, string>) =>
     request<WorldGenerateResponse>("/world/reroll", {
       method: "POST",
-      body: JSON.stringify({ projectId, promptOverrides }),
+      body: JSON.stringify({ projectId, promptOverrides, constraintOverrides }),
       timeoutMs: 360_000,
     }),
 
@@ -117,6 +117,8 @@ export const worldApi = {
         hasExport: boolean;
         artStyle: string;
         characterCount: number;
+        characterNames: string[];
+        hookPremise: string;
       }>;
     }>("/character-image/list-sessions"),
 
@@ -140,4 +142,7 @@ export const worldApi = {
 
   debugPsychology: (projectId: string) =>
     request<{ psychologyLedger: UserPsychologyLedger | null }>(`/world/debug/psychology/${projectId}`),
+
+  debugInsights: (projectId: string) =>
+    request<import("../../shared/types/api").EngineInsightsResponse>(`/world/debug/insights/${projectId}`),
 };

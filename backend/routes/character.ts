@@ -2,7 +2,7 @@ import { Router } from "express";
 import fs from "fs/promises";
 import nodePath from "path";
 import { characterFeatureFlagGuard } from "../middleware/characterFeatureFlagGuard";
-import { characterService, characterStore } from "../services/runtime";
+import { characterService, characterStore, culturalStore } from "../services/runtime";
 import { CharacterServiceError } from "../services/characterService";
 
 export const characterRoutes = Router();
@@ -63,6 +63,35 @@ characterRoutes.post("/clarify", async (req, res) => {
   }
 });
 
+// ─── Character Review (pre-builder review/edit) ───
+
+characterRoutes.get("/review/:projectId", async (req, res) => {
+  try {
+    const result = await characterService.getCharacterReview(req.params.projectId);
+    return res.json(result);
+  } catch (err) {
+    return handleError(res, err);
+  }
+});
+
+characterRoutes.post("/review", async (req, res) => {
+  const { projectId, edits } = req.body ?? {};
+
+  if (!projectId || typeof projectId !== "string") {
+    return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "projectId is required" });
+  }
+  if (!Array.isArray(edits)) {
+    return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "edits array is required" });
+  }
+
+  try {
+    const result = await characterService.applyCharacterReviewEdits(projectId, edits);
+    return res.json(result);
+  } catch (err) {
+    return handleError(res, err);
+  }
+});
+
 characterRoutes.post("/generate", async (req, res) => {
   const modelOverride = getModelOverride(req.header("X-Model-Override"));
   const { projectId, promptOverrides } = req.body ?? {};
@@ -81,14 +110,14 @@ characterRoutes.post("/generate", async (req, res) => {
 
 characterRoutes.post("/reroll", async (req, res) => {
   const modelOverride = getModelOverride(req.header("X-Model-Override"));
-  const { projectId, promptOverrides } = req.body ?? {};
+  const { projectId, promptOverrides, constraintOverrides } = req.body ?? {};
 
   if (!projectId || typeof projectId !== "string") {
     return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "projectId is required" });
   }
 
   try {
-    const result = await characterService.reroll(projectId, modelOverride, promptOverrides);
+    const result = await characterService.reroll(projectId, modelOverride, promptOverrides, constraintOverrides);
     return res.json(result);
   } catch (err) {
     return handleError(res, err);
@@ -198,6 +227,31 @@ characterRoutes.get("/debug/psychology/:projectId", async (req, res) => {
       return res.json({ psychologyLedger: null });
     }
     return res.json({ psychologyLedger: session.psychologyLedger });
+  } catch (err) {
+    return handleError(res, err);
+  }
+});
+
+/** GET /api/character/debug/insights/:projectId — unified engine insights panel */
+characterRoutes.get("/debug/insights/:projectId", async (req, res) => {
+  try {
+    const session = await characterService.getSession(req.params.projectId);
+    const psychologyLedger = session?.psychologyLedger ?? null;
+
+    // Cultural brief
+    let culturalBrief = null;
+    try {
+      const turnNumber = session?.turns?.length ?? 0;
+      culturalBrief = await culturalStore.getCachedBrief(req.params.projectId, "character", turnNumber);
+    } catch {}
+
+    // Divergence map from psychology ledger
+    const divergenceMap = psychologyLedger?.lastDirectionMap ?? null;
+
+    // Character module has no formal developmentTargets array — it's the source of weaknesses
+    const developmentTargets: any[] = [];
+
+    return res.json({ psychologyLedger, culturalBrief, divergenceMap, developmentTargets });
   } catch (err) {
     return handleError(res, err);
   }

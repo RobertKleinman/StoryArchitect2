@@ -68,9 +68,10 @@ import {
   shouldConsolidate as shouldConsolidateThrottled,
   shouldDiverge as shouldDivergeThrottled,
 } from "./backgroundThrottling";
-import { culturalResearchService } from "./runtime";
+import { culturalResearchService, storyBibleService, projectStore as runtimeProjectStore } from "./runtime";
 import { detectDirectedReferences, shouldRunCulturalResearch } from "./culturalResearchService";
 import type { CulturalResearchContext } from "./culturalResearchService";
+import { buildMustHonorBlock, normalizeStringifiedFields } from "./mustHonorBlock";
 
 // ─── API response types ───
 
@@ -467,6 +468,9 @@ export class PlotService {
       throw new PlotServiceError("LLM_PARSE_ERROR", "Failed to parse plot clarifier output");
     }
 
+    // Normalize stringified JSON fields (user_read)
+    normalizeStringifiedFields(clarifier as unknown as Record<string, unknown>);
+
     // Ensure defaults
     if (!clarifier.missing_signal) clarifier.missing_signal = "";
     if (!clarifier.conflict_flag) clarifier.conflict_flag = "";
@@ -662,6 +666,7 @@ export class PlotService {
     }
 
     session.status = "generating";
+    session.buildProgress = { attempt: 1, maxAttempts: 1, status: "building" };
     await this.plotStore.save(session);
 
     // ─── Builder ───
@@ -698,6 +703,9 @@ export class PlotService {
     }
 
     // ─── Judge ───
+    session.buildProgress = { attempt: 1, maxAttempts: 1, status: "judging" };
+    await this.plotStore.save(session);
+
     const judgePrompt = this.buildJudgePrompt(builderResult, session);
     const judgeSystem = promptOverrides?.judge?.system ?? judgePrompt.system;
     const judgeUser = promptOverrides?.judge?.user ?? judgePrompt.user;
@@ -715,6 +723,7 @@ export class PlotService {
       // Non-fatal: reveal without judge
       session.revealedPlot = builderResult;
       session.status = "revealed";
+      session.buildProgress = undefined;
       session.lastSavedAt = new Date().toISOString();
       await this.plotStore.save(session);
       return { plot: builderResult, judge: null, rerollCount: session.rerollCount ?? 0 };
@@ -763,6 +772,7 @@ export class PlotService {
     session.revealedPlot = builderResult;
     session.revealedJudge = judgeResult ?? undefined;
     session.status = "revealed";
+    session.buildProgress = undefined;
     session.lastSavedAt = new Date().toISOString();
 
     await this.plotStore.save(session);
@@ -788,6 +798,7 @@ export class PlotService {
     projectId: string,
     modelOverride?: string,
     promptOverrides?: { builder?: PlotPromptOverrides; judge?: PlotPromptOverrides },
+    constraintOverrides?: Record<string, string>,
   ): Promise<PlotGenerateResponse> {
     const session = await this.plotStore.get(projectId);
     if (!session) {
@@ -797,12 +808,50 @@ export class PlotService {
       throw new PlotServiceError("INVALID_INPUT", "Must be in revealed status to reroll");
     }
 
+    // Apply constraint overrides to the ledger before re-running the builder/judge
+    if (constraintOverrides && Object.keys(constraintOverrides).length > 0) {
+      this.applyConstraintOverrides(session, constraintOverrides);
+    }
+
     session.rerollCount = (session.rerollCount ?? 0) + 1;
     session.revealedPlot = undefined;
     session.revealedJudge = undefined;
     await this.plotStore.save(session);
 
     return this.runGenerate(projectId, modelOverride, promptOverrides);
+  }
+
+  /**
+   * Apply user-provided constraint overrides to the session's constraint ledger.
+   * Existing entries are updated in-place; new keys are appended as confirmed entries.
+   */
+  private applyConstraintOverrides(
+    session: PlotSessionState,
+    overrides: Record<string, string>,
+  ): void {
+    if (!session.constraintLedger) session.constraintLedger = [];
+    const ledger = session.constraintLedger;
+    const turnNumber = session.turns.length;
+
+    for (const [key, value] of Object.entries(overrides)) {
+      const trimmed = value.trim();
+      if (!trimmed) continue;
+
+      const existingIdx = ledger.findIndex((e) => e.key === key);
+      const entry: PlotLedgerEntry = {
+        key,
+        value: trimmed,
+        source: "user_freeform",
+        confidence: "confirmed",
+        turnNumber,
+      };
+
+      if (existingIdx >= 0) {
+        ledger[existingIdx] = entry;
+      } else {
+        ledger.push(entry);
+      }
+    }
   }
 
   // ─── Lock Plot ───
@@ -914,6 +963,20 @@ export class PlotService {
     session.lastSavedAt = new Date().toISOString();
     await this.plotStore.save(session);
 
+    // Generate/update story bible (non-fatal — session is already saved)
+    try {
+      const bibleKey = session.hookProjectId;
+      const existingBible = await runtimeProjectStore.getStoryBible(bibleKey);
+      const bible = await storyBibleService.generateBible(
+        bibleKey,
+        plotPack.state_summary ?? "",
+        existingBible ?? undefined,
+      );
+      await runtimeProjectStore.saveStoryBible(bibleKey, bible);
+    } catch (err) {
+      console.error("STORY BIBLE UPDATE ERROR (non-fatal):", err);
+    }
+
     return plotPack;
   }
 
@@ -988,6 +1051,11 @@ export class PlotService {
       .replace("{{DIRECTION_MAP}}", directionMapText || "")
       + (probeText ? "\n\n" + probeText : "");
 
+    // ─── Story Bible injection ───
+    const storyBible = await runtimeProjectStore.getStoryBible(session.hookProjectId);
+    dynamic += "\n\n═══ STORY BIBLE (do NOT contradict — these are confirmed canonical facts) ═══\n" +
+      (storyBible || "(not yet available)");
+
     // ─── Cultural Intelligence Engine injection ───
     const culturalBrief = await this.getCulturalBrief(session, currentTurn);
     const culturalText = culturalResearchService.formatBriefForClarifier(culturalBrief);
@@ -995,8 +1063,16 @@ export class PlotService {
       dynamic += "\n\n" + culturalText;
     }
 
+    // ─── MUST HONOR constraint reinforcement (end of prompt = highest attention) ───
+    const mustHonor = buildMustHonorBlock(session.constraintLedger ?? []);
+    if (mustHonor) {
+      dynamic += "\n\n" + mustHonor;
+    }
+
+    const beatRange = this.getBeatCountRange(session.constraintLedger ?? []);
+
     return {
-      system: PLOT_CLARIFIER_SYSTEM,
+      system: PLOT_CLARIFIER_SYSTEM.replace(/\{\{BEAT_COUNT_RANGE\}\}/g, beatRange),
       user: prefix + dynamic,
       cacheableUserPrefix: prefix,
     };
@@ -1060,6 +1136,11 @@ export class PlotService {
       .replace("{{TONE_CHIPS}}", JSON.stringify(hook.preferences?.tone_chips ?? []))
       .replace("{{BAN_LIST}}", JSON.stringify(hook.preferences?.bans ?? []));
 
+    // ─── Story Bible injection ───
+    const storyBibleBuilder = await runtimeProjectStore.getStoryBible(session.hookProjectId);
+    dynamic += "\n\n═══ STORY BIBLE (do NOT contradict — these are confirmed canonical facts) ═══\n" +
+      (storyBibleBuilder || "(not yet available)");
+
     // ─── Cultural Intelligence Engine injection ───
     const culturalBrief = await this.getCulturalBriefForBuilder(session);
     const culturalText = culturalResearchService.formatBriefForBuilder(culturalBrief);
@@ -1067,7 +1148,25 @@ export class PlotService {
       dynamic += "\n\n" + culturalText;
     }
 
-    return { system: PLOT_BUILDER_SYSTEM, user: prefix + dynamic, cacheableUserPrefix: prefix };
+    // ─── MUST HONOR constraint reinforcement (end of prompt = highest attention) ───
+    const mustHonor = buildMustHonorBlock(session.constraintLedger ?? []);
+    if (mustHonor) {
+      dynamic += "\n\n" + mustHonor;
+    }
+
+    const beatRange = this.getBeatCountRange(session.constraintLedger ?? []);
+    return { system: PLOT_BUILDER_SYSTEM.replace(/\{\{BEAT_COUNT_RANGE\}\}/g, beatRange), user: prefix + dynamic, cacheableUserPrefix: prefix };
+  }
+
+  // ─── Beat Count Scaling ───
+
+  private getBeatCountRange(ledger: PlotLedgerEntry[]): string {
+    const scope = ledger.find((e) => e.key.includes("scope") || e.key.includes("length"));
+    const val = scope?.value?.toLowerCase() ?? "";
+    if (val.includes("gut-punch") || val.includes("short") || val.includes("2-hour")) return "6-10";
+    if (val.includes("slow-burn") || val.includes("season") || val.includes("long")) return "20-35";
+    if (val.includes("episodic") || val.includes("series")) return "30-50";
+    return "12-18"; // default
   }
 
   // ─── Cultural Intelligence Engine helpers ───

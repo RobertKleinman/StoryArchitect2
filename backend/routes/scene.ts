@@ -2,7 +2,7 @@ import { Router } from "express";
 import fs from "fs/promises";
 import nodePath from "path";
 import { sceneFeatureFlagGuard } from "../middleware/sceneFeatureFlagGuard";
-import { sceneService, sceneStore } from "../services/runtime";
+import { sceneService, sceneStore, culturalStore, plotStore, worldStore, characterImageStore, characterStore, projectStore } from "../services/runtime";
 import { SceneServiceError } from "../services/sceneService";
 
 export const sceneRoutes = Router();
@@ -145,6 +145,25 @@ sceneRoutes.post("/build", async (req, res) => {
   }
 });
 
+// ─── Generate All (batch build, skip clarification) ───
+
+/** POST /api/scene/generate-all — build all scenes sequentially, skipping clarification */
+sceneRoutes.post("/generate-all", async (req, res) => {
+  const modelOverride = getModelOverride(req.header("X-Model-Override"));
+  const { projectId } = req.body ?? {};
+
+  if (!projectId || typeof projectId !== "string") {
+    return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "projectId is required" });
+  }
+
+  try {
+    const result = await sceneService.generateAllScenes(projectId, modelOverride);
+    return res.json(result);
+  } catch (err) {
+    return handleError(res, err);
+  }
+});
+
 // ─── Phase 4: Final Judge ───
 
 /** POST /api/scene/final-judge — intensive full-work assessment */
@@ -214,6 +233,206 @@ sceneRoutes.get("/debug/psychology/:projectId", async (req, res) => {
       return res.json({ psychologyLedger: null });
     }
     return res.json({ psychologyLedger: session.psychologyLedger });
+  } catch (err) {
+    return handleError(res, err);
+  }
+});
+
+/** GET /api/scene/debug/insights/:projectId — unified engine insights panel */
+sceneRoutes.get("/debug/insights/:projectId", async (req, res) => {
+  try {
+    const session = await sceneService.getSession(req.params.projectId);
+    const psychologyLedger = session?.psychologyLedger ?? null;
+
+    // Cultural brief
+    let culturalBrief = null;
+    try {
+      const turnNumber = session?.planningTurns?.length ?? 0;
+      culturalBrief = await culturalStore.getCachedBrief(req.params.projectId, "scene", turnNumber);
+    } catch {}
+
+    // Divergence map from psychology ledger
+    const divergenceMap = psychologyLedger?.lastDirectionMap ?? null;
+
+    // Development targets from session
+    const developmentTargets = session?.developmentTargets ?? [];
+
+    return res.json({ psychologyLedger, culturalBrief, divergenceMap, developmentTargets });
+  } catch (err) {
+    return handleError(res, err);
+  }
+});
+
+// ─── Pre-Scene Audit (Issue 6) ───
+
+/** GET /api/scene/audit/:projectId — aggregate weaknesses from all locked upstream packs */
+sceneRoutes.get("/audit/:projectId", async (req, res) => {
+  try {
+    const session = await sceneService.getSession(req.params.projectId);
+
+    // Collect weaknesses from all source packs stored on the session
+    const allTargets: Array<{
+      id: string;
+      source_module: string;
+      target: string;
+      status: string;
+      severity: "critical" | "review" | "minor";
+      notes?: string;
+      current_gap?: string;
+      suggestion?: string;
+    }> = [];
+
+    let idCounter = 0;
+
+    // Helper: classify severity based on status and quality hints
+    function classifySeverity(status: string, quality?: string): "critical" | "review" | "minor" {
+      if (status === "unaddressed") return "critical";
+      if (status === "partially_addressed" && quality !== "strong") return "review";
+      return "minor";
+    }
+
+    // 1. Development targets from the plot pack (aggregates all upstream targets)
+    if (session?.sourcePlotPack?.development_targets) {
+      for (const dt of session.sourcePlotPack.development_targets) {
+        if (dt.status === "addressed" && (dt as any).quality === "strong") continue; // skip fully resolved
+        allTargets.push({
+          id: `dt-${++idCounter}`,
+          source_module: dt.source_module,
+          target: dt.target,
+          status: dt.status,
+          severity: classifySeverity(dt.status, (dt as any).quality),
+          notes: dt.notes,
+          current_gap: (dt as any).current_gap,
+          suggestion: (dt as any).suggestion,
+        });
+      }
+    }
+
+    // 2. Weaknesses from plot pack itself
+    if (session?.sourcePlotPack?.weaknesses) {
+      for (const w of session.sourcePlotPack.weaknesses) {
+        allTargets.push({
+          id: `pw-${++idCounter}`,
+          source_module: "plot",
+          target: w.weakness,
+          status: "unaddressed",
+          severity: "review",
+          notes: w.development_opportunity,
+          current_gap: w.area,
+          suggestion: w.development_opportunity,
+        });
+      }
+    }
+
+    // 3. Weaknesses from world pack
+    if (session?.sourceWorldPack?.weaknesses) {
+      for (const w of session.sourceWorldPack.weaknesses) {
+        allTargets.push({
+          id: `ww-${++idCounter}`,
+          source_module: "world",
+          target: w.weakness,
+          status: "unaddressed",
+          severity: "review",
+          notes: w.development_opportunity,
+          current_gap: w.area,
+          suggestion: w.development_opportunity,
+        });
+      }
+    }
+
+    // 4. Weaknesses from character pack
+    if (session?.sourceCharacterPack?.weaknesses) {
+      for (const w of session.sourceCharacterPack.weaknesses) {
+        allTargets.push({
+          id: `cw-${++idCounter}`,
+          source_module: "character",
+          target: w.weakness,
+          status: "unaddressed",
+          severity: "review",
+          notes: w.development_opportunity,
+          current_gap: (w as any).role ?? "character",
+          suggestion: w.development_opportunity,
+        });
+      }
+    }
+
+    // 5. Development targets already on the scene session (if any)
+    if (session?.developmentTargets) {
+      for (const dt of session.developmentTargets) {
+        // Avoid duplicates — check if we already have this target
+        const isDuplicate = allTargets.some(
+          t => t.target === dt.target && t.source_module === dt.source_module
+        );
+        if (isDuplicate) continue;
+        if (dt.status === "addressed" && (dt as any).quality === "strong") continue;
+        allTargets.push({
+          id: `sd-${++idCounter}`,
+          source_module: dt.source_module,
+          target: dt.target,
+          status: dt.status,
+          severity: classifySeverity(dt.status, (dt as any).quality),
+          notes: dt.notes,
+          current_gap: (dt as any).current_gap,
+          suggestion: (dt as any).suggestion,
+        });
+      }
+    }
+
+    // Group by severity
+    const critical = allTargets.filter(t => t.severity === "critical");
+    const review = allTargets.filter(t => t.severity === "review");
+    const minor = allTargets.filter(t => t.severity === "minor");
+
+    return res.json({
+      critical,
+      review,
+      minor,
+      totalCount: allTargets.length,
+    });
+  } catch (err) {
+    return handleError(res, err);
+  }
+});
+
+/** POST /api/scene/audit/resolve — user accepts/resolves audit targets */
+sceneRoutes.post("/audit/resolve", async (req, res) => {
+  const { projectId, resolvedTargets } = req.body ?? {};
+
+  if (!projectId || typeof projectId !== "string") {
+    return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "projectId is required" });
+  }
+  if (!Array.isArray(resolvedTargets)) {
+    return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "resolvedTargets array is required" });
+  }
+
+  try {
+    const session = await sceneService.getSession(projectId);
+    if (!session) {
+      return res.status(404).json({ error: true, code: "NOT_FOUND", message: "Scene session not found" });
+    }
+
+    // Mark matching development targets as deferred/acknowledged
+    const resolvedSet = new Set(resolvedTargets);
+    let resolvedCount = 0;
+
+    if (session.developmentTargets) {
+      for (const dt of session.developmentTargets) {
+        if (resolvedSet.has(dt.id) || resolvedSet.has(dt.target)) {
+          dt.status = "deferred";
+          dt.notes = (dt.notes ? dt.notes + " | " : "") + "User acknowledged in pre-scene audit";
+          resolvedCount++;
+        }
+      }
+    }
+
+    const remaining = (session.developmentTargets ?? []).filter(
+      dt => dt.status === "unaddressed" || dt.status === "partially_addressed"
+    ).length;
+
+    return res.json({
+      resolved: resolvedTargets,
+      remaining,
+    });
   } catch (err) {
     return handleError(res, err);
   }

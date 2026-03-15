@@ -59,6 +59,7 @@ import {
 import { culturalResearchService } from "./runtime";
 import { detectDirectedReferences, shouldRunCulturalResearch } from "./culturalResearchService";
 import type { CulturalResearchContext } from "./culturalResearchService";
+import { buildMustHonorBlock, normalizeStringifiedFields } from "./mustHonorBlock";
 
 // ─── API response types ───
 
@@ -324,6 +325,9 @@ export class CharacterImageService {
     if (!clarifier) {
       throw new CharacterImageServiceError("LLM_PARSE_ERROR", "Failed to parse character image clarifier response");
     }
+
+    // Normalize stringified JSON fields (user_read)
+    normalizeStringifiedFields(clarifier as unknown as Record<string, unknown>);
 
     // Update prompt history with actual response
     if (session.promptHistory && session.promptHistory.length > 0) {
@@ -1175,24 +1179,38 @@ export class CharacterImageService {
       const identity: string[] = [];
       identity.push(`Role: ${char.role}`);
 
-      // Extract gender from constraint ledger (imported from hook → character → image)
-      // Keys follow: char.hook.protagonist_gender, char.hook.antagonist_gender, etc.
-      // Or character module may have: char.protagonist.gender, etc.
-      const genderEntry = ledger.find((e) =>
-        (e.key.includes(roleKey) && e.key.includes("gender")) ||
-        (e.key.includes(char.role) && e.key.includes("gender"))
-      );
-      if (genderEntry) {
-        identity.push(`Gender: ${genderEntry.value}`);
-      } else {
-        // Try to extract from description (look for pronouns)
-        const desc = char.description?.toLowerCase() ?? "";
-        if (desc.includes(" he ") || desc.includes(" his ") || desc.includes(" him ")) {
-          identity.push(`Gender: male (inferred from description)`);
-        } else if (desc.includes(" she ") || desc.includes(" her ") || desc.includes(" hers ")) {
-          identity.push(`Gender: female (inferred from description)`);
-        } else if (desc.includes(" they ") || desc.includes(" their ") || desc.includes(" them ")) {
-          identity.push(`Gender: non-binary/unspecified (inferred from description)`);
+      // Read discrete presentation field (most reliable source — from character builder)
+      const presentation = char.presentation;
+      if (presentation && presentation !== "unspecified") {
+        identity.push(`Presentation: ${presentation}`);
+      }
+
+      // Read discrete age_range and ethnicity fields
+      if (char.age_range) {
+        identity.push(`Age range: ${char.age_range}`);
+      }
+      if (char.ethnicity) {
+        identity.push(`Ethnicity: ${char.ethnicity}`);
+      }
+
+      // Fallback: extract gender from constraint ledger (for older sessions without presentation field)
+      if (!presentation || presentation === "unspecified") {
+        const genderEntry = ledger.find((e) =>
+          (e.key.includes(roleKey) && e.key.includes("gender")) ||
+          (e.key.includes(char.role) && e.key.includes("gender"))
+        );
+        if (genderEntry) {
+          identity.push(`Gender: ${genderEntry.value}`);
+        } else {
+          // Last resort: try to extract from description (look for pronouns)
+          const desc = char.description?.toLowerCase() ?? "";
+          if (desc.includes(" he ") || desc.includes(" his ") || desc.includes(" him ")) {
+            identity.push(`Gender: male (inferred from description)`);
+          } else if (desc.includes(" she ") || desc.includes(" her ") || desc.includes(" hers ")) {
+            identity.push(`Gender: female (inferred from description)`);
+          } else if (desc.includes(" they ") || desc.includes(" their ") || desc.includes(" them ")) {
+            identity.push(`Gender: non-binary/unspecified (inferred from description)`);
+          }
         }
       }
 
@@ -1294,6 +1312,12 @@ export class CharacterImageService {
       user += "\n\n" + culturalText;
     }
 
+    // ─── MUST HONOR constraint reinforcement (end of prompt = highest attention) ───
+    const mustHonor = buildMustHonorBlock(session.constraintLedger ?? []);
+    if (mustHonor) {
+      user += "\n\n" + mustHonor;
+    }
+
     return { system: CHARACTER_IMAGE_CLARIFIER_SYSTEM, user };
   }
 
@@ -1334,6 +1358,12 @@ export class CharacterImageService {
     const culturalText = culturalResearchService.formatBriefForBuilder(culturalBrief);
     if (culturalText) {
       user += "\n\n" + culturalText;
+    }
+
+    // ─── MUST HONOR constraint reinforcement (end of prompt = highest attention) ───
+    const mustHonor = buildMustHonorBlock(session.constraintLedger ?? []);
+    if (mustHonor) {
+      user += "\n\n" + mustHonor;
     }
 
     return { system: CHARACTER_IMAGE_BUILDER_SYSTEM, user };

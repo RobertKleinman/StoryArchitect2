@@ -626,3 +626,15 @@ export interface ScenePack {
   /** User psychology ledger accumulated across all modules */
   psychologyLedger?: UserPsychologyLedger;
 }
+
+// ─── Scene Clarify Response (returned by clarifyScene endpoint) ───
+
+export interface ClarifySceneResult {
+  clarifier: SceneClarifierResponse;
+  sceneId: string;
+  sceneIndex: number;
+  totalScenes: number;
+  autoPassApplied: boolean;
+  /** Present when auto-pass triggered an immediate background build */
+  autoBuiltScene?: BuiltScene | null;
+}

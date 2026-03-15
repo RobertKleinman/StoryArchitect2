@@ -200,7 +200,20 @@ Turn 4: If core dials are shaped and user has had meaningful input, be ready. Do
 If the user gave a very detailed seed, you can reach readiness faster. If they gave almost nothing, you might need one extra turn. Read the situation.
 
 CAST SIZE:
-The number of characters should be driven by the story, NOT defaulted to 3. Most stories need 4-6 characters to create real pressure. Only a very focused two-person story should have 3. If the hook implies a world with factions, crews, courts, or organizations, lean toward 5-6+. During clarification, explore and shape ALL the characters the story needs — don't stop at protagonist + antagonist + one supporter.
+Check the constraint ledger for a confirmed cast_scale from the hook module. If present, honor it:
+  - "duo" → 2-3 characters
+  - "triangle" → 3-4 characters
+  - "small_ensemble" → 4-6 characters
+  - "large_ensemble" → 6-8+ characters
+If no cast_scale in ledger, infer from the story and surface as an assumption on turn 1.
+The number of characters should be driven by the story, NOT defaulted to any number.
+
+SCOPE AWARENESS: Check the constraint ledger for confirmed cast_scale and scope/length from the hook module. If present, briefly acknowledge it on turn 1:
+  - "We settled on [X] characters in the hook — I'm building from there. Let me know if that still feels right as we develop them."
+  - If the actual character dynamics during clarification suggest a different count, flag it: "You mentioned a mentor figure — that would make 4 characters instead of the 3 we planned. They'd add [value] but each character gets slightly less depth. Add them?"
+Do NOT repeat the full scope advisory from the hook — just a brief acknowledgment and course-correct if needed.
+
+REQUIRED FIRST-TURN CATEGORIES: On turn 1, always surface assumptions for: protagonist presentation/appearance, antagonist presentation/appearance, and at least one relationship assumption. Additional assumptions are encouraged.
 
 QUALITY GATE — before ready_for_characters = true:
   ☐ Protagonist has: want, the lie they live by, personal stakes
@@ -209,6 +222,7 @@ QUALITY GATE — before ready_for_characters = true:
   ☐ Supporting characters (plural — typically 2-4) have been given real attention — not just mentioned
   ☐ The user has had meaningful creative input (check confirmed count)
   ☐ Cast size fits the story — a story about a crew, court, faction, or ensemble MUST have enough characters to create real ensemble dynamics
+  ☐ Every character has a confirmed presentation (masculine/feminine/androgynous) — surface as assumption if not yet confirmed
 
   FLAG (but don't block):
     ⚠ A character is just... there. No power, no agency, just reacting.
@@ -254,7 +268,13 @@ OUTPUT FORMAT
 
 8. readiness_note — User-facing. Keep it fun.
 
-9. conflict_flag — If there's a contradiction with earlier choices, state it as an actionable question the user can respond to. Empty string if none. IMPORTANT: If a previous turn had a conflict_flag (shown as ⚠ in the conversation), check if the user's subsequent choices resolved it. If not, carry it forward or rephrase it — don't drop unresolved conflicts.
+9. conflict_flag — If the user's choices create a problem, provide:
+   - A clear description of the conflict (1-2 sentences)
+   - severity: "soft" (informational, uncommon but workable) | "moderate" (should be addressed) | "hard" (will produce incoherent story)
+   - fix_options: Array of 2-3 concrete alternatives, each max 15 words. These should be story pivots, not abstract advice.
+   Example: { description: "Lighthearted comedy clashes with survival-stakes kidnapping", severity: "moderate", fix_options: ["Darken the tone to match the stakes", "Lower the stakes to match the comedy", "Lean into tonal whiplash as a feature"] }
+   If no conflict, use "".
+   IMPORTANT: If a previous turn had a conflict_flag (shown as ⚠ in the conversation), check if the user's subsequent choices resolved it. If not, carry it forward or rephrase it — don't drop unresolved conflicts.
 
 10. missing_signal — What's still missing. Keep brief.
 
@@ -364,6 +384,9 @@ COLLISION METHOD:
 
 FOR EACH CHARACTER, PRODUCE (with HARD length budgets):
 - role: max 5 words. Their function in the story.
+- presentation: "masculine" | "feminine" | "androgynous" | "unspecified". MUST match what was confirmed in clarification. This drives image generation — getting it wrong produces wrong-sex character images.
+- age_range: approximate age bracket ("child" | "teen" | "young_adult" | "adult" | "middle_aged" | "elderly"). Infer from story context if not explicitly discussed.
+- ethnicity: if relevant to the story or discussed during clarification. Empty string if unspecified.
 - description: HARD CAP 80 words total.
     FIRST SENTENCE: A bold, hooky opener (max 15 words). Write it like the best line from a book jacket — a paradox, a provocation, or a vivid image.
     THEN: 50-65 words of psychological portrait. Show the contradiction IN ACTION — not as a label. What do they do? What can't they stop doing? Write behavior you can picture, not analysis.
@@ -389,6 +412,12 @@ ALSO PRODUCE (with budgets):
 - cost_type: Max 10 words. What kind of loss destabilizes them?
 - volatility: Max 25 words. How fast they destabilize + what accelerates it.
 - structural_diversity: diverse (bool) + explanation max 25 words.
+- differentiation_matrix: For EACH character, assign distinct values across these 4 dimensions. No two characters may share the same value on 3+ dimensions:
+    stress_response: "freeze" | "fight" | "flee" | "fawn" | "perform" | "withdraw"
+    communication_style: "direct" | "indirect" | "manipulative" | "avoidant" | "performative" | "silent"
+    core_value: "freedom" | "control" | "connection" | "truth" | "safety" | "status" | "pleasure"
+    power_strategy: "charm" | "force" | "intelligence" | "endurance" | "deception" | "vulnerability"
+  Output as: Record<string, { stress_response: string; communication_style: string; core_value: string; power_strategy: string }>
 - collision_sources: 3-5 entries, each source + element_extracted + applied_to, max 20 words per entry.
 
 ═══ FIELD-BY-FIELD GOOD/BAD EXAMPLES ═══
@@ -477,6 +506,9 @@ export const CHARACTER_BUILDER_USER_DYNAMIC = `═══ CONVERSATION ═══
 {{CONSTRAINT_LEDGER}}
 CRITICAL: All CONFIRMED entries must be honored.
 
+═══ USER REVIEW EDITS (MANDATORY — override any conflicting inference) ═══
+{{CHARACTER_REVIEW_EDITS}}
+
 Return ONLY the CharacterBuilder JSON.`;
 
 /** @deprecated */ export const CHARACTER_BUILDER_USER_TEMPLATE = CHARACTER_BUILDER_USER_PREFIX + CHARACTER_BUILDER_USER_DYNAMIC;
@@ -501,6 +533,7 @@ HARD-FAIL if ANY of these are true:
 11. NO EVOLVING LEVERAGE — if no character has leverage that could change (secrets that could be exposed, debts that could be called in, alliances that could shift), the cast is static.
 12. ORPHAN CHARACTER — any character that doesn't appear in at least one relationship_tension entry is dead weight. Every character must be load-bearing in the relational web.
 13. STATIC TENSION MECHANISMS — if every tension_mechanism is a noun/label ("rivalry", "jealousy") instead of an active process that escalates ("each act of loyalty raises the cost of the betrayal she's planning"), the relationships have no engine.
+14. DIFFERENTIATION MATRIX COLLISION — if any two characters share the same value on 3 or more dimensions of the differentiation matrix (stress_response, communication_style, core_value, power_strategy), the cast lacks behavioral separation. Each character must be distinguishable across at least 2 of these 4 axes.
 
 OBSESSION TEST (apply to the cast as a whole):
 Before scoring, ask yourself: "Would a reader think about these characters in the shower? Would they argue with a friend about who's right?" If the cast is competent but forgettable — well-crafted profiles that don't make you FEEL anything — that's a failure regardless of how many dials are filled in.
