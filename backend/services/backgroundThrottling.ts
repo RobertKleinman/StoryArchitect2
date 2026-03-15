@@ -103,3 +103,17 @@ export function shouldDiverge(
 
   return meaningfulInput || assumptionChanged || cadenceFallback;
 }
+
+/**
+ * Determine whether cultural research should fire after this turn.
+ * Lighter cadence than consolidation/divergence — every 3rd turn or on free text.
+ */
+export function shouldResearchCulture(
+  turn: ThrottlingTurnInfo,
+  _session: ThrottlingSessionInfo,
+): boolean {
+  if (turn.turnNumber < 2) return false;
+  const meaningfulInput = turn.userSelection?.type === "free_text";
+  const cadenceFallback = turn.turnNumber % 3 === 0;
+  return meaningfulInput || cadenceFallback;
+}

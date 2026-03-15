@@ -82,6 +82,9 @@ import {
   SCENE_FINAL_JUDGE_SCHEMA,
   SCENE_DIVERGENCE_SCHEMA,
 } from "./sceneSchemas";
+import { culturalResearchService } from "./runtime";
+import { detectDirectedReferences, shouldRunCulturalResearch } from "./culturalResearchService";
+import type { CulturalResearchContext } from "./culturalResearchService";
 
 // ─── Error class ───
 
@@ -353,10 +356,17 @@ export class SceneService {
     const engineDials = formatEngineDialsForPrompt(session.psychologyLedger!);
     const userFeedback = userSelection ? `User said: "${userSelection.label}"` : "(no feedback yet)";
 
-    const dynamicSuffix = SCENE_PLAN_CLARIFIER_USER_SUFFIX
+    let dynamicSuffix = SCENE_PLAN_CLARIFIER_USER_SUFFIX
       .replace("{{USER_FEEDBACK}}", userFeedback)
       .replace("{{PSYCHOLOGY_SIGNALS}}", psychSignals)
       .replace("{{ENGINE_DIALS}}", engineDials);
+
+    // ─── Cultural Intelligence Engine injection ───
+    const planCulturalBrief = await this.getCulturalBrief(session, session.planningTurns.length + 1);
+    const planCulturalText = culturalResearchService.formatBriefForClarifier(planCulturalBrief);
+    if (planCulturalText) {
+      dynamicSuffix += "\n\n" + planCulturalText;
+    }
 
     const system = promptOverrides?.system ?? SCENE_PLAN_CLARIFIER_SYSTEM;
     const user = promptOverrides?.user ?? (cacheablePrefix + dynamicSuffix);
@@ -425,6 +435,13 @@ export class SceneService {
       if (shouldConsolidate) {
         runConsolidation(session.psychologyLedger, turnNumber, "scene", this.llm).catch(err =>
           console.error("SCENE PLAN CONSOLIDATION ERROR (non-fatal):", err)
+        );
+      }
+
+      // ─── Cultural Intelligence Engine: background research ───
+      if (shouldRunCulturalResearch({ turnNumber, userSelection: userSelection ?? null, hasCachedBrief: false })) {
+        this.fireBackgroundCulturalResearch(session, turnNumber).catch(err =>
+          console.error("SCENE PLAN CULTURAL RESEARCH ERROR (non-fatal):", err)
         );
       }
 
@@ -581,11 +598,18 @@ export class SceneService {
     const ledgerText = this.formatLedger(session.constraintLedger);
     const priorTurns = this.formatPriorTurns(session.planningTurns, session.writingTurns);
 
-    const dynamicSuffix = SCENE_CLARIFIER_USER_DYNAMIC
+    let dynamicSuffix = SCENE_CLARIFIER_USER_DYNAMIC
       .replace("{{CONSTRAINT_LEDGER}}", ledgerText)
       .replace("{{PSYCHOLOGY_SIGNALS}}", psychSignals)
       .replace("{{ENGINE_DIALS}}", engineDials)
       .replace("{{PRIOR_TURNS}}", priorTurns);
+
+    // ─── Cultural Intelligence Engine injection ───
+    const sceneCulturalBrief = await this.getCulturalBrief(session, session.writingTurns.length + 1);
+    const sceneCulturalText = culturalResearchService.formatBriefForClarifier(sceneCulturalBrief);
+    if (sceneCulturalText) {
+      dynamicSuffix += "\n\n" + sceneCulturalText;
+    }
 
     const system = promptOverrides?.system ?? SCENE_CLARIFIER_SYSTEM;
     const user = promptOverrides?.user ?? (cacheablePrefix + dynamicSuffix);
@@ -705,6 +729,13 @@ export class SceneService {
       if (shouldConsolidateScene) {
         runConsolidation(session.psychologyLedger, turnNumber, "scene", this.llm).catch(err =>
           console.error("SCENE CONSOLIDATION ERROR (non-fatal):", err)
+        );
+      }
+
+      // ─── Cultural Intelligence Engine: background research ───
+      if (shouldRunCulturalResearch({ turnNumber, userSelection: userSelection ?? null, hasCachedBrief: false })) {
+        this.fireBackgroundCulturalResearch(session, turnNumber).catch(err =>
+          console.error("SCENE CULTURAL RESEARCH ERROR (non-fatal):", err)
         );
       }
     }
@@ -1090,12 +1121,19 @@ export class SceneService {
 
     // Dynamic suffix — changes (previous scene text, rhythm snapshot, psychology signals)
     const psychSignals = formatPsychologyLedgerForPrompt(session.psychologyLedger!);
-    const dynamicSuffix = SCENE_BUILDER_USER_DYNAMIC
+    let dynamicSuffix = SCENE_BUILDER_USER_DYNAMIC
       .replace("{{PREVIOUS_SCENE_TEXT}}", previousText)
       .replace("{{RECENT_PACING}}", rhythmSnapshot.recent_pacing.join(", ") || "(first scene)")
       .replace("{{MONOTONY_RISK}}", String(rhythmSnapshot.monotony_risk))
       .replace("{{RHYTHM_NOTE}}", rhythmSnapshot.rhythm_note)
       .replace("{{PSYCHOLOGY_SIGNALS}}", psychSignals);
+
+    // ─── Cultural Intelligence Engine injection ───
+    const builderCulturalBrief = await this.getCulturalBriefForBuilder(session);
+    const builderCulturalText = culturalResearchService.formatBriefForBuilder(builderCulturalBrief);
+    if (builderCulturalText) {
+      dynamicSuffix += "\n\n" + builderCulturalText;
+    }
 
     const system = promptOverrides?.system ?? SCENE_BUILDER_SYSTEM;
     const user = promptOverrides?.user ?? (cacheablePrefix + dynamicSuffix);
@@ -1589,5 +1627,86 @@ export class SceneService {
       wasEdited: !!(overrides?.system || overrides?.user),
       responseSummary: summary,
     });
+  }
+
+  // ─── Cultural Intelligence Engine helpers ───
+
+  private async getCulturalBrief(
+    session: SceneSessionState,
+    turnNumber: number,
+  ): Promise<import("../../shared/types/cultural").CulturalBrief | null> {
+    return culturalResearchService.getBriefForClarifier({
+      projectId: session.projectId,
+      module: "scene",
+      turnNumber,
+      lockedPacksSummary: this.buildLockedPacksSummary(session),
+      currentState: (session.sceneStagingStates ?? {}) as Record<string, unknown>,
+      constraintLedger: this.formatLedger(session.constraintLedger),
+      psychologySummary: formatPsychologyLedgerForPrompt(session.psychologyLedger!) ?? "",
+      directedReferences: this.extractDirectedReferences(session),
+    });
+  }
+
+  private async getCulturalBriefForBuilder(
+    session: SceneSessionState,
+  ): Promise<import("../../shared/types/cultural").CulturalBrief | null> {
+    return culturalResearchService.getBriefForBuilder(
+      session.projectId, "scene", session.writingTurns.length,
+    );
+  }
+
+  private async fireBackgroundCulturalResearch(
+    session: SceneSessionState,
+    turnNumber: number,
+  ): Promise<void> {
+    const context: CulturalResearchContext = {
+      projectId: session.projectId,
+      module: "scene",
+      turnNumber,
+      lockedPacksSummary: this.buildLockedPacksSummary(session),
+      currentState: (session.sceneStagingStates ?? {}) as Record<string, unknown>,
+      constraintLedger: this.formatLedger(session.constraintLedger),
+      psychologySummary: formatPsychologyLedgerForPrompt(session.psychologyLedger!) ?? "",
+      directedReferences: this.extractDirectedReferences(session),
+    };
+    await culturalResearchService.fireBackgroundResearch(context);
+  }
+
+  private buildLockedPacksSummary(session: SceneSessionState): string {
+    const parts: string[] = [];
+    if (session.sourceHookPack) {
+      parts.push(`HOOK: ${session.sourceHookPack.locked.hook_sentence} — ${session.sourceHookPack.locked.emotional_promise}`);
+    }
+    if (session.sourceCharacterPack) {
+      const chars = Object.entries(session.sourceCharacterPack.locked.characters)
+        .map(([role, c]) => `${role}: ${c.role}, description="${c.description}"`)
+        .join("; ");
+      parts.push(`CHARACTERS: ${chars}`);
+    }
+    if (session.sourceWorldPack) {
+      parts.push(`WORLD: ${session.sourceWorldPack.locked.world_thesis} — ${session.sourceWorldPack.locked.pressure_summary}`);
+    }
+    if (session.sourcePlotPack) {
+      parts.push(`PLOT: ${session.sourcePlotPack.locked.theme_cluster?.topic ?? "(no theme)"} — ${session.sourcePlotPack.locked.tension_chain?.length ?? 0} tension beats`);
+    }
+    return parts.join("\n\n");
+  }
+
+  private extractDirectedReferences(session: SceneSessionState): string[] {
+    const refs: string[] = [];
+    // Check both planning and writing turns for directed references
+    const recentPlanTurns = session.planningTurns.slice(-3);
+    for (const t of recentPlanTurns) {
+      if (t.userSelection?.type === "free_text" && (t.userSelection as any).label) {
+        refs.push(...detectDirectedReferences((t.userSelection as any).label));
+      }
+    }
+    const recentWriteTurns = session.writingTurns.slice(-3);
+    for (const t of recentWriteTurns) {
+      if (t.userSelection?.type === "free_text" && (t.userSelection as any).label) {
+        refs.push(...detectDirectedReferences((t.userSelection as any).label));
+      }
+    }
+    return [...new Set(refs)];
   }
 }

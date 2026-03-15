@@ -13,6 +13,8 @@ import { PlotService } from "./plotService";
 import { SceneStore } from "../storage/sceneStore";
 import { SceneService } from "./sceneService";
 import { AnimeGenClient } from "./animeGenClient";
+import { CulturalStore } from "../storage/culturalStore";
+import { CulturalResearchService } from "./culturalResearchService";
 
 function envModel(key: string, fallback: string): string {
   return process.env[key] ?? fallback;
@@ -51,6 +53,8 @@ export const activeModelConfig: ModelConfig = {
   scene_divergence: envModel("SCENE_MODEL_DIVERGENCE", DEFAULT_MODEL_CONFIG.scene_divergence),
   psych_consolidator: envModel("PSYCH_MODEL_CONSOLIDATOR", DEFAULT_MODEL_CONFIG.psych_consolidator),
   divergence_explorer: envModel("DIVERGENCE_MODEL_EXPLORER", DEFAULT_MODEL_CONFIG.divergence_explorer),
+  cultural_summarizer: envModel("CULTURAL_MODEL_SUMMARIZER", DEFAULT_MODEL_CONFIG.cultural_summarizer),
+  cultural_researcher: envModel("CULTURAL_MODEL_RESEARCHER", DEFAULT_MODEL_CONFIG.cultural_researcher),
 };
 
 export const projectStore = new ProjectStore();
@@ -75,3 +79,5 @@ export const sceneStore = new SceneStore();
 export const sceneService = new SceneService(
   sceneStore, plotStore, worldStore, characterImageStore, characterStore, projectStore, llmClient
 );
+export const culturalStore = new CulturalStore();
+export const culturalResearchService = new CulturalResearchService(culturalStore, llmClient);
