@@ -53,9 +53,10 @@ import {
   runConsolidation,
   formatSuggestedProbeForPrompt,
   markProbeConsumed,
+  moduleBoundaryConsolidation,
 } from "./psychologyEngine";
 import type { RawSignalObservation, BehaviorSummary, AdaptationPlan } from "../../shared/types/userPsychology";
-import { shouldConsolidate as shouldConsolidateThrottled, shouldDiverge as shouldDivergeThrottled } from "./backgroundThrottling";
+import { pickBackgroundTasks } from "./backgroundThrottling";
 import {
   runDivergenceExploration,
   extractDivergenceContext,
@@ -423,24 +424,27 @@ export class CharacterService {
 
     await this.charStore.save(session);
 
-    // ─── Fire background work (non-blocking, throttled) ───
-    if (shouldConsolidateThrottled(turn, session)) {
+    // ─── Fire background work (non-blocking, coordinated to avoid storms) ───
+    const bgTasks = pickBackgroundTasks(turn, session);
+
+    if (bgTasks.consolidate) {
       this.fireBackgroundConsolidation(session.projectId, turn.turnNumber, "character")
         .catch(err => console.error("[PSYCH] Character consolidation fire failed:", err));
     }
 
-    if (shouldDivergeThrottled(turn, session)) {
+    if (bgTasks.diverge) {
       this.fireBackgroundDivergence(session, turn.turnNumber, "character")
         .catch(err => console.error("[DIVERGENCE] Character exploration fire failed:", err));
     }
 
-    // Fire background cultural research (non-blocking, throttled)
-    const hasCachedBrief = !!(await culturalResearchService.getBriefForBuilder(
-      session.projectId, "character", turn.turnNumber,
-    ).catch(() => null));
-    if (shouldRunCulturalResearch({ turnNumber: turn.turnNumber, userSelection: turn.userSelection, hasCachedBrief })) {
-      this.fireBackgroundCulturalResearch(session, turn.turnNumber)
-        .catch(err => console.error("[CULTURAL] Background research fire failed:", err));
+    if (bgTasks.cultural) {
+      const hasCachedBrief = !!(await culturalResearchService.getBriefForBuilder(
+        session.projectId, "character", turn.turnNumber,
+      ).catch(() => null));
+      if (shouldRunCulturalResearch({ turnNumber: turn.turnNumber, userSelection: turn.userSelection, hasCachedBrief })) {
+        this.fireBackgroundCulturalResearch(session, turn.turnNumber)
+          .catch(err => console.error("[CULTURAL] Background research fire failed:", err));
+      }
     }
 
     return {
@@ -586,6 +590,8 @@ export class CharacterService {
       judgeResults: [],
       phase: "builders",
     };
+    // Initialize build progress for frontend polling (Issue #11)
+    session.buildProgress = { attempt: 1, maxAttempts: 3, status: "building" };
     session.lastSavedAt = new Date().toISOString();
     await this.charStore.save(session);
 
@@ -617,6 +623,11 @@ export class CharacterService {
 
     for (let i = 0; i < temperatures.length; i++) {
       const temp = temperatures[i];
+
+      // Update build progress for this candidate
+      session.buildProgress = { attempt: i + 1, maxAttempts: temperatures.length, status: "building" };
+      session.lastSavedAt = new Date().toISOString();
+      await this.charStore.save(session);
 
       // Run builder for this candidate
       let builderRaw = "";
@@ -657,6 +668,10 @@ export class CharacterService {
       session.tournamentProgress!.builderResults.push({ raw: builderRaw, parsed: builderParsed });
 
       // Run judge for this candidate
+      session.buildProgress = { attempt: i + 1, maxAttempts: temperatures.length, status: "judging" };
+      session.lastSavedAt = new Date().toISOString();
+      await this.charStore.save(session);
+
       const judgePrompt = this.buildJudgePrompt(builderParsed, session);
       const judgeSystem = promptOverrides?.judge?.system ?? judgePrompt.system;
       const judgeUser = promptOverrides?.judge?.user ?? judgePrompt.user;
@@ -693,6 +708,7 @@ export class CharacterService {
       if (judgeParsed.pass && avgScore >= 8.5) {
         // Elite candidate: exit immediately
         candidates.push({ cast: builderParsed, judge: judgeParsed });
+        session.buildProgress = { attempt: i + 1, maxAttempts: temperatures.length, status: "passed" };
         console.log(`[TOURNAMENT] Character early-exit after ${i + 1} candidate(s), avgScore=${avgScore.toFixed(1)}`);
         session.lastSavedAt = new Date().toISOString();
         await this.charStore.save(session);
@@ -701,6 +717,7 @@ export class CharacterService {
         // Good candidate: continue to check next, then decide
         candidates.push({ cast: builderParsed, judge: judgeParsed });
         if (i === 1) {
+          session.buildProgress = { attempt: i + 1, maxAttempts: temperatures.length, status: "passed" };
           console.log(`[TOURNAMENT] Character early-exit after ${i + 1} candidate(s), avgScore=${avgScore.toFixed(1)}`);
           session.lastSavedAt = new Date().toISOString();
           await this.charStore.save(session);
@@ -708,6 +725,15 @@ export class CharacterService {
         }
       } else {
         candidates.push({ cast: builderParsed, judge: judgeParsed });
+        const isLast = i === temperatures.length - 1;
+        session.buildProgress = {
+          attempt: i + 1,
+          maxAttempts: temperatures.length,
+          status: isLast ? "best_effort" : "failed_retrying",
+          lastFailReason: judgeParsed.one_fix_instruction,
+        };
+        session.lastSavedAt = new Date().toISOString();
+        await this.charStore.save(session);
       }
     }
 
@@ -728,6 +754,7 @@ export class CharacterService {
 
     if (candidates.length === 0) {
       session.tournamentProgress = undefined;
+      session.buildProgress = undefined;
       session.status = "clarifying";
       await this.charStore.save(session);
       throw new CharacterServiceError("LLM_PARSE_ERROR", "All character builder candidates failed to parse");
@@ -775,6 +802,7 @@ export class CharacterService {
       session.status = "revealed";
       session.rerollCount = resetRerollCount ? 0 : (session.rerollCount ?? 0) + 1;
       session.tournamentProgress = undefined;
+      session.buildProgress = undefined;
       session.lastSavedAt = new Date().toISOString();
       await this.charStore.save(session);
       return {
@@ -806,6 +834,7 @@ export class CharacterService {
     session.status = "revealed";
     session.rerollCount = resetRerollCount ? 0 : (session.rerollCount ?? 0) + 1;
     session.tournamentProgress = undefined;  // Clear progress on success
+    session.buildProgress = undefined;       // Clear build progress on reveal
     session.lastSavedAt = new Date().toISOString();
 
     await this.charStore.save(session);
@@ -926,6 +955,11 @@ export class CharacterService {
         cost_type: profile.cost_type ?? "",
         volatility: profile.volatility ?? "",
       };
+    }
+
+    // Module boundary consolidation: prune low-confidence signals before handoff
+    if (session.psychologyLedger) {
+      session.psychologyLedger = moduleBoundaryConsolidation(session.psychologyLedger);
     }
 
     const characterPack: CharacterPack = {

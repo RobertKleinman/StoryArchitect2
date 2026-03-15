@@ -319,6 +319,8 @@ export interface WorldSessionState {
   developmentTargets: DevelopmentTarget[];
   status: "clarifying" | "generating" | "revealed" | "locked";
   lastSavedAt?: string;
+  /** Live build progress for tournament visibility (Issue #11) */
+  buildProgress?: import("./api").BuildProgress;
   promptHistory?: WorldPromptHistoryEntry[];
   consecutiveHighReadiness?: number;
   /** User psychology ledger — imported from charImage module + accumulated here */

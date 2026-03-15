@@ -194,6 +194,8 @@ export interface HookSessionState {
   tournamentProgress?: TournamentProgress;
   /** Last saved timestamp for crash detection */
   lastSavedAt?: string;
+  /** Live build progress for tournament visibility (Issue #11) */
+  buildProgress?: import("./api").BuildProgress;
   /** Prompt edit history for analysis and export */
   promptHistory?: PromptHistoryEntry[];
   /** Consecutive turns where readiness_pct >= 75 — used for convergence safety net */

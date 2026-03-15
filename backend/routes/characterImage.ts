@@ -2,30 +2,14 @@ import { Router } from "express";
 import fs from "fs/promises";
 import nodePath from "path";
 import { characterImageFeatureFlagGuard } from "../middleware/characterImageFeatureFlagGuard";
-import { characterImageService, characterImageStore, animeGenClient } from "../services/runtime";
-import { CharacterImageServiceError } from "../services/characterImageService";
+import { characterImageService, characterImageStore, animeGenClient, culturalStore } from "../services/runtime";
+import { handleRouteError, getModelOverride } from "./routeUtils";
 
 export const characterImageRoutes = Router();
 
 characterImageRoutes.use(characterImageFeatureFlagGuard);
 
-function getModelOverride(header: string | string[] | undefined): string | undefined {
-  if (Array.isArray(header)) return header[0];
-  return header;
-}
-
-function handleError(res: any, err: unknown) {
-  console.error("CHARACTER IMAGE ROUTE ERROR:", err);
-  if (err instanceof CharacterImageServiceError) {
-    const status = err.code === "NOT_FOUND" ? 404
-      : err.code === "INVALID_INPUT" ? 400
-      : err.code === "IMAGE_GEN_FAILED" ? 503
-      : 502;
-    return res.status(status).json({ error: true, code: err.code, message: err.message });
-  }
-  const msg = err instanceof Error ? err.message : "Unexpected server error";
-  return res.status(500).json({ error: true, code: "LLM_CALL_FAILED", message: msg });
-}
+const handleError = (res: any, err: unknown) => handleRouteError(res, err, "CHARACTER IMAGE");
 
 characterImageRoutes.post("/preview-prompt", async (req, res) => {
   const { projectId, stage } = req.body ?? {};
@@ -242,6 +226,23 @@ characterImageRoutes.post("/set-art-style", async (req, res) => {
   try {
     await characterImageService.setArtStyle(projectId, style, customNote);
     return res.json({ ok: true });
+  } catch (err) {
+    return handleError(res, err);
+  }
+});
+
+characterImageRoutes.get("/debug/insights/:projectId", async (req, res) => {
+  try {
+    const session = await characterImageService.getSession(req.params.projectId);
+    const psychologyLedger = session?.psychologyLedger ?? null;
+    let culturalBrief = null;
+    try {
+      const turnNumber = session?.turns?.length ?? 99;
+      culturalBrief = await culturalStore.getCachedBrief(req.params.projectId, "character_image", turnNumber + 10);
+    } catch { /* no brief cached yet */ }
+    const divergenceMap = psychologyLedger?.lastDirectionMap ?? null;
+    const developmentTargets: any[] = [];
+    return res.json({ psychologyLedger, culturalBrief, divergenceMap, developmentTargets });
   } catch (err) {
     return handleError(res, err);
   }

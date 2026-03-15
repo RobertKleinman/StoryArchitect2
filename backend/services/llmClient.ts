@@ -22,6 +22,16 @@ const providers: Record<LLMProvider, ILLMProvider> = {
   }),
 };
 
+// ── Token tracking ───────────────────────────────────────────────────
+
+export interface TokenUsage {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  calls: number;
+}
+
 // ── Public types (unchanged from before) ────────────────────────────
 
 export interface CallOptions {
@@ -39,6 +49,7 @@ export interface CallOptions {
 
 export class LLMClient {
   private config: ModelConfig;
+  private sessionTokens: TokenUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, calls: 0 };
 
   constructor(config: ModelConfig) {
     this.config = config;
@@ -96,6 +107,13 @@ export class LLMClient {
           `provider=${providerName} model=${model}`,
         );
 
+        // Accumulate session-wide token usage
+        this.sessionTokens.input += u.inputTokens ?? 0;
+        this.sessionTokens.output += u.outputTokens ?? 0;
+        this.sessionTokens.cacheRead += u.cacheReadTokens ?? 0;
+        this.sessionTokens.cacheWrite += u.cacheWriteTokens ?? 0;
+        this.sessionTokens.calls++;
+
         // Structured outputs = already valid JSON; otherwise strip fences
         return options?.jsonSchema ? response.text : stripJsonFences(response.text);
       } catch (err: unknown) {
@@ -126,6 +144,11 @@ export class LLMClient {
     }
 
     throw new Error(`LLM [${role}] failed after max retries`);
+  }
+
+  /** Returns a snapshot of accumulated token usage across all calls in this process lifetime */
+  getTokenUsage(): TokenUsage {
+    return { ...this.sessionTokens };
   }
 }
 

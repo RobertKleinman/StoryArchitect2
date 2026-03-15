@@ -2,27 +2,14 @@ import { Router } from "express";
 import fs from "fs/promises";
 import nodePath from "path";
 import { characterFeatureFlagGuard } from "../middleware/characterFeatureFlagGuard";
-import { characterService, characterStore } from "../services/runtime";
-import { CharacterServiceError } from "../services/characterService";
+import { characterService, characterStore, culturalStore } from "../services/runtime";
+import { handleRouteError, getModelOverride } from "./routeUtils";
 
 export const characterRoutes = Router();
 
 characterRoutes.use(characterFeatureFlagGuard);
 
-function getModelOverride(header: string | string[] | undefined): string | undefined {
-  if (Array.isArray(header)) return header[0];
-  return header;
-}
-
-function handleError(res: any, err: unknown) {
-  console.error("CHARACTER ROUTE ERROR:", err);
-  if (err instanceof CharacterServiceError) {
-    const status = err.code === "NOT_FOUND" ? 404 : err.code === "INVALID_INPUT" ? 400 : 502;
-    return res.status(status).json({ error: true, code: err.code, message: err.message });
-  }
-  const msg = err instanceof Error ? err.message : "Unexpected server error";
-  return res.status(500).json({ error: true, code: "LLM_CALL_FAILED", message: msg });
-}
+const handleError = (res: any, err: unknown) => handleRouteError(res, err, "CHARACTER");
 
 characterRoutes.post("/preview-prompt", async (req, res) => {
   const { projectId, stage } = req.body ?? {};
@@ -186,6 +173,23 @@ characterRoutes.get("/list-sessions", async (_req, res) => {
     }
 
     return res.json({ sessions });
+  } catch (err) {
+    return handleError(res, err);
+  }
+});
+
+characterRoutes.get("/debug/insights/:projectId", async (req, res) => {
+  try {
+    const session = await characterService.getSession(req.params.projectId);
+    const psychologyLedger = session?.psychologyLedger ?? null;
+    let culturalBrief = null;
+    try {
+      const turnNumber = session?.turns?.length ?? 99;
+      culturalBrief = await culturalStore.getCachedBrief(req.params.projectId, "character", turnNumber + 10);
+    } catch { /* no brief cached yet */ }
+    const divergenceMap = psychologyLedger?.lastDirectionMap ?? null;
+    const developmentTargets: any[] = [];
+    return res.json({ psychologyLedger, culturalBrief, divergenceMap, developmentTargets });
   } catch (err) {
     return handleError(res, err);
   }

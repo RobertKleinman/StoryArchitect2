@@ -1,6 +1,9 @@
 import React, { useMemo, useState } from "react";
 import { characterApi } from "../lib/characterApi";
+import { startBuildProgressPolling } from "../lib/buildProgressPoller";
+import { PackPreview } from "./PackPreview";
 import { PsychologyOverlay } from "./PsychologyOverlay";
+import { EngineInsights } from "./EngineInsights";
 import { ModelSelector } from "./ModelSelector";
 import type {
   CharacterAssumptionResponse,
@@ -8,6 +11,7 @@ import type {
   CharacterClarifierOption,
   CharacterAssumption,
   CharacterJudgeScores,
+  CharacterPack,
   CharacterRelationshipUpdate,
   CharacterSurfaced,
 } from "../../shared/types/character";
@@ -111,6 +115,8 @@ export function CharacterWorkshop() {
   const [hookPreview, setHookPreview] = useState<{ seedInput: string; premise: string } | null>(null);
   const [showPsych, setShowPsych] = useState(false);
   const fetchPsych = useMemo(() => () => characterApi.debugPsychology(projectId), [projectId]);
+  const [showInsights, setShowInsights] = useState(false);
+  const fetchInsights = useMemo(() => () => characterApi.debugInsights(projectId), [projectId]);
 
   // Available hook sessions for the connect phase
   interface HookSessionInfo {
@@ -129,6 +135,7 @@ export function CharacterWorkshop() {
   const [showManualInput, setShowManualInput] = useState(false);
 
   const [state, setState] = useState<CharacterWorkshopState>(initialState);
+  const [lockedPack, setLockedPack] = useState<CharacterPack | null>(null);
   const [lastAction, setLastAction] = useState<null | (() => Promise<void>)>(null);
   const [sourcesExpanded, setSourcesExpanded] = useState(false);
 
@@ -418,32 +425,23 @@ export function CharacterWorkshop() {
 
   const generateCharacters = async () => {
     await runAndTrack(async () => {
-      const progressMessages = [
-        "Building your cast from the creative brief...",
-        "Crafting psychological profiles...",
-        "Weaving relationship dynamics...",
-        "Quality checking the ensemble...",
-        "Polishing descriptions...",
-        "Almost there...",
-      ];
-      let step = 0;
-
       setState((prev) => ({
         ...prev,
         phase: "generating",
         loading: true,
-        loadingMessage: progressMessages[0],
+        loadingMessage: "Building your cast from the creative brief...",
         error: null,
       }));
 
-      const progressInterval = setInterval(() => {
-        step = Math.min(step + 1, progressMessages.length - 1);
-        setState((prev) => ({ ...prev, loadingMessage: progressMessages[step] }));
-      }, 5000);
+      const stopPolling = startBuildProgressPolling(
+        () => characterApi.getSession(projectId),
+        "characters",
+        (msg) => setState((prev) => ({ ...prev, loadingMessage: msg })),
+      );
 
       try {
         const response = await characterApi.generate(projectId);
-        clearInterval(progressInterval);
+        stopPolling();
 
         setState((prev) => ({
           ...prev,
@@ -455,7 +453,7 @@ export function CharacterWorkshop() {
           error: null,
         }));
       } catch (err) {
-        clearInterval(progressInterval);
+        stopPolling();
         throw err;
       }
     });
@@ -471,16 +469,28 @@ export function CharacterWorkshop() {
         error: null,
       }));
 
-      const response = await characterApi.reroll(projectId);
+      const stopPolling = startBuildProgressPolling(
+        () => characterApi.getSession(projectId),
+        "characters",
+        (msg) => setState((prev) => ({ ...prev, loadingMessage: msg })),
+      );
 
-      setState((prev) => ({
-        ...prev,
-        phase: "revealed",
-        revealedCharacters: response.characters,
-        judgeInfo: response.judge,
-        loading: false,
-        loadingMessage: "",
-      }));
+      try {
+        const response = await characterApi.reroll(projectId);
+        stopPolling();
+
+        setState((prev) => ({
+          ...prev,
+          phase: "revealed",
+          revealedCharacters: response.characters,
+          judgeInfo: response.judge,
+          loading: false,
+          loadingMessage: "",
+        }));
+      } catch (err) {
+        stopPolling();
+        throw err;
+      }
     });
   };
 
@@ -488,7 +498,8 @@ export function CharacterWorkshop() {
     await runAndTrack(async () => {
       setState((prev) => ({ ...prev, loading: true, loadingMessage: "Locking your cast...", error: null }));
       try {
-        await characterApi.lock(projectId);
+        const pack = await characterApi.lock(projectId);
+        setLockedPack(pack);
         setState((prev) => ({
           ...prev,
           phase: "locked",
@@ -1092,6 +1103,7 @@ export function CharacterWorkshop() {
             {state.phase === "locked" && (
               <div className="actions-row">
                 <p>Cast locked &mdash; ready for visual design module</p>
+                {lockedPack && <PackPreview pack={lockedPack} defaultExpanded />}
                 <button type="button" disabled={state.loading} onClick={() => void startOver()}>Start over</button>
               </div>
             )}
@@ -1107,6 +1119,17 @@ export function CharacterWorkshop() {
         projectId={projectId}
         visible={showPsych}
         onClose={() => setShowPsych(false)}
+      />
+      <button type="button" className="insights-toggle" onClick={() => setShowInsights(v => !v)}>
+        <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96a7.04 7.04 0 0 0-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84a.48.48 0 0 0-.48.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 9.81a.48.48 0 0 0 .12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.26.41.48.41h3.84c.24 0 .44-.17.48-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/></svg>
+        Insights
+      </button>
+      <EngineInsights
+        module="character"
+        projectId={projectId}
+        fetchInsights={fetchInsights}
+        visible={showInsights}
+        onClose={() => setShowInsights(false)}
       />
     </main>
   );

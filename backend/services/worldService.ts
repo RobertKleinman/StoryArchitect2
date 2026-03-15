@@ -54,9 +54,10 @@ import {
   runConsolidation,
   formatSuggestedProbeForPrompt,
   markProbeConsumed,
+  moduleBoundaryConsolidation,
 } from "./psychologyEngine";
 import type { RawSignalObservation, BehaviorSummary, AdaptationPlan } from "../../shared/types/userPsychology";
-import { shouldConsolidate as shouldConsolidateThrottled, shouldDiverge as shouldDivergeThrottled } from "./backgroundThrottling";
+import { pickBackgroundTasks } from "./backgroundThrottling";
 import {
   runDivergenceExploration,
   extractDivergenceContext,
@@ -473,24 +474,27 @@ export class WorldService {
 
     await this.worldStore.save(session!);
 
-    // ─── Fire background work (non-blocking, throttled) ───
-    if (shouldConsolidateThrottled(turn, session!)) {
+    // ─── Fire background work (non-blocking, coordinated to avoid storms) ───
+    const bgTasks = pickBackgroundTasks(turn, session!);
+
+    if (bgTasks.consolidate) {
       this.fireBackgroundConsolidation(session!.projectId, turn.turnNumber, "world")
         .catch(err => console.error("[PSYCH] World consolidation fire failed:", err));
     }
 
-    if (shouldDivergeThrottled(turn, session!)) {
+    if (bgTasks.diverge) {
       this.fireBackgroundDivergence(session!, turn.turnNumber, "world")
         .catch(err => console.error("[DIVERGENCE] World exploration fire failed:", err));
     }
 
-    // Fire background cultural research (non-blocking, throttled)
-    const hasCachedBrief = !!(await culturalResearchService.getBriefForBuilder(
-      session!.projectId, "world", turn.turnNumber,
-    ).catch(() => null));
-    if (shouldRunCulturalResearch({ turnNumber: turn.turnNumber, userSelection: turn.userSelection, hasCachedBrief })) {
-      this.fireBackgroundCulturalResearch(session!, turn.turnNumber)
-        .catch(err => console.error("[CULTURAL] Background research fire failed:", err));
+    if (bgTasks.cultural) {
+      const hasCachedBrief = !!(await culturalResearchService.getBriefForBuilder(
+        session!.projectId, "world", turn.turnNumber,
+      ).catch(() => null));
+      if (shouldRunCulturalResearch({ turnNumber: turn.turnNumber, userSelection: turn.userSelection, hasCachedBrief })) {
+        this.fireBackgroundCulturalResearch(session!, turn.turnNumber)
+          .catch(err => console.error("[CULTURAL] Background research fire failed:", err));
+      }
     }
 
     return {
@@ -594,6 +598,8 @@ export class WorldService {
     }
 
     session.status = "generating";
+    // Build progress for frontend polling (Issue #11) — single attempt for world
+    session.buildProgress = { attempt: 1, maxAttempts: 1, status: "building" };
     await this.worldStore.save(session);
 
     // ─── Builder ───
@@ -637,6 +643,9 @@ export class WorldService {
     }
 
     // ─── Judge ───
+    session.buildProgress = { attempt: 1, maxAttempts: 1, status: "judging" };
+    await this.worldStore.save(session);
+
     const judgePrompt = this.buildJudgePrompt(builderResult, session);
     const judgeSystem = promptOverrides?.judge?.system ?? judgePrompt.system;
     const judgeUser = promptOverrides?.judge?.user ?? judgePrompt.user;
@@ -654,6 +663,7 @@ export class WorldService {
       // Non-fatal: reveal without judge
       session.revealedWorld = builderResult;
       session.status = "revealed";
+      session.buildProgress = undefined;
       session.lastSavedAt = new Date().toISOString();
       await this.worldStore.save(session);
       return { world: builderResult, judge: null };
@@ -701,6 +711,7 @@ export class WorldService {
     session.revealedWorld = builderResult;
     session.revealedJudge = judgeResult ?? undefined;
     session.status = "revealed";
+    session.buildProgress = undefined;  // Clear build progress on reveal
     session.lastSavedAt = new Date().toISOString();
 
     await this.worldStore.save(session);
@@ -803,6 +814,11 @@ export class WorldService {
           notes: w.development_opportunity,
         });
       }
+    }
+
+    // Module boundary consolidation: prune low-confidence signals before handoff
+    if (session.psychologyLedger) {
+      session.psychologyLedger = moduleBoundaryConsolidation(session.psychologyLedger);
     }
 
     const worldPack: WorldPack = {

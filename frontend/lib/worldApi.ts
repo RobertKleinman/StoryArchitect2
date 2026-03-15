@@ -8,48 +8,10 @@ import type {
 import type {
   WorldClarifyResponse,
   WorldGenerateResponse,
+  EngineInsightsResponse,
 } from "../../shared/types/api";
 import type { UserPsychologyLedger } from "../../shared/types/userPsychology";
-
-const BASE = "/api";
-
-const DEFAULT_TIMEOUT_MS = 180_000;
-
-async function request<T>(path: string, options?: RequestInit & { timeoutMs?: number }): Promise<T> {
-  const { timeoutMs, ...fetchOptions } = options ?? {};
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs ?? DEFAULT_TIMEOUT_MS);
-
-  try {
-    const res = await fetch(`${BASE}${path}`, {
-      headers: { "Content-Type": "application/json" },
-      ...fetchOptions,
-      signal: controller.signal,
-    });
-
-    let data: any;
-    const ct = res.headers.get("content-type") ?? "";
-    if (ct.includes("application/json")) {
-      data = await res.json();
-    } else {
-      const text = await res.text();
-      data = { message: text || `Server error (${res.status})` };
-    }
-
-    if (!res.ok || data.error) {
-      throw new Error(data?.message ?? "Something went wrong");
-    }
-
-    return data as T;
-  } catch (err) {
-    if (err instanceof DOMException && err.name === "AbortError") {
-      throw new Error(`Request to ${path} timed out after ${((timeoutMs ?? DEFAULT_TIMEOUT_MS) / 1000).toFixed(0)}s`);
-    }
-    throw err;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
+import { request } from "./apiClient";
 
 export const worldApi = {
   clarify: (body: {
@@ -140,4 +102,7 @@ export const worldApi = {
 
   debugPsychology: (projectId: string) =>
     request<{ psychologyLedger: UserPsychologyLedger | null }>(`/world/debug/psychology/${projectId}`),
+
+  debugInsights: (projectId: string) =>
+    request<EngineInsightsResponse>(`/world/debug/insights/${projectId}`),
 };

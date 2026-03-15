@@ -393,6 +393,8 @@ export interface PlotSessionState {
   promptHistory?: PlotPromptHistoryEntry[];
   tournamentProgress?: PlotTournamentProgress;
   lastSavedAt?: string;
+  /** Live build progress for tournament visibility (Issue #11) */
+  buildProgress?: import("./api").BuildProgress;
 }
 
 // ─── Plot Pack (module handoff to downstream) ───

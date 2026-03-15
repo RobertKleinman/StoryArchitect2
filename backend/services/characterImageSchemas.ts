@@ -178,6 +178,8 @@ export const CHARACTER_IMAGE_BUILDER_SCHEMA = {
 export const CHARACTER_IMAGE_JUDGE_SCHEMA = {
   type: "object",
   properties: {
+    // Chain-of-thought: forces the model to reason BEFORE scoring
+    analysis: { type: "string" },
     pass: { type: "boolean" },
     hard_fail_reasons: {
       type: "array",
@@ -198,6 +200,6 @@ export const CHARACTER_IMAGE_JUDGE_SCHEMA = {
     distinctiveness_notes: { type: "string" },
     one_fix_instruction: { type: "string" },
   },
-  required: ["pass", "hard_fail_reasons", "scores", "distinctiveness_notes", "one_fix_instruction"],
+  required: ["analysis", "pass", "hard_fail_reasons", "scores", "distinctiveness_notes", "one_fix_instruction"],
   additionalProperties: false,
 } as const;

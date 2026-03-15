@@ -413,6 +413,8 @@ export const SCENE_MINOR_JUDGE_SCHEMA = {
 export const SCENE_FINAL_JUDGE_SCHEMA = {
   type: "object",
   properties: {
+    // Chain-of-thought: forces the model to reason BEFORE scoring
+    analysis: { type: "string" },
     pass: { type: "boolean" },
     scores: {
       type: "object",
@@ -462,7 +464,7 @@ export const SCENE_FINAL_JUDGE_SCHEMA = {
     missing_elements: { type: "array", items: { type: "string" } },
     overall_note: { type: "string" },
   },
-  required: ["pass", "scores", "flagged_scenes", "arc_issues", "missing_elements", "overall_note"],
+  required: ["analysis", "pass", "scores", "flagged_scenes", "arc_issues", "missing_elements", "overall_note"],
   additionalProperties: false,
 };
 

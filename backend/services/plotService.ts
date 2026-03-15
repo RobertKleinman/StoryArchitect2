@@ -56,6 +56,7 @@ import {
   runConsolidation,
   formatSuggestedProbeForPrompt,
   markProbeConsumed,
+  moduleBoundaryConsolidation,
 } from "./psychologyEngine";
 import type { RawSignalObservation, BehaviorSummary, AdaptationPlan } from "../../shared/types/userPsychology";
 import {
@@ -63,10 +64,7 @@ import {
   extractDivergenceContext,
   formatDirectionMapForPrompt,
 } from "./divergenceExplorer";
-import {
-  shouldConsolidate as shouldConsolidateThrottled,
-  shouldDiverge as shouldDivergeThrottled,
-} from "./backgroundThrottling";
+import { pickBackgroundTasks } from "./backgroundThrottling";
 import { culturalResearchService } from "./runtime";
 import { detectDirectedReferences, shouldRunCulturalResearch } from "./culturalResearchService";
 import type { CulturalResearchContext } from "./culturalResearchService";
@@ -534,25 +532,27 @@ export class PlotService {
 
     await this.plotStore.save(session!);
 
-    // ─── Fire background consolidation (non-blocking, throttled) ───
-    if (shouldConsolidateThrottled(turn, session!)) {
+    // ─── Fire background work (non-blocking, coordinated to avoid storms) ───
+    const bgTasks = pickBackgroundTasks(turn, session!);
+
+    if (bgTasks.consolidate) {
       this.fireBackgroundConsolidation(session!.projectId, turn.turnNumber, "plot")
         .catch(err => console.error("[PSYCH] Plot consolidation fire failed:", err));
     }
 
-    // ─── Fire background divergence exploration (non-blocking, throttled) ───
-    if (shouldDivergeThrottled(turn, session!)) {
+    if (bgTasks.diverge) {
       this.fireBackgroundDivergence(session!, turn.turnNumber, "plot")
         .catch(err => console.error("[DIVERGENCE] Plot exploration fire failed:", err));
     }
 
-    // Fire background cultural research (non-blocking, throttled)
-    const hasCachedBrief = !!(await culturalResearchService.getBriefForBuilder(
-      session!.projectId, "plot", turn.turnNumber,
-    ).catch(() => null));
-    if (shouldRunCulturalResearch({ turnNumber: turn.turnNumber, userSelection: turn.userSelection, hasCachedBrief })) {
-      this.fireBackgroundCulturalResearch(session!, turn.turnNumber)
-        .catch(err => console.error("[CULTURAL] Background research fire failed:", err));
+    if (bgTasks.cultural) {
+      const hasCachedBrief = !!(await culturalResearchService.getBriefForBuilder(
+        session!.projectId, "plot", turn.turnNumber,
+      ).catch(() => null));
+      if (shouldRunCulturalResearch({ turnNumber: turn.turnNumber, userSelection: turn.userSelection, hasCachedBrief })) {
+        this.fireBackgroundCulturalResearch(session!, turn.turnNumber)
+          .catch(err => console.error("[CULTURAL] Background research fire failed:", err));
+      }
     }
 
     return {
@@ -655,6 +655,8 @@ export class PlotService {
     }
 
     session.status = "generating";
+    // Build progress for frontend polling (Issue #11) — single attempt for plot
+    session.buildProgress = { attempt: 1, maxAttempts: 1, status: "building" };
     await this.plotStore.save(session);
 
     // ─── Builder ───
@@ -691,6 +693,9 @@ export class PlotService {
     }
 
     // ─── Judge ───
+    session.buildProgress = { attempt: 1, maxAttempts: 1, status: "judging" };
+    await this.plotStore.save(session);
+
     const judgePrompt = this.buildJudgePrompt(builderResult, session);
     const judgeSystem = promptOverrides?.judge?.system ?? judgePrompt.system;
     const judgeUser = promptOverrides?.judge?.user ?? judgePrompt.user;
@@ -708,6 +713,7 @@ export class PlotService {
       // Non-fatal: reveal without judge
       session.revealedPlot = builderResult;
       session.status = "revealed";
+      session.buildProgress = undefined;
       session.lastSavedAt = new Date().toISOString();
       await this.plotStore.save(session);
       return { plot: builderResult, judge: null, rerollCount: session.rerollCount ?? 0 };
@@ -756,6 +762,7 @@ export class PlotService {
     session.revealedPlot = builderResult;
     session.revealedJudge = judgeResult ?? undefined;
     session.status = "revealed";
+    session.buildProgress = undefined;  // Clear build progress on reveal
     session.lastSavedAt = new Date().toISOString();
 
     await this.plotStore.save(session);
@@ -864,6 +871,11 @@ export class PlotService {
           current_gap: w.weakness,
         });
       }
+    }
+
+    // Module boundary consolidation: prune low-confidence signals before handoff
+    if (session.psychologyLedger) {
+      session.psychologyLedger = moduleBoundaryConsolidation(session.psychologyLedger);
     }
 
     const plotPack: PlotPack = {

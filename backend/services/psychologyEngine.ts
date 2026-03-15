@@ -1457,4 +1457,26 @@ export function evaluateProbeOutcome(ledger: UserPsychologyLedger): void {
   }
 }
 
+// ─── Module Boundary Consolidation ───
+
+/**
+ * Lightweight ledger cleanup performed at module lock time (module boundaries).
+ * Drops low-confidence noise and caps the active signal count so downstream
+ * modules inherit a focused, high-quality signal store.
+ *
+ * Rules:
+ *   1. Drop signals with confidence < 0.2 (noise / decayed)
+ *   2. Cap remaining signals at 8 (keep highest confidence)
+ */
+export function moduleBoundaryConsolidation(ledger: UserPsychologyLedger): UserPsychologyLedger {
+  if (ledger.signalStore) {
+    // 1. Drop signals with confidence < 0.2
+    ledger.signalStore = ledger.signalStore.filter(s => (s.confidence ?? 1) >= 0.2);
+    // 2. Cap active signals at 8 (keep highest confidence)
+    ledger.signalStore.sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
+    ledger.signalStore = ledger.signalStore.slice(0, 8);
+  }
+  return ledger;
+}
+
 export { createEmptyLedger };

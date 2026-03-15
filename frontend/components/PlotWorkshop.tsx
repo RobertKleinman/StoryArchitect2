@@ -1,6 +1,9 @@
 import React, { useMemo, useState } from "react";
 import { plotApi } from "../lib/plotApi";
+import { startBuildProgressPolling } from "../lib/buildProgressPoller";
+import { PackPreview } from "./PackPreview";
 import { PsychologyOverlay } from "./PsychologyOverlay";
+import { EngineInsights } from "./EngineInsights";
 import { ModelSelector } from "./ModelSelector";
 import type {
   PlotAssumptionResponse,
@@ -9,6 +12,7 @@ import type {
   PlotAssumption,
   PlotJudgeScores,
   PlotDevelopmentTarget,
+  PlotPack,
   TensionBeat,
   TurningPoint,
 } from "../../shared/types/plot";
@@ -158,8 +162,11 @@ export function PlotWorkshop() {
   const [upstreamValidated, setUpstreamValidated] = useState(false);
 
   const [state, setState] = useState<WorkshopState>(initialState);
+  const [lockedPack, setLockedPack] = useState<PlotPack | null>(null);
   const [showPsych, setShowPsych] = useState(false);
   const fetchPsych = useMemo(() => () => plotApi.debugPsychology(projectId), [projectId]);
+  const [showInsights, setShowInsights] = useState(false);
+  const fetchInsights = useMemo(() => () => plotApi.debugInsights(projectId), [projectId]);
 
   // ─── Load available world sessions on mount ───
   React.useEffect(() => {
@@ -411,8 +418,14 @@ export function PlotWorkshop() {
 
   const generatePlot = async () => {
     setState(s => ({ ...s, phase: "generating", loading: true, loadingMessage: "Building your plot...", error: null }));
+    const stopPolling = startBuildProgressPolling(
+      () => plotApi.getSession(projectId),
+      "plot",
+      (msg) => setState((prev) => ({ ...prev, loadingMessage: msg })),
+    );
     try {
       const result = await plotApi.generate(projectId);
+      stopPolling();
       setState(s => ({
         ...s,
         phase: "revealed",
@@ -423,14 +436,21 @@ export function PlotWorkshop() {
         loading: false,
       }));
     } catch (err: any) {
+      stopPolling();
       setState(s => ({ ...s, phase: "clarifying", loading: false, error: err.message }));
     }
   };
 
   const rerollPlot = async () => {
     setState(s => ({ ...s, loading: true, loadingMessage: "Regenerating plot...", error: null }));
+    const stopPolling = startBuildProgressPolling(
+      () => plotApi.getSession(projectId),
+      "plot",
+      (msg) => setState((prev) => ({ ...prev, loadingMessage: msg })),
+    );
     try {
       const result = await plotApi.reroll(projectId);
+      stopPolling();
       setState(s => ({
         ...s,
         revealedPlot: result.plot,
@@ -440,6 +460,7 @@ export function PlotWorkshop() {
         loading: false,
       }));
     } catch (err: any) {
+      stopPolling();
       setState(s => ({ ...s, loading: false, error: err.message }));
     }
   };
@@ -447,7 +468,8 @@ export function PlotWorkshop() {
   const lockPlot = async () => {
     setState(s => ({ ...s, loading: true, loadingMessage: "Locking plot...", error: null }));
     try {
-      await plotApi.lock(projectId);
+      const pack = await plotApi.lock(projectId);
+      setLockedPack(pack);
       setState(s => ({ ...s, phase: "locked", loading: false }));
     } catch (err: any) {
       setState(s => ({ ...s, loading: false, error: err.message }));
@@ -1156,6 +1178,7 @@ export function PlotWorkshop() {
         <div className="locked-phase">
           <h3>Plot Locked!</h3>
           <p>Your plot's tension chain, turning points, climax, and mysteries have been saved. These will drive all downstream generation.</p>
+          {lockedPack && <PackPreview pack={lockedPack} defaultExpanded />}
           <button type="button" className="btn-ghost" onClick={resetAll}>Start New Session</button>
         </div>
       )}
@@ -1168,6 +1191,17 @@ export function PlotWorkshop() {
         projectId={projectId}
         visible={showPsych}
         onClose={() => setShowPsych(false)}
+      />
+      <button type="button" className="insights-toggle" onClick={() => setShowInsights(v => !v)}>
+        <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96a7.04 7.04 0 0 0-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84a.48.48 0 0 0-.48.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 9.81a.48.48 0 0 0 .12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.26.41.48.41h3.84c.24 0 .44-.17.48-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/></svg>
+        Insights
+      </button>
+      <EngineInsights
+        module="plot"
+        projectId={projectId}
+        fetchInsights={fetchInsights}
+        visible={showInsights}
+        onClose={() => setShowInsights(false)}
       />
     </div>
   );

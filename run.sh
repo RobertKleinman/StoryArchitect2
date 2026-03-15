@@ -1,5 +1,6 @@
 #!/bin/bash
-export TMPDIR=/sessions/busy-awesome-hopper/mnt/visnovgen/.tmp
-export HOME=/sessions/busy-awesome-hopper/mnt/visnovgen/.tmp
+# Ensure a writable temp directory relative to the project root
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+export TMPDIR="${TMPDIR:-$SCRIPT_DIR/.tmp}"
 mkdir -p "$TMPDIR"
 exec "$@"

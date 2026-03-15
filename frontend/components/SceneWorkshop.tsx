@@ -1,7 +1,10 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { sceneApi } from "../lib/sceneApi";
+import { PackPreview } from "./PackPreview";
 import { PsychologyOverlay } from "./PsychologyOverlay";
+import { EngineInsights } from "./EngineInsights";
 import { ModelSelector } from "./ModelSelector";
+import type { PreSceneAuditResponse, AuditTarget } from "../../shared/types/api";
 import type {
   SceneClarifierResponse,
   ScenePlan,
@@ -9,6 +12,7 @@ import type {
   BuiltScene,
   FinalJudgeOutput,
   SceneDivergenceOutput,
+  ScenePack,
 } from "../../shared/types/scene";
 
 type Phase =
@@ -110,9 +114,17 @@ export function SceneWorkshop() {
   const [showManualInput, setShowManualInput] = useState(false);
 
   const [state, setState] = useState<WorkshopState>(initialState);
+  const [completedPack, setCompletedPack] = useState<ScenePack | null>(null);
   const [showPsych, setShowPsych] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
   const fetchPsych = useMemo(() => () => sceneApi.debugPsychology(projectId), [projectId]);
+  const [showInsights, setShowInsights] = useState(false);
+  const fetchInsights = useMemo(() => () => sceneApi.debugInsights(projectId), [projectId]);
+
+  // ─── Audit state (Issue 6) ───
+  const [auditData, setAuditData] = useState<PreSceneAuditResponse | null>(null);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditDismissed, setAuditDismissed] = useState(false);
 
   // ─── Recovery check ───
   const [recoveryChecked, setRecoveryChecked] = useState(false);
@@ -191,6 +203,23 @@ export function SceneWorkshop() {
       setRecoveryChecked(true);
     }
   }, []);
+
+  // ─── Fetch audit when entering plan_confirmed phase ───
+  useEffect(() => {
+    if (state.phase === "plan_confirmed" && !auditData && !auditLoading && !auditDismissed) {
+      setAuditLoading(true);
+      sceneApi.getAudit(projectId).then(data => {
+        setAuditData(data);
+        // Auto-skip if no targets
+        if (data.totalCount === 0) {
+          setAuditDismissed(true);
+        }
+      }).catch(() => {
+        // If audit fails, just skip it
+        setAuditDismissed(true);
+      }).finally(() => setAuditLoading(false));
+    }
+  }, [state.phase, projectId, auditData, auditLoading, auditDismissed]);
 
   // ─── Actions ───
 
@@ -577,7 +606,8 @@ export function SceneWorkshop() {
   const completeScene = async () => {
     setState(s => ({ ...s, loading: true, loadingMessage: "Completing...", error: null }));
     try {
-      await sceneApi.complete(projectId);
+      const pack = await sceneApi.complete(projectId);
+      setCompletedPack(pack);
       setState(s => ({ ...s, phase: "complete", loading: false }));
     } catch (err: any) {
       setState(s => ({ ...s, loading: false, error: err.message }));
@@ -950,6 +980,93 @@ export function SceneWorkshop() {
         <div className="plan-confirmed-phase">
           {renderNarrativePreview()}
           {renderScenePlanOverview()}
+
+          {/* ── Pre-Scene Audit (Issue 6) ── */}
+          {auditLoading && (
+            <div className="audit-panel">
+              <p>Checking for development targets across modules...</p>
+            </div>
+          )}
+          {auditData && !auditDismissed && auditData.totalCount > 0 && (
+            <div className="audit-panel">
+              <div className="audit-panel-header">
+                <h3>Pre-Scene Audit</h3>
+                <span className="audit-total">{auditData.totalCount} target{auditData.totalCount !== 1 ? "s" : ""} found</span>
+              </div>
+
+              {auditData.critical.length > 0 && (
+                <div className="audit-group">
+                  <div className="audit-group-label audit-badge-critical">
+                    Critical ({auditData.critical.length})
+                  </div>
+                  {auditData.critical.map((t: AuditTarget) => (
+                    <div key={t.id} className="audit-item">
+                      <div className="audit-item-header">
+                        <span className="audit-item-target">{t.target}</span>
+                        <span className="audit-item-source">{t.source_module}</span>
+                      </div>
+                      {t.notes && <div className="audit-item-notes">{t.notes}</div>}
+                      {t.suggestion && <div className="audit-item-suggestion">{t.suggestion}</div>}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {auditData.review.length > 0 && (
+                <div className="audit-group">
+                  <div className="audit-group-label audit-badge-review">
+                    Needs Review ({auditData.review.length})
+                  </div>
+                  {auditData.review.map((t: AuditTarget) => (
+                    <div key={t.id} className="audit-item">
+                      <div className="audit-item-header">
+                        <span className="audit-item-target">{t.target}</span>
+                        <span className="audit-item-source">{t.source_module}</span>
+                      </div>
+                      {t.notes && <div className="audit-item-notes">{t.notes}</div>}
+                      {t.suggestion && <div className="audit-item-suggestion">{t.suggestion}</div>}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {auditData.minor.length > 0 && (
+                <div className="audit-group">
+                  <div className="audit-group-label audit-badge-minor">
+                    Minor ({auditData.minor.length})
+                  </div>
+                  {auditData.minor.map((t: AuditTarget) => (
+                    <div key={t.id} className="audit-item">
+                      <div className="audit-item-header">
+                        <span className="audit-item-target">{t.target}</span>
+                        <span className="audit-item-source">{t.source_module}</span>
+                      </div>
+                      {t.notes && <div className="audit-item-notes">{t.notes}</div>}
+                      {t.suggestion && <div className="audit-item-suggestion">{t.suggestion}</div>}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="audit-actions">
+                <button
+                  type="button"
+                  className="audit-proceed"
+                  onClick={() => setAuditDismissed(true)}
+                >
+                  Acknowledge &amp; Proceed
+                </button>
+                <button
+                  type="button"
+                  className="audit-skip"
+                  onClick={() => setAuditDismissed(true)}
+                >
+                  Skip
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="plan-confirmed-actions">
             <p>Plan confirmed with {state.totalScenes || state.scenePlan?.length || "?"} scenes. Ready to begin writing.</p>
             <button
@@ -1062,6 +1179,7 @@ export function SceneWorkshop() {
             <h3>Scene Module Complete</h3>
             <p>All scenes have been written and the ScenePack is locked.</p>
           </div>
+          {completedPack && <PackPreview pack={completedPack} defaultExpanded />}
           {renderNarrativePreview()}
           {renderBuiltScenes()}
           {state.finalJudge && renderFinalJudge()}
@@ -1077,6 +1195,17 @@ export function SceneWorkshop() {
         projectId={projectId}
         visible={showPsych}
         onClose={() => setShowPsych(false)}
+      />
+      <button type="button" className="insights-toggle" onClick={() => setShowInsights(v => !v)}>
+        <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96a7.04 7.04 0 0 0-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84a.48.48 0 0 0-.48.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 9.81a.48.48 0 0 0 .12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.26.41.48.41h3.84c.24 0 .44-.17.48-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/></svg>
+        Insights
+      </button>
+      <EngineInsights
+        module="scene"
+        projectId={projectId}
+        fetchInsights={fetchInsights}
+        visible={showInsights}
+        onClose={() => setShowInsights(false)}
       />
     </div>
   );

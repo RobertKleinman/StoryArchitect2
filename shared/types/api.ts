@@ -8,6 +8,9 @@ import {
   PromptOverrides,
 } from "./hook";
 
+import type { CulturalBrief } from "./cultural";
+import type { UserPsychologyLedger, DirectionMapSnapshot } from "./userPsychology";
+
 import {
   CharacterClarifierResponse,
   CharacterBuilderOutput,
@@ -56,6 +59,16 @@ import {
   BuiltScene,
   ReadableScene,
 } from "./scene";
+
+// ─── Build Progress (Issue #11: Tournament Visibility) ───
+
+/** Emitted on session state during builder-judge tournament to give the frontend live progress */
+export interface BuildProgress {
+  attempt: number;
+  maxAttempts: number;
+  status: "building" | "judging" | "passed" | "failed_retrying" | "best_effort";
+  lastFailReason?: string;
+}
 
 /** Standard error shape for all endpoints */
 export interface ApiError {
@@ -292,4 +305,58 @@ export interface SceneDebugResponse {
   scenePlan: ScenePlannerOutput["scenes"] | null;
   narrativePreview: NarrativePreview | null;
   rhythmSnapshot: SceneSessionState["rhythmSnapshot"] | null;
+}
+
+// ─── Engine Insights (Issue 4: Debug/Insights Panel) ───
+
+/** GET /api/:module/debug/insights/:projectId */
+export interface EngineInsightsResponse {
+  psychologyLedger: UserPsychologyLedger | null;
+  culturalBrief: CulturalBrief | null;
+  divergenceMap: DirectionMapSnapshot | null;
+  developmentTargets: Array<{
+    id: string;
+    source_module: string;
+    target: string;
+    status: string;
+    addressed_by?: string;
+    notes?: string;
+    best_module_to_address?: string;
+    current_gap?: string;
+    suggestion?: string;
+    quality?: string;
+  }>;
+}
+
+// ─── Pre-Scene Audit (Issue 6) ───
+
+export interface AuditTarget {
+  id: string;
+  source_module: string;
+  target: string;
+  status: string;
+  severity: "critical" | "review" | "minor";
+  notes?: string;
+  current_gap?: string;
+  suggestion?: string;
+}
+
+/** GET /api/scene/audit/:projectId */
+export interface PreSceneAuditResponse {
+  critical: AuditTarget[];
+  review: AuditTarget[];
+  minor: AuditTarget[];
+  totalCount: number;
+}
+
+/** POST /api/scene/audit/resolve */
+export interface AuditResolveRequest {
+  projectId: string;
+  resolvedTargets: string[];
+}
+
+/** POST /api/scene/audit/resolve */
+export interface AuditResolveResponse {
+  resolved: string[];
+  remaining: number;
 }

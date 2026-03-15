@@ -287,6 +287,8 @@ export const WORLD_BUILDER_SCHEMA = {
 export const WORLD_JUDGE_SCHEMA = {
   type: "object",
   properties: {
+    // Chain-of-thought: forces the model to reason BEFORE scoring
+    analysis: { type: "string" },
     pass: { type: "boolean" },
     hard_fail_reasons: {
       type: "array",
@@ -336,6 +338,6 @@ export const WORLD_JUDGE_SCHEMA = {
       },
     },
   },
-  required: ["pass", "hard_fail_reasons", "scores", "weakest_element", "one_fix_instruction"],
+  required: ["analysis", "pass", "hard_fail_reasons", "scores", "weakest_element", "one_fix_instruction"],
   additionalProperties: false,
 } as const;

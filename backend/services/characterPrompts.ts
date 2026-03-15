@@ -515,6 +515,9 @@ Score each 0–10 (relationship_dynamics is the MOST important score — a cast 
 - specificity: Would these descriptions fit ONLY these characters? Are they written in picture-able behavior or abstract analysis?
 - user_fit: How well does the cast match the user's behavior signals?
 
+THINK FIRST:
+Start with "analysis" — write 3-5 sentences of private reasoning. Walk through each hard-fail check for this specific cast. Test the relationship dynamics. Check for redundant emotional functions. Does this cast make you FEEL something? This reasoning is not shown to the user but it MUST come first in your JSON output.
+
 Identify weakest_character.
 Provide one_fix_instruction.
 
@@ -525,7 +528,7 @@ WEAKNESSES — for EACH character that has room to grow, provide:
 This helps later modules proactively strengthen weak elements. Include at least 1 weakness. Even the best cast has areas to develop.
 
 OUTPUT:
-Return ONLY valid JSON. No markdown fences.`;
+Return ONLY valid JSON: {"analysis": "...", "pass": ..., ...}. No markdown fences.`;
 
 export const CHARACTER_JUDGE_USER_TEMPLATE = `Judge this generated cast:
 {{CAST_JSON}}

@@ -49,9 +49,10 @@ import {
   runConsolidation,
   formatSuggestedProbeForPrompt,
   markProbeConsumed,
+  moduleBoundaryConsolidation,
 } from "./psychologyEngine";
 import type { RawSignalObservation, BehaviorSummary, AdaptationPlan } from "../../shared/types/userPsychology";
-import { shouldConsolidate as shouldConsolidateThrottled, shouldDiverge as shouldDivergeThrottled } from "./backgroundThrottling";
+import { pickBackgroundTasks } from "./backgroundThrottling";
 import {
   runDivergenceExploration,
   extractDivergenceContext,
@@ -363,24 +364,28 @@ export class HookService {
 
     await this.store.save(session);
 
-    // ─── Fire background work (non-blocking, throttled) ───
-    if (shouldConsolidateThrottled(turn, session)) {
+    // ─── Fire background work (non-blocking, coordinated to avoid storms) ───
+    const bgTasks = pickBackgroundTasks(turn, session);
+
+    if (bgTasks.consolidate) {
       this.fireBackgroundConsolidation(session.projectId, turn.turnNumber, "hook")
         .catch(err => console.error("[PSYCH] Background consolidation fire failed:", err));
     }
 
-    if (shouldDivergeThrottled(turn, session)) {
+    if (bgTasks.diverge) {
       this.fireBackgroundDivergence(session, turn.turnNumber, "hook")
         .catch(err => console.error("[DIVERGENCE] Background exploration fire failed:", err));
     }
 
-    // Fire background cultural research (non-blocking, throttled)
-    const hasCachedBrief = !!(await culturalResearchService.getBriefForBuilder(
-      session.projectId, "hook", turn.turnNumber,
-    ).catch(() => null));
-    if (shouldRunCulturalResearch({ turnNumber: turn.turnNumber, userSelection: turn.userSelection, hasCachedBrief })) {
-      this.fireBackgroundCulturalResearch(session, turn.turnNumber)
-        .catch(err => console.error("[CULTURAL] Background research fire failed:", err));
+    if (bgTasks.cultural) {
+      // Only fire if we don't already have a fresh brief
+      const hasCachedBrief = !!(await culturalResearchService.getBriefForBuilder(
+        session.projectId, "hook", turn.turnNumber,
+      ).catch(() => null));
+      if (shouldRunCulturalResearch({ turnNumber: turn.turnNumber, userSelection: turn.userSelection, hasCachedBrief })) {
+        this.fireBackgroundCulturalResearch(session, turn.turnNumber)
+          .catch(err => console.error("[CULTURAL] Background research fire failed:", err));
+      }
     }
 
     return {
@@ -510,6 +515,8 @@ export class HookService {
       judgeResults: [],
       phase: "builders",
     };
+    // Initialize build progress for frontend polling (Issue #11)
+    session.buildProgress = { attempt: 1, maxAttempts: 3, status: "building" };
     session.lastSavedAt = new Date().toISOString();
     await this.store.save(session);
 
@@ -524,6 +531,11 @@ export class HookService {
 
     for (let i = 0; i < temperatures.length; i++) {
       const temp = temperatures[i];
+
+      // Update build progress for this candidate
+      session.buildProgress = { attempt: i + 1, maxAttempts: temperatures.length, status: "building" };
+      session.lastSavedAt = new Date().toISOString();
+      await this.store.save(session);
 
       // Run builder for this candidate
       let builderRaw = "";
@@ -553,6 +565,10 @@ export class HookService {
       session.tournamentProgress!.builderResults.push({ raw: builderRaw, parsed: builderParsed });
 
       // Run judge for this candidate
+      session.buildProgress = { attempt: i + 1, maxAttempts: temperatures.length, status: "judging" };
+      session.lastSavedAt = new Date().toISOString();
+      await this.store.save(session);
+
       const judgePrompt = this.buildJudgePrompt(builderParsed, session.currentState, session.psychologyLedger);
       const judgeSystem = promptOverrides?.judge?.system ?? judgePrompt.system;
       const judgeUser = promptOverrides?.judge?.user ?? judgePrompt.user;
@@ -590,6 +606,7 @@ export class HookService {
       if (judgeParsed.pass && avgScore >= 8.5) {
         // Elite candidate: exit immediately
         candidates.push({ hook: builderParsed, judge: judgeParsed });
+        session.buildProgress = { attempt: i + 1, maxAttempts: temperatures.length, status: "passed" };
         console.log(`[TOURNAMENT] Hook early-exit after ${i + 1} candidate(s), avgScore=${avgScore.toFixed(1)}`);
         session.lastSavedAt = new Date().toISOString();
         await this.store.save(session);
@@ -599,6 +616,7 @@ export class HookService {
         candidates.push({ hook: builderParsed, judge: judgeParsed });
         // If this is candidate 2, we can decide to exit after evaluating it
         if (i === 1) {
+          session.buildProgress = { attempt: i + 1, maxAttempts: temperatures.length, status: "passed" };
           console.log(`[TOURNAMENT] Hook early-exit after ${i + 1} candidate(s), avgScore=${avgScore.toFixed(1)}`);
           session.lastSavedAt = new Date().toISOString();
           await this.store.save(session);
@@ -607,6 +625,15 @@ export class HookService {
       } else {
         // Failed candidate: store and continue
         candidates.push({ hook: builderParsed, judge: judgeParsed });
+        const isLast = i === temperatures.length - 1;
+        session.buildProgress = {
+          attempt: i + 1,
+          maxAttempts: temperatures.length,
+          status: isLast ? "best_effort" : "failed_retrying",
+          lastFailReason: judgeParsed.one_fix_instruction,
+        };
+        session.lastSavedAt = new Date().toISOString();
+        await this.store.save(session);
       }
     }
 
@@ -643,6 +670,7 @@ export class HookService {
     // Validate we have candidates
     if (candidates.length === 0) {
       session.tournamentProgress = undefined;
+      session.buildProgress = undefined;
       await this.store.save(session);
       throw new HookServiceError("LLM_PARSE_ERROR", "All builder candidates failed to parse");
     }
@@ -668,6 +696,7 @@ export class HookService {
       session.status = "revealed";
       session.rerollCount = resetRerollCount ? 0 : session.rerollCount + 1;
       session.tournamentProgress = undefined;
+      session.buildProgress = undefined;
       session.lastSavedAt = new Date().toISOString();
       await this.store.save(session);
       return {
@@ -701,6 +730,7 @@ export class HookService {
     session.status = "revealed";
     session.rerollCount = resetRerollCount ? 0 : session.rerollCount + 1;
     session.tournamentProgress = undefined;  // Clear progress on success
+    session.buildProgress = undefined;       // Clear build progress on reveal
     session.lastSavedAt = new Date().toISOString();
 
     await this.store.save(session);
@@ -785,6 +815,11 @@ export class HookService {
     const controlPreference = typedVsClicked === "mostly_typed" ? "director" as const
       : typedVsClicked === "mostly_clicked" ? "explorer" as const
       : "mixed" as const;
+
+    // Module boundary consolidation: prune low-confidence signals before handoff
+    if (session.psychologyLedger) {
+      session.psychologyLedger = moduleBoundaryConsolidation(session.psychologyLedger);
+    }
 
     const hookPack: HookPack = {
       module: "hook",
