@@ -68,7 +68,7 @@ export function shouldConsolidate(
 
   const signalBacklog =
     (session.psychologyLedger?.signalStore?.length ?? 0) -
-    (session.psychologyLedger?.lastConsolidation?.turnNumber ?? 0) >= 5;
+    (session.psychologyLedger?.lastConsolidation?.afterTurn ?? 0) >= 5;
 
   return meaningfulInput || assumptionChanged || cadenceFallback || signalBacklog;
 }
@@ -102,4 +102,18 @@ export function shouldDiverge(
     turn.turnNumber % 4 === 0;
 
   return meaningfulInput || assumptionChanged || cadenceFallback;
+}
+
+/**
+ * Determine whether cultural research should fire after this turn.
+ * Lighter cadence than consolidation/divergence — every 3rd turn or on free text.
+ */
+export function shouldResearchCulture(
+  turn: ThrottlingTurnInfo,
+  _session: ThrottlingSessionInfo,
+): boolean {
+  if (turn.turnNumber < 2) return false;
+  const meaningfulInput = turn.userSelection?.type === "free_text";
+  const cadenceFallback = turn.turnNumber % 3 === 0;
+  return meaningfulInput || cadenceFallback;
 }

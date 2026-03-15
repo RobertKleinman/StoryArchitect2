@@ -43,7 +43,7 @@ export interface EvidenceEvent {
   /** Turn number where the evidence occurred */
   turn: number;
   /** Module where observed */
-  module: "hook" | "character" | "character_image" | "world" | "plot";
+  module: "hook" | "character" | "character_image" | "world" | "plot" | "scene";
   /** What the user actually did */
   action: string;   // e.g. "chose 'dark romance' chip", "typed 'I want the villain to be sympathetic'"
   /** Whether this supports or contradicts the signal */
@@ -195,7 +195,7 @@ export interface StructuredUserRead {
 
 export interface UserPsychologyRead {
   turnNumber: number;
-  module: "hook" | "character" | "character_image" | "world" | "plot";
+  module: "hook" | "character" | "character_image" | "world" | "plot" | "scene";
   /** Raw signal observations from this turn */
   signals: RawSignalObservation[];
   /** Structured behavior summary */
@@ -364,7 +364,7 @@ export interface ConsolidationSnapshot {
   /** Which turn it ran after */
   afterTurn: number;
   /** Which module was active */
-  module: "hook" | "character" | "character_image" | "world" | "plot";
+  module: "hook" | "character" | "character_image" | "world" | "plot" | "scene";
   /** The full result */
   result: ConsolidationResult;
   /** Whether the suggestedProbe was consumed by the next clarifier turn */
@@ -440,7 +440,7 @@ export interface DirectionMapSnapshot {
   /** Which turn it ran after */
   afterTurn: number;
   /** Which module was active */
-  module: "hook" | "character" | "character_image" | "world" | "plot";
+  module: "hook" | "character" | "character_image" | "world" | "plot" | "scene";
   /** The direction map */
   directionMap: DirectionMap;
 }

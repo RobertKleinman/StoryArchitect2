@@ -57,6 +57,9 @@ import {
   extractDivergenceContext,
   formatDirectionMapForPrompt,
 } from "./divergenceExplorer";
+import { culturalResearchService } from "./runtime";
+import { detectDirectedReferences, shouldRunCulturalResearch } from "./culturalResearchService";
+import type { CulturalResearchContext } from "./culturalResearchService";
 
 export class HookServiceError extends Error {
   code: "NOT_FOUND" | "INVALID_INPUT" | "LLM_PARSE_ERROR" | "LLM_CALL_FAILED";
@@ -114,11 +117,11 @@ export class HookService {
 
     switch (stage) {
       case "clarifier": {
-        const prompt = this.buildClarifierPrompt(session);
+        const prompt = await this.buildClarifierPrompt(session);
         return { stage, system: prompt.system, user: prompt.user };
       }
       case "builder": {
-        const prompt = this.buildBuilderPrompt(session);
+        const prompt = await this.buildBuilderPrompt(session);
         return { stage, system: prompt.system, user: prompt.user };
       }
       case "judge": {
@@ -239,7 +242,7 @@ export class HookService {
     session.lastSavedAt = new Date().toISOString();
     await this.store.save(session);
 
-    const prompt = this.buildClarifierPrompt(session);
+    const prompt = await this.buildClarifierPrompt(session);
     const systemPrompt = promptOverrides?.system ?? prompt.system;
     const userPrompt = promptOverrides?.user ?? prompt.user;
 
@@ -371,6 +374,15 @@ export class HookService {
         .catch(err => console.error("[DIVERGENCE] Background exploration fire failed:", err));
     }
 
+    // Fire background cultural research (non-blocking, throttled)
+    const hasCachedBrief = !!(await culturalResearchService.getBriefForBuilder(
+      session.projectId, "hook", turn.turnNumber,
+    ).catch(() => null));
+    if (shouldRunCulturalResearch({ turnNumber: turn.turnNumber, userSelection: turn.userSelection, hasCachedBrief })) {
+      this.fireBackgroundCulturalResearch(session, turn.turnNumber)
+        .catch(err => console.error("[CULTURAL] Background research fire failed:", err));
+    }
+
     return {
       clarifier: turn.clarifierResponse,
       turnNumber: turn.turnNumber,
@@ -394,7 +406,7 @@ export class HookService {
     const context = extractDivergenceContext(
       session.seedInput,
       session.constraintLedger,
-      session.currentState,
+      session.currentState as Record<string, unknown>,
       psychSummary,
       turnNumber,
       module,
@@ -501,7 +513,7 @@ export class HookService {
     session.lastSavedAt = new Date().toISOString();
     await this.store.save(session);
 
-    const builderPrompt = this.buildBuilderPrompt(session);
+    const builderPrompt = await this.buildBuilderPrompt(session);
     const builderSystem = promptOverrides?.builder?.system ?? builderPrompt.system;
     const builderUser = promptOverrides?.builder?.user ?? builderPrompt.user;
     const temperatures = [0.7, 0.85, 1.0];
@@ -850,11 +862,11 @@ export class HookService {
   //   - Full constraint ledger evidence chains, prompt history
   //   - Hook export (saved separately via store.saveExport())
 
-  private buildClarifierPrompt(session: HookSessionState): {
+  private async buildClarifierPrompt(session: HookSessionState): Promise<{
     system: string;
     user: string;
     cacheableUserPrefix?: string;
-  } {
+  }> {
     const currentStateJson = JSON.stringify(this.stripNil(session.currentState));
     const bans = JSON.stringify(session.currentState.bans ?? []);
 
@@ -883,6 +895,13 @@ export class HookService {
     dynamic += (probeText ? "\n\n" + probeText : "");
     dynamic += (directionMapText ? "\n\n" + directionMapText : "");
 
+    // ─── Cultural Intelligence Engine injection ───
+    const culturalBrief = await this.getCulturalBrief(session, currentTurn);
+    const culturalText = culturalResearchService.formatBriefForClarifier(culturalBrief);
+    if (culturalText) {
+      dynamic += "\n\n" + culturalText;
+    }
+
     return {
       system: HOOK_CLARIFIER_SYSTEM,
       user: prefix + dynamic,
@@ -890,11 +909,11 @@ export class HookService {
     };
   }
 
-  private buildBuilderPrompt(session: HookSessionState): {
+  private async buildBuilderPrompt(session: HookSessionState): Promise<{
     system: string;
     user: string;
     cacheableUserPrefix?: string;
-  } {
+  }> {
     // Static prefix — cacheable (user seed, current state, bans, tone chips don't change between builder calls)
     const prefix = HOOK_BUILDER_USER_PREFIX
       .replace("{{USER_SEED}}", session.seedInput)
@@ -909,6 +928,13 @@ export class HookService {
       .replace("{{PRIOR_TURNS}}", this.formatPriorTurns(session.turns))
       .replace("{{CONSTRAINT_LEDGER}}", ledgerText)
       .replace("{{PSYCHOLOGY_SIGNALS}}", signalsText);
+
+    // ─── Cultural Intelligence Engine injection ───
+    const culturalBrief = await this.getCulturalBriefForBuilder(session);
+    const culturalText = culturalResearchService.formatBriefForBuilder(culturalBrief);
+    if (culturalText) {
+      dynamic += "\n\n" + culturalText;
+    }
 
     return {
       system: HOOK_BUILDER_SYSTEM,
@@ -1195,6 +1221,70 @@ export class HookService {
     lines.push(`\nConfirmed: ${confirmed.length}/${totalDimensions} dimensions shaped by user`);
 
     return lines.join("\n");
+  }
+
+  // ─── Cultural Intelligence Engine helpers ───
+
+  /**
+   * Get cultural brief for a clarifier turn (from cache).
+   */
+  private async getCulturalBrief(
+    session: HookSessionState,
+    turnNumber: number,
+  ): Promise<import("../../shared/types/cultural").CulturalBrief | null> {
+    return culturalResearchService.getBriefForClarifier({
+      projectId: session.projectId,
+      module: "hook",
+      turnNumber,
+      lockedPacksSummary: "", // Hook is first module — no upstream packs
+      currentState: session.currentState as Record<string, unknown>,
+      constraintLedger: this.formatLedgerForPrompt(session.constraintLedger ?? []),
+      psychologySummary: formatPsychologyLedgerForPrompt(session.psychologyLedger) ?? "",
+      directedReferences: this.extractDirectedReferences(session),
+    });
+  }
+
+  private async getCulturalBriefForBuilder(
+    session: HookSessionState,
+  ): Promise<import("../../shared/types/cultural").CulturalBrief | null> {
+    return culturalResearchService.getBriefForBuilder(
+      session.projectId, "hook", session.turns.length,
+    );
+  }
+
+  /**
+   * Fire-and-forget background cultural research.
+   */
+  private async fireBackgroundCulturalResearch(
+    session: HookSessionState,
+    turnNumber: number,
+  ): Promise<void> {
+    const context: CulturalResearchContext = {
+      projectId: session.projectId,
+      module: "hook",
+      turnNumber,
+      lockedPacksSummary: "",
+      currentState: session.currentState as Record<string, unknown>,
+      constraintLedger: this.formatLedgerForPrompt(session.constraintLedger ?? []),
+      psychologySummary: formatPsychologyLedgerForPrompt(session.psychologyLedger) ?? "",
+      directedReferences: this.extractDirectedReferences(session),
+    };
+    await culturalResearchService.fireBackgroundResearch(context);
+  }
+
+  /**
+   * Extract directed references from recent user free-text inputs.
+   */
+  private extractDirectedReferences(session: HookSessionState): string[] {
+    const refs: string[] = [];
+    // Check last 3 turns for free-text input
+    const recentTurns = session.turns.slice(-3);
+    for (const t of recentTurns) {
+      if (t.userSelection?.type === "free_text" && (t.userSelection as any).text) {
+        refs.push(...detectDirectedReferences((t.userSelection as any).text));
+      }
+    }
+    return [...new Set(refs)];
   }
 
   private selectWinner(

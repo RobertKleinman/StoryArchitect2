@@ -62,6 +62,9 @@ import {
   extractDivergenceContext,
   formatDirectionMapForPrompt,
 } from "./divergenceExplorer";
+import { culturalResearchService } from "./runtime";
+import { detectDirectedReferences, shouldRunCulturalResearch } from "./culturalResearchService";
+import type { CulturalResearchContext } from "./culturalResearchService";
 
 // ─── API response types ───
 
@@ -122,11 +125,11 @@ export class WorldService {
 
     switch (stage) {
       case "clarifier": {
-        const prompt = this.buildClarifierPrompt(session);
+        const prompt = await this.buildClarifierPrompt(session);
         return { stage, system: prompt.system, user: prompt.user };
       }
       case "builder": {
-        const prompt = this.buildBuilderPrompt(session);
+        const prompt = await this.buildBuilderPrompt(session);
         return { stage, system: prompt.system, user: prompt.user };
       }
       case "judge": {
@@ -367,7 +370,7 @@ export class WorldService {
     }
 
     // Build and call clarifier prompt
-    const prompt = this.buildClarifierPrompt(session!);
+    const prompt = await this.buildClarifierPrompt(session!);
     const system = promptOverrides?.system ?? prompt.system;
     const user = promptOverrides?.user ?? prompt.user;
 
@@ -481,6 +484,15 @@ export class WorldService {
         .catch(err => console.error("[DIVERGENCE] World exploration fire failed:", err));
     }
 
+    // Fire background cultural research (non-blocking, throttled)
+    const hasCachedBrief = !!(await culturalResearchService.getBriefForBuilder(
+      session!.projectId, "world", turn.turnNumber,
+    ).catch(() => null));
+    if (shouldRunCulturalResearch({ turnNumber: turn.turnNumber, userSelection: turn.userSelection, hasCachedBrief })) {
+      this.fireBackgroundCulturalResearch(session!, turn.turnNumber)
+        .catch(err => console.error("[CULTURAL] Background research fire failed:", err));
+    }
+
     return {
       clarifier: turn.clarifierResponse,
       turnNumber: turn.turnNumber,
@@ -585,7 +597,7 @@ export class WorldService {
     await this.worldStore.save(session);
 
     // ─── Builder ───
-    const builderPrompt = this.buildBuilderPrompt(session);
+    const builderPrompt = await this.buildBuilderPrompt(session);
     const builderSystem = promptOverrides?.builder?.system ?? builderPrompt.system;
     const builderUser = promptOverrides?.builder?.user ?? builderPrompt.user;
 
@@ -846,11 +858,11 @@ export class WorldService {
 
   // ─── Prompt Builders (private) ───
 
-  private buildClarifierPrompt(session: WorldSessionState): {
+  private async buildClarifierPrompt(session: WorldSessionState): Promise<{
     system: string;
     user: string;
     cacheableUserPrefix?: string;
-  } {
+  }> {
     const hook = session.sourceHookPack;
     const charPack = session.sourceCharacterPack;
     const charImagePack = session.sourceCharacterImagePack;
@@ -898,6 +910,13 @@ export class WorldService {
     dynamic += (probeText ? "\n\n" + probeText : "");
     dynamic += (directionMapText ? "\n\n" + directionMapText : "");
 
+    // ─── Cultural Intelligence Engine injection ───
+    const culturalBrief = await this.getCulturalBrief(session, currentTurn);
+    const culturalText = culturalResearchService.formatBriefForClarifier(culturalBrief);
+    if (culturalText) {
+      dynamic += "\n\n" + culturalText;
+    }
+
     return {
       system: WORLD_CLARIFIER_SYSTEM,
       user: prefix + dynamic,
@@ -905,11 +924,11 @@ export class WorldService {
     };
   }
 
-  private buildBuilderPrompt(session: WorldSessionState): {
+  private async buildBuilderPrompt(session: WorldSessionState): Promise<{
     system: string;
     user: string;
     cacheableUserPrefix?: string;
-  } {
+  }> {
     const hook = session.sourceHookPack;
     const charPack = session.sourceCharacterPack;
     const upstreamTargets = this.formatUpstreamTargets(session);
@@ -948,11 +967,86 @@ export class WorldService {
       .replace("{{PSYCHOLOGY_SIGNALS}}", signalsText)
       .replace("{{CONSTRAINT_LEDGER}}", ledgerText);
 
+    // ─── Cultural Intelligence Engine injection ───
+    const culturalBrief = await this.getCulturalBriefForBuilder(session);
+    const culturalText = culturalResearchService.formatBriefForBuilder(culturalBrief);
+    if (culturalText) {
+      dynamic += "\n\n" + culturalText;
+    }
+
     return {
       system: WORLD_BUILDER_SYSTEM,
       user: prefix + dynamic,
       cacheableUserPrefix: prefix,
     };
+  }
+
+  // ─── Cultural Intelligence Engine helpers ───
+
+  private async getCulturalBrief(
+    session: WorldSessionState,
+    turnNumber: number,
+  ): Promise<import("../../shared/types/cultural").CulturalBrief | null> {
+    return culturalResearchService.getBriefForClarifier({
+      projectId: session.projectId,
+      module: "world",
+      turnNumber,
+      lockedPacksSummary: this.buildLockedPacksSummary(session),
+      currentState: (session.revealedWorld ?? {}) as Record<string, unknown>,
+      constraintLedger: this.formatLedgerForPrompt(session.constraintLedger ?? []),
+      psychologySummary: formatPsychologyLedgerForPrompt(session.psychologyLedger) ?? "",
+      directedReferences: this.extractDirectedReferences(session),
+    });
+  }
+
+  private async getCulturalBriefForBuilder(
+    session: WorldSessionState,
+  ): Promise<import("../../shared/types/cultural").CulturalBrief | null> {
+    return culturalResearchService.getBriefForBuilder(
+      session.projectId, "world", session.turns.length,
+    );
+  }
+
+  private async fireBackgroundCulturalResearch(
+    session: WorldSessionState,
+    turnNumber: number,
+  ): Promise<void> {
+    const context: CulturalResearchContext = {
+      projectId: session.projectId,
+      module: "world",
+      turnNumber,
+      lockedPacksSummary: this.buildLockedPacksSummary(session),
+      currentState: (session.revealedWorld ?? {}) as Record<string, unknown>,
+      constraintLedger: this.formatLedgerForPrompt(session.constraintLedger ?? []),
+      psychologySummary: formatPsychologyLedgerForPrompt(session.psychologyLedger) ?? "",
+      directedReferences: this.extractDirectedReferences(session),
+    };
+    await culturalResearchService.fireBackgroundResearch(context);
+  }
+
+  private buildLockedPacksSummary(session: WorldSessionState): string {
+    const parts: string[] = [];
+    if (session.sourceHookPack) {
+      parts.push(`HOOK: ${session.sourceHookPack.locked.hook_sentence} — ${session.sourceHookPack.locked.emotional_promise}`);
+    }
+    if (session.sourceCharacterPack) {
+      const chars = Object.entries(session.sourceCharacterPack.locked.characters)
+        .map(([role, c]) => `${role}: ${c.role}, description="${c.description}"`)
+        .join("; ");
+      parts.push(`CHARACTERS: ${chars}`);
+    }
+    return parts.join("\n\n");
+  }
+
+  private extractDirectedReferences(session: WorldSessionState): string[] {
+    const refs: string[] = [];
+    const recentTurns = session.turns.slice(-3);
+    for (const t of recentTurns) {
+      if (t.userSelection?.type === "free_text" && (t.userSelection as any).text) {
+        refs.push(...detectDirectedReferences((t.userSelection as any).text));
+      }
+    }
+    return [...new Set(refs)];
   }
 
   private buildJudgePrompt(

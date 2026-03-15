@@ -67,6 +67,9 @@ import {
   shouldConsolidate as shouldConsolidateThrottled,
   shouldDiverge as shouldDivergeThrottled,
 } from "./backgroundThrottling";
+import { culturalResearchService } from "./runtime";
+import { detectDirectedReferences, shouldRunCulturalResearch } from "./culturalResearchService";
+import type { CulturalResearchContext } from "./culturalResearchService";
 
 // ─── API response types ───
 
@@ -129,11 +132,11 @@ export class PlotService {
 
     switch (stage) {
       case "clarifier": {
-        const prompt = this.buildClarifierPrompt(session);
+        const prompt = await this.buildClarifierPrompt(session);
         return { stage, system: prompt.system, user: prompt.user };
       }
       case "builder": {
-        const prompt = this.buildBuilderPrompt(session);
+        const prompt = await this.buildBuilderPrompt(session);
         return { stage, system: prompt.system, user: prompt.user };
       }
       case "judge": {
@@ -428,7 +431,7 @@ export class PlotService {
     }
 
     // Build and call clarifier prompt
-    const prompt = this.buildClarifierPrompt(session!);
+    const prompt = await this.buildClarifierPrompt(session!);
     const system = promptOverrides?.system ?? prompt.system;
     const user = promptOverrides?.user ?? prompt.user;
 
@@ -543,6 +546,15 @@ export class PlotService {
         .catch(err => console.error("[DIVERGENCE] Plot exploration fire failed:", err));
     }
 
+    // Fire background cultural research (non-blocking, throttled)
+    const hasCachedBrief = !!(await culturalResearchService.getBriefForBuilder(
+      session!.projectId, "plot", turn.turnNumber,
+    ).catch(() => null));
+    if (shouldRunCulturalResearch({ turnNumber: turn.turnNumber, userSelection: turn.userSelection, hasCachedBrief })) {
+      this.fireBackgroundCulturalResearch(session!, turn.turnNumber)
+        .catch(err => console.error("[CULTURAL] Background research fire failed:", err));
+    }
+
     return {
       clarifier: turn.clarifierResponse,
       turnNumber: turn.turnNumber,
@@ -646,7 +658,7 @@ export class PlotService {
     await this.plotStore.save(session);
 
     // ─── Builder ───
-    const builderPrompt = this.buildBuilderPrompt(session);
+    const builderPrompt = await this.buildBuilderPrompt(session);
     const builderSystem = promptOverrides?.builder?.system ?? builderPrompt.system;
     const builderUser = promptOverrides?.builder?.user ?? builderPrompt.user;
 
@@ -731,10 +743,12 @@ export class PlotService {
           target.status = assessment.status;
           if (assessment.notes) target.notes = assessment.notes;
           if (assessment.status === "addressed") target.addressed_by = "plot";
-          if (assessment.quality) target.quality = assessment.quality;
-          if (assessment.current_gap) target.current_gap = assessment.current_gap;
-          if (assessment.suggestion) target.suggestion = assessment.suggestion;
-          if (assessment.best_module_to_address) target.best_module_to_address = assessment.best_module_to_address;
+          // Extended assessment fields (may be provided by LLM beyond schema)
+          const ext = assessment as any;
+          if (ext.quality) target.quality = ext.quality;
+          if (ext.current_gap) target.current_gap = ext.current_gap;
+          if (ext.suggestion) target.suggestion = ext.suggestion;
+          if (ext.best_module_to_address) target.best_module_to_address = ext.best_module_to_address;
         }
       }
     }
@@ -908,11 +922,11 @@ export class PlotService {
 
   // ─── Prompt Builders (private) ───
 
-  private buildClarifierPrompt(session: PlotSessionState): {
+  private async buildClarifierPrompt(session: PlotSessionState): Promise<{
     system: string;
     user: string;
     cacheableUserPrefix?: string;
-  } {
+  }> {
     const hook = session.sourceHookPack;
     const charPack = session.sourceCharacterPack;
     const charImagePack = session.sourceCharacterImagePack;
@@ -967,6 +981,13 @@ export class PlotService {
       .replace("{{DIRECTION_MAP}}", directionMapText || "")
       + (probeText ? "\n\n" + probeText : "");
 
+    // ─── Cultural Intelligence Engine injection ───
+    const culturalBrief = await this.getCulturalBrief(session, currentTurn);
+    const culturalText = culturalResearchService.formatBriefForClarifier(culturalBrief);
+    if (culturalText) {
+      dynamic += "\n\n" + culturalText;
+    }
+
     return {
       system: PLOT_CLARIFIER_SYSTEM,
       user: prefix + dynamic,
@@ -974,11 +995,11 @@ export class PlotService {
     };
   }
 
-  private buildBuilderPrompt(session: PlotSessionState): {
+  private async buildBuilderPrompt(session: PlotSessionState): Promise<{
     system: string;
     user: string;
     cacheableUserPrefix?: string;
-  } {
+  }> {
     const hook = session.sourceHookPack;
     const charPack = session.sourceCharacterPack;
     const world = session.sourceWorldPack;
@@ -1025,14 +1046,92 @@ export class PlotService {
       .replace("{{UPSTREAM_DEVELOPMENT_TARGETS}}", upstreamTargets);
 
     // Dynamic per-generation content
-    const dynamic = PLOT_BUILDER_USER_DYNAMIC
+    let dynamic = PLOT_BUILDER_USER_DYNAMIC
       .replace("{{PRIOR_TURNS}}", this.formatPriorTurnsCompact(session.turns))
       .replace("{{PSYCHOLOGY_SIGNALS}}", signalsText)
       .replace("{{CONSTRAINT_LEDGER}}", ledgerText)
       .replace("{{TONE_CHIPS}}", JSON.stringify(hook.preferences?.tone_chips ?? []))
       .replace("{{BAN_LIST}}", JSON.stringify(hook.preferences?.bans ?? []));
 
+    // ─── Cultural Intelligence Engine injection ───
+    const culturalBrief = await this.getCulturalBriefForBuilder(session);
+    const culturalText = culturalResearchService.formatBriefForBuilder(culturalBrief);
+    if (culturalText) {
+      dynamic += "\n\n" + culturalText;
+    }
+
     return { system: PLOT_BUILDER_SYSTEM, user: prefix + dynamic, cacheableUserPrefix: prefix };
+  }
+
+  // ─── Cultural Intelligence Engine helpers ───
+
+  private async getCulturalBrief(
+    session: PlotSessionState,
+    turnNumber: number,
+  ): Promise<import("../../shared/types/cultural").CulturalBrief | null> {
+    return culturalResearchService.getBriefForClarifier({
+      projectId: session.projectId,
+      module: "plot",
+      turnNumber,
+      lockedPacksSummary: this.buildLockedPacksSummary(session),
+      currentState: (session.revealedPlot ?? {}) as Record<string, unknown>,
+      constraintLedger: this.formatLedgerForPrompt(session.constraintLedger ?? []),
+      psychologySummary: formatPsychologyLedgerForPrompt(session.psychologyLedger) ?? "",
+      directedReferences: this.extractDirectedReferences(session),
+    });
+  }
+
+  private async getCulturalBriefForBuilder(
+    session: PlotSessionState,
+  ): Promise<import("../../shared/types/cultural").CulturalBrief | null> {
+    return culturalResearchService.getBriefForBuilder(
+      session.projectId, "plot", session.turns.length,
+    );
+  }
+
+  private async fireBackgroundCulturalResearch(
+    session: PlotSessionState,
+    turnNumber: number,
+  ): Promise<void> {
+    const context: CulturalResearchContext = {
+      projectId: session.projectId,
+      module: "plot",
+      turnNumber,
+      lockedPacksSummary: this.buildLockedPacksSummary(session),
+      currentState: (session.revealedPlot ?? {}) as Record<string, unknown>,
+      constraintLedger: this.formatLedgerForPrompt(session.constraintLedger ?? []),
+      psychologySummary: formatPsychologyLedgerForPrompt(session.psychologyLedger) ?? "",
+      directedReferences: this.extractDirectedReferences(session),
+    };
+    await culturalResearchService.fireBackgroundResearch(context);
+  }
+
+  private buildLockedPacksSummary(session: PlotSessionState): string {
+    const parts: string[] = [];
+    if (session.sourceHookPack) {
+      parts.push(`HOOK: ${session.sourceHookPack.locked.hook_sentence} — ${session.sourceHookPack.locked.emotional_promise}`);
+    }
+    if (session.sourceCharacterPack) {
+      const chars = Object.entries(session.sourceCharacterPack.locked.characters)
+        .map(([role, c]) => `${role}: ${c.role}, description="${c.description}"`)
+        .join("; ");
+      parts.push(`CHARACTERS: ${chars}`);
+    }
+    if (session.sourceWorldPack) {
+      parts.push(`WORLD: ${session.sourceWorldPack.locked.world_thesis} — ${session.sourceWorldPack.locked.pressure_summary}`);
+    }
+    return parts.join("\n\n");
+  }
+
+  private extractDirectedReferences(session: PlotSessionState): string[] {
+    const refs: string[] = [];
+    const recentTurns = session.turns.slice(-3);
+    for (const t of recentTurns) {
+      if (t.userSelection?.type === "free_text" && (t.userSelection as any).text) {
+        refs.push(...detectDirectedReferences((t.userSelection as any).text));
+      }
+    }
+    return [...new Set(refs)];
   }
 
   private buildJudgePrompt(

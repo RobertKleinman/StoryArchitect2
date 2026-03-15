@@ -9,7 +9,9 @@ export type HookRole = "clarifier" | "builder" | "judge" | "summary" | "polish"
   | "plot_clarifier" | "plot_builder" | "plot_judge" | "plot_polish" | "plot_summary"
   | "scene_planner" | "scene_clarifier" | "scene_builder" | "scene_minor_judge" | "scene_final_judge" | "scene_divergence"
   | "psych_consolidator"
-  | "divergence_explorer";
+  | "divergence_explorer"
+  | "cultural_summarizer"
+  | "cultural_researcher";
 
 export interface ModelConfig {
   clarifier: string;
@@ -47,6 +49,10 @@ export interface ModelConfig {
   psych_consolidator: string;
   /** Background divergence explorer — generates direction map during user think-time */
   divergence_explorer: string;
+  /** Cultural Intelligence Engine — compresses creative state */
+  cultural_summarizer: string;
+  /** Cultural Intelligence Engine — produces evidence briefs */
+  cultural_researcher: string;
 }
 
 // ── Provider detection from model string ────────────────────────────
@@ -123,6 +129,8 @@ export const CREATIVE_ROLES: ReadonlyArray<keyof ModelConfig> = [
   "scene_planner", "scene_clarifier", "scene_builder", "scene_divergence",
   "psych_consolidator",
   "divergence_explorer",
+  "cultural_summarizer",
+  "cultural_researcher",
 ];
 
 /** Build a partial ModelConfig setting all judge roles to one model */
@@ -185,4 +193,7 @@ export const DEFAULT_MODEL_CONFIG: ModelConfig = {
   // Background
   psych_consolidator: FAST,       // runs during user think-time
   divergence_explorer: FAST,      // runs during user think-time
+  // Cultural Intelligence Engine
+  cultural_summarizer: FAST,      // compression task — fast tier
+  cultural_researcher: FAST,      // background research — fast tier
 };

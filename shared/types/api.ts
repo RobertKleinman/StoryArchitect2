@@ -264,6 +264,7 @@ export interface SceneClarifyResponse {
   sceneIndex: number;
   totalScenes: number;
   autoPassApplied: boolean;
+  autoBuiltScene: BuiltScene | null;
 }
 
 /** POST /api/scene/build — background build result (polled) */

@@ -55,6 +55,9 @@ import {
   extractDivergenceContext,
   formatDirectionMapForPrompt,
 } from "./divergenceExplorer";
+import { culturalResearchService } from "./runtime";
+import { detectDirectedReferences, shouldRunCulturalResearch } from "./culturalResearchService";
+import type { CulturalResearchContext } from "./culturalResearchService";
 
 // ─── API response types ───
 
@@ -118,11 +121,11 @@ export class CharacterImageService {
 
     switch (stage) {
       case "clarifier": {
-        const prompt = this.buildClarifierPrompt(session);
+        const prompt = await this.buildClarifierPrompt(session);
         return { stage, system: prompt.system, user: prompt.user };
       }
       case "builder": {
-        const prompt = this.buildBuilderPrompt(session);
+        const prompt = await this.buildBuilderPrompt(session);
         return { stage, system: prompt.system, user: prompt.user };
       }
       case "judge": {
@@ -290,7 +293,7 @@ export class CharacterImageService {
     session.lastSavedAt = new Date().toISOString();
     await this.imageStore.save(session);
 
-    const prompt = this.buildClarifierPrompt(session);
+    const prompt = await this.buildClarifierPrompt(session);
     const systemPrompt = promptOverrides?.system ?? prompt.system;
     const userPrompt = promptOverrides?.user ?? prompt.user;
 
@@ -404,6 +407,15 @@ export class CharacterImageService {
         .catch(err => console.error("[DIVERGENCE] CharImage exploration fire failed:", err));
     }
 
+    // Fire background cultural research (non-blocking, throttled)
+    const hasCachedBrief = !!(await culturalResearchService.getBriefForBuilder(
+      session.projectId, "character_image", turn.turnNumber,
+    ).catch(() => null));
+    if (shouldRunCulturalResearch({ turnNumber: turn.turnNumber, userSelection: turn.userSelection, hasCachedBrief })) {
+      this.fireBackgroundCulturalResearch(session, turn.turnNumber)
+        .catch(err => console.error("[CULTURAL] Background research fire failed:", err));
+    }
+
     return {
       clarifier: turn.clarifierResponse,
       turnNumber: turn.turnNumber,
@@ -506,7 +518,7 @@ export class CharacterImageService {
     await this.imageStore.save(session);
 
     // Build prompts
-    const builderPrompt = this.buildBuilderPrompt(session);
+    const builderPrompt = await this.buildBuilderPrompt(session);
     const builderSystem = promptOverrides?.builder?.system ?? builderPrompt.system;
     const builderUser = promptOverrides?.builder?.user ?? builderPrompt.user;
 
@@ -940,104 +952,6 @@ export class CharacterImageService {
     return pack;
   }
 
-  // ─── Skip Module (for testing — bypasses all LLM and image generation) ───
-
-  async skipModule(
-    projectId: string,
-    characterProjectId: string,
-  ): Promise<CharacterImagePack> {
-    // Load the character export
-    const charExport = await this.charStore.getExport(characterProjectId);
-    if (!charExport || !charExport.characterPack) {
-      throw new CharacterImageServiceError(
-        "NOT_FOUND",
-        "Character export not found or characters not locked. Complete the character module first."
-      );
-    }
-
-    const sourceCharacterPack = charExport.characterPack;
-
-    // Import psychology ledger for passthrough
-    let importedPsychLedger = createEmptyLedger();
-    if (charExport.psychologyLedger) {
-      importedPsychLedger = charExport.psychologyLedger;
-    }
-    snapshotBaselineForNewModule(importedPsychLedger);
-
-    // Build a minimal passthrough pack with empty visual descriptions
-    const roles = Object.keys(sourceCharacterPack.locked.characters);
-    const lockedCharacters: CharacterImagePack["locked"]["characters"] = {};
-    for (const role of roles) {
-      const charProfile = sourceCharacterPack.locked.characters[role];
-      lockedCharacters[role] = {
-        role: charProfile.role,
-        visual_description: {
-          role: charProfile.role,
-          full_body_description: "(skipped — no visual design generated)",
-          visual_anchors: {
-            hair_description: "",
-            eyes_description: "",
-            signature_garment: "",
-            distinguishing_marks: "",
-            body_type: "",
-            pose_baseline: "",
-            expression_baseline: "",
-            color_palette: [],
-            visual_vibe: "",
-          },
-          image_generation_prompt: "",
-        },
-        image_base64: "",
-        enhanced_prompt: "",
-      };
-    }
-
-    const pack: CharacterImagePack = {
-      module: "character_image",
-      skipped: true,
-      locked: {
-        characters: lockedCharacters,
-        ensemble_cohesion_note: "(skipped)",
-        cast_count: roles.length,
-      },
-      generation_settings: {
-        checkpoint: "none",
-        lora: null,
-        quality: "none",
-      },
-      style_used: "(skipped)",
-      preferences: {
-        tone_chips: sourceCharacterPack.preferences?.tone_chips ?? [],
-        bans: sourceCharacterPack.preferences?.bans ?? [],
-      },
-      user_style: {
-        control_preference: sourceCharacterPack.user_style?.control_preference ?? "mixed",
-        typed_vs_clicked: sourceCharacterPack.user_style?.typed_vs_clicked ?? "mixed",
-        total_turns: 0,
-      },
-      state_summary: "(Character image module skipped — no visual design performed)",
-      characterpack_reference: { characterProjectId },
-      psychologyLedger: importedPsychLedger,
-    };
-
-    // Create a minimal session so the export can be saved
-    const session: CharacterImageSessionState = {
-      projectId,
-      characterProjectId,
-      sourceCharacterPack,
-      turns: [],
-      constraintLedger: [],
-      generatedImages: {},
-      status: "locked",
-      psychologyLedger: importedPsychLedger,
-    };
-
-    await this.imageStore.save(session);
-    await this.imageStore.saveExport(session, pack);
-
-    return pack;
-  }
-
   // ─── Skip Module (skip image gen but still produce visual descriptions) ───
 
   async skipModule(
@@ -1088,7 +1002,7 @@ export class CharacterImageService {
     };
 
     // Run a single builder LLM call to produce visual descriptions + image prompts
-    const builderPrompt = this.buildBuilderPrompt(session);
+    const builderPrompt = await this.buildBuilderPrompt(session);
     let builderResult: CharacterImageBuilderOutput | null = null;
 
     try {
@@ -1326,10 +1240,10 @@ export class CharacterImageService {
     };
   }
 
-  private buildClarifierPrompt(session: CharacterImageSessionState): {
+  private async buildClarifierPrompt(session: CharacterImageSessionState): Promise<{
     system: string;
     user: string;
-  } {
+  }> {
     const charPack = session.sourceCharacterPack;
     const priorTurns = this.formatPriorTurns(session.turns);
     const ledgerText = this.formatLedgerForPrompt(session.constraintLedger ?? []);
@@ -1346,7 +1260,7 @@ export class CharacterImageService {
 
     const probeText = formatSuggestedProbeForPrompt(session.psychologyLedger);
 
-    const user = CHARACTER_IMAGE_CLARIFIER_USER_TEMPLATE
+    let user = CHARACTER_IMAGE_CLARIFIER_USER_TEMPLATE
       .replace("{{CHARACTER_IDENTITIES}}", identities)
       .replace("{{CHARACTER_PROFILES_JSON}}", charProfilesJson)
       .replace("{{PREMISE}}", charPack.state_summary ?? "")
@@ -1365,15 +1279,22 @@ export class CharacterImageService {
 
     const currentTurn = session.turns.length + 1;
     const directionMapText = formatDirectionMapForPrompt(session.psychologyLedger, currentTurn);
-    const finalUser = directionMapText ? user + "\n\n" + directionMapText : user;
+    if (directionMapText) user += "\n\n" + directionMapText;
 
-    return { system: CHARACTER_IMAGE_CLARIFIER_SYSTEM, user: finalUser };
+    // ─── Cultural Intelligence Engine injection ───
+    const culturalBrief = await this.getCulturalBrief(session, currentTurn);
+    const culturalText = culturalResearchService.formatBriefForClarifier(culturalBrief);
+    if (culturalText) {
+      user += "\n\n" + culturalText;
+    }
+
+    return { system: CHARACTER_IMAGE_CLARIFIER_SYSTEM, user };
   }
 
-  private buildBuilderPrompt(session: CharacterImageSessionState): {
+  private async buildBuilderPrompt(session: CharacterImageSessionState): Promise<{
     system: string;
     user: string;
-  } {
+  }> {
     const charPack = session.sourceCharacterPack;
     const locked = charPack.locked;
     const charProfilesJson = JSON.stringify(locked.characters, null, 2);
@@ -1386,7 +1307,7 @@ export class CharacterImageService {
 
     const upstreamTargets = this.formatUpstreamTargets(session);
 
-    const user = CHARACTER_IMAGE_BUILDER_USER_TEMPLATE
+    let user = CHARACTER_IMAGE_BUILDER_USER_TEMPLATE
       .replace("{{CHARACTER_IDENTITIES}}", identities)
       .replace("{{CHARACTER_PROFILES_JSON}}", charProfilesJson)
       .replace("{{PREMISE}}", charPack.state_summary ?? "")
@@ -1402,7 +1323,70 @@ export class CharacterImageService {
       .replace("{{PSYCHOLOGY_SIGNALS}}", signalsText)
       .replace("{{UPSTREAM_DEVELOPMENT_TARGETS}}", upstreamTargets);
 
+    // ─── Cultural Intelligence Engine injection ───
+    const culturalBrief = await this.getCulturalBriefForBuilder(session);
+    const culturalText = culturalResearchService.formatBriefForBuilder(culturalBrief);
+    if (culturalText) {
+      user += "\n\n" + culturalText;
+    }
+
     return { system: CHARACTER_IMAGE_BUILDER_SYSTEM, user };
+  }
+
+  // ─── Cultural Intelligence Engine helpers ───
+
+  private async getCulturalBrief(
+    session: CharacterImageSessionState,
+    turnNumber: number,
+  ): Promise<import("../../shared/types/cultural").CulturalBrief | null> {
+    const storyCtx = this.extractStoryContext(session.constraintLedger ?? []);
+    return culturalResearchService.getBriefForClarifier({
+      projectId: session.projectId,
+      module: "character_image",
+      turnNumber,
+      lockedPacksSummary: `HOOK: ${storyCtx.hookSentence} — ${storyCtx.emotionalPromise}\nCHARACTERS: ${Object.entries(session.sourceCharacterPack.locked.characters).map(([role, c]) => `${role}: ${c.role}`).join("; ")}`,
+      currentState: (session.generatedImages ?? {}) as Record<string, unknown>,
+      constraintLedger: this.formatLedgerForPrompt(session.constraintLedger ?? []),
+      psychologySummary: formatPsychologyLedgerForPrompt(session.psychologyLedger) ?? "",
+      directedReferences: this.extractDirectedReferences(session),
+    });
+  }
+
+  private async getCulturalBriefForBuilder(
+    session: CharacterImageSessionState,
+  ): Promise<import("../../shared/types/cultural").CulturalBrief | null> {
+    return culturalResearchService.getBriefForBuilder(
+      session.projectId, "character_image", session.turns.length,
+    );
+  }
+
+  private async fireBackgroundCulturalResearch(
+    session: CharacterImageSessionState,
+    turnNumber: number,
+  ): Promise<void> {
+    const storyCtx = this.extractStoryContext(session.constraintLedger ?? []);
+    const context: CulturalResearchContext = {
+      projectId: session.projectId,
+      module: "character_image",
+      turnNumber,
+      lockedPacksSummary: `HOOK: ${storyCtx.hookSentence} — ${storyCtx.emotionalPromise}\nCHARACTERS: ${Object.entries(session.sourceCharacterPack.locked.characters).map(([role, c]) => `${role}: ${c.role}`).join("; ")}`,
+      currentState: (session.generatedImages ?? {}) as Record<string, unknown>,
+      constraintLedger: this.formatLedgerForPrompt(session.constraintLedger ?? []),
+      psychologySummary: formatPsychologyLedgerForPrompt(session.psychologyLedger) ?? "",
+      directedReferences: this.extractDirectedReferences(session),
+    };
+    await culturalResearchService.fireBackgroundResearch(context);
+  }
+
+  private extractDirectedReferences(session: CharacterImageSessionState): string[] {
+    const refs: string[] = [];
+    const recentTurns = session.turns.slice(-3);
+    for (const t of recentTurns) {
+      if (t.userSelection?.type === "free_text" && (t.userSelection as any).text) {
+        refs.push(...detectDirectedReferences((t.userSelection as any).text));
+      }
+    }
+    return [...new Set(refs)];
   }
 
   private formatStylePreference(session: CharacterImageSessionState): string {
