@@ -19,7 +19,9 @@ const app = express();
 // ── Security & body limits ──────────────────────────────────────────
 const ALLOWED_ORIGINS = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(",").map(s => s.trim())
-  : undefined; // undefined = allow all (dev mode)
+  : process.env.NODE_ENV === "production"
+    ? ["http://localhost:3000", "http://localhost:3001"] // production default: localhost only
+    : undefined; // dev mode: allow all origins
 
 app.use(cors(ALLOWED_ORIGINS ? { origin: ALLOWED_ORIGINS } : undefined));
 app.use(express.json({ limit: "2mb" })); // prevent oversized payloads

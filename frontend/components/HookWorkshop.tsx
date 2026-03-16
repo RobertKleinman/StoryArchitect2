@@ -12,6 +12,7 @@ import type {
   HookAssumption,
   HookBuilderOutput,
   HookClarifierOption,
+  HookClarifierResponse,
   HookJudgeScores,
   HookPack,
   PromptOverrides,
@@ -52,6 +53,7 @@ interface HookWorkshopState {
   editing: boolean;
   editPremise: string;
   editTrigger: string;
+  scopeRecommendation: HookClarifierResponse["scope_recommendation"];
 }
 
 const initialState: HookWorkshopState = {
@@ -81,6 +83,7 @@ const initialState: HookWorkshopState = {
   editing: false,
   editPremise: "",
   editTrigger: "",
+  scopeRecommendation: null,
 };
 
 const SESSION_KEY = "hookWorkshop_projectId";
@@ -343,6 +346,7 @@ export function HookWorkshop() {
         loading: false,
         loadingMessage: "",
         error: null,
+        scopeRecommendation: response.clarifier.scope_recommendation ?? null,
       }));
       emitModuleStatus("hook", "active");
     });
@@ -412,6 +416,7 @@ export function HookWorkshop() {
         loading: false,
         loadingMessage: "",
         error: null,
+        scopeRecommendation: response.clarifier.scope_recommendation ?? null,
       }));
     });
   };
@@ -738,6 +743,27 @@ export function HookWorkshop() {
                 <span className="readiness-label">
                   {state.readinessPct < 30 ? "Exploring" : state.readinessPct < 60 ? "Taking shape" : state.readinessPct < 85 ? "Almost there" : "Ready!"} ({state.readinessPct}%)
                 </span>
+              </div>
+            )}
+
+            {state.scopeRecommendation && (
+              <div className="scope-recommendation">
+                <h3>Story Scope Advisor</h3>
+                <div className="scope-rec-primary">
+                  <span className="scope-badge">{state.scopeRecommendation.recommended_cast.replace(/_/g, " ")}</span>
+                  <span className="scope-badge">{state.scopeRecommendation.recommended_length}</span>
+                  <p className="scope-reasoning">{state.scopeRecommendation.reasoning}</p>
+                  <p className="scope-experience">{state.scopeRecommendation.experience_note}</p>
+                </div>
+                <details className="scope-alt">
+                  <summary>Alternative approach</summary>
+                  <div className="scope-rec-alt">
+                    <span className="scope-badge scope-badge-alt">{state.scopeRecommendation.alternative.cast}</span>
+                    <span className="scope-badge scope-badge-alt">{state.scopeRecommendation.alternative.length}</span>
+                    <p className="scope-reasoning">{state.scopeRecommendation.alternative.reasoning}</p>
+                    <p className="scope-experience">{state.scopeRecommendation.alternative.experience_note}</p>
+                  </div>
+                </details>
               </div>
             )}
 

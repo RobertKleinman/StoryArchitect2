@@ -4,6 +4,7 @@ import { emitModuleStatus } from "./App";
 import { PsychologyOverlay } from "./PsychologyOverlay";
 import { EngineInsights } from "./EngineInsights";
 import { ModelSelector } from "./ModelSelector";
+import { PackPreview } from "./PackPreview";
 import type {
   CharacterImageAssumptionResponse,
   CharacterImageBuilderOutput,
@@ -181,6 +182,7 @@ export function CharacterImageWorkshop() {
   const [state, setState] = useState<WorkshopState>(initialState);
   const [showPsych, setShowPsych] = useState(false);
   const [showInsights, setShowInsights] = useState(false);
+  const [lockedPack, setLockedPack] = useState<import("../../shared/types/characterImage").CharacterImagePack | null>(null);
   const fetchPsych = useMemo(() => () => characterImageApi.debugPsychology(projectId), [projectId]);
   const fetchInsights = useMemo(() => () => characterImageApi.debugInsights(projectId), [projectId]);
 
@@ -500,7 +502,8 @@ export function CharacterImageWorkshop() {
   const lockImages = async () => {
     setState(s => ({ ...s, loading: true, loadingMessage: "Locking character images...", error: null }));
     try {
-      await characterImageApi.lock(projectId);
+      const pack = await characterImageApi.lock(projectId);
+      setLockedPack(pack);
       setState(s => ({ ...s, phase: "locked", loading: false }));
       emitModuleStatus("character_image", "locked");
     } catch (err: any) {
@@ -1231,7 +1234,8 @@ export function CharacterImageWorkshop() {
       {/* ─── Phase: Locked ─── */}
       {state.phase === "locked" && (
         <div className="locked-phase">
-          <h3>Character Images Locked! ✓</h3>
+          <h3>Character Images Locked!</h3>
+          {lockedPack && <PackPreview pack={lockedPack} defaultExpanded />}
           <p>Visual identities have been saved. These will be used as references for scene generation.</p>
           <button type="button" className="btn-ghost" onClick={resetAll}>Start New Session</button>
         </div>

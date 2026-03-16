@@ -291,6 +291,7 @@ export class CharacterService {
     // indicate a non-retryable shape issue — no point re-calling with identical prompt.
     // LLMClient.call() already retries transient transport errors (429/500/529).
     const clarifier = this.parseAndValidate<CharacterClarifierResponse>(clarifierRaw, [
+      "psychology_strategy",
       "hypothesis_line",
       "question",
       "options",
@@ -945,6 +946,8 @@ export class CharacterService {
         role: profile.role,
         description: profile.description,
         presentation: profile.presentation ?? "unspecified",
+        age_range: profile.age_range,
+        ethnicity: profile.ethnicity,
         psychological_profile: {
           ...profile.core_dials,
           ...profile.secondary_dials,
@@ -970,6 +973,7 @@ export class CharacterService {
         ensemble_dynamic: cast.ensemble_dynamic,
         relationship_tensions: cast.relationship_tensions,
         cast_count: Object.keys(cast.characters).length,
+        differentiation_matrix: cast.differentiation_matrix,
       },
       preferences: {
         tone_chips: session.sourceHook.preferences?.tone_chips ?? [],

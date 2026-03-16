@@ -51,10 +51,13 @@ declare module "express" {
   export type NextFunction = () => void;
   export type ErrorHandler = (err: Error, req: Request, res: Response, next: NextFunction) => unknown;
   export type Handler = (req: Request, res: Response) => unknown;
+  export type Middleware = (req: Request, res: Response, next: NextFunction) => unknown;
   export interface RouterLike {
     use(...args: unknown[]): unknown;
     get(path: string, handler: Handler): unknown;
+    get(path: string, middleware: Middleware, handler: Handler): unknown;
     post(path: string, handler: Handler): unknown;
+    post(path: string, middleware: Middleware, handler: Handler): unknown;
     put(path: string, handler: Handler): unknown;
     delete(path: string, handler: Handler): unknown;
   }

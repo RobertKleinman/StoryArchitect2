@@ -197,6 +197,9 @@ export function WorldWorkshop() {
   const [showConstraintOverrides, setShowConstraintOverrides] = useState(false);
   const [constraintOverridesText, setConstraintOverridesText] = useState("");
 
+  // Locked pack for PackPreview display
+  const [lockedPack, setLockedPack] = useState<import("../../shared/types/world").WorldPack | null>(null);
+
   // ─── Load available charImage and character sessions on mount ───
   React.useEffect(() => {
     setSessionsLoading(true);
@@ -593,7 +596,8 @@ export function WorldWorkshop() {
   const lockWorld = async () => {
     setState(s => ({ ...s, loading: true, loadingMessage: "Locking world...", error: null }));
     try {
-      await worldApi.lock(projectId);
+      const pack = await worldApi.lock(projectId);
+      setLockedPack(pack);
       setState(s => ({ ...s, phase: "locked", loading: false }));
       emitModuleStatus("world", "locked");
     } catch (err: any) {
@@ -1387,6 +1391,7 @@ export function WorldWorkshop() {
       {state.phase === "locked" && (
         <div className="locked-phase">
           <h3>World Locked!</h3>
+          {lockedPack && <PackPreview pack={lockedPack} defaultExpanded />}
           <p>Your world&apos;s arena, rules, factions, and consequences have been saved. These constraints will shape all downstream generation.</p>
           <button type="button" className="btn-ghost" onClick={resetAll}>Start New Session</button>
         </div>

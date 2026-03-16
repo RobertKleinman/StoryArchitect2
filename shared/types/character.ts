@@ -225,6 +225,12 @@ export interface CharacterPack {
     ensemble_dynamic: string;
     relationship_tensions: RelationshipTension[];
     cast_count: number;
+    differentiation_matrix?: Record<string, {
+      stress_response: string;
+      communication_style: string;
+      core_value: string;
+      power_strategy: string;
+    }>;
   };
   preferences: {
     tone_chips: string[];

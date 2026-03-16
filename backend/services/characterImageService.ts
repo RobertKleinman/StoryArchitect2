@@ -312,6 +312,7 @@ export class CharacterImageService {
         maxTokens: 4000,
         modelOverride,
         jsonSchema: CHARACTER_IMAGE_CLARIFIER_SCHEMA,
+        cacheableUserPrefix: promptOverrides?.user ? undefined : prompt.cacheableUserPrefix,
       });
     } catch (err) {
       console.error("IMG CLARIFIER LLM ERROR:", err);
@@ -319,7 +320,7 @@ export class CharacterImageService {
     }
 
     const clarifier = this.parseAndValidate<CharacterImageClarifierResponse>(clarifierRaw, [
-      "hypothesis_line", "question", "options", "ready_for_images", "assumptions", "user_read",
+      "psychology_strategy", "hypothesis_line", "question", "options", "ready_for_images", "assumptions", "user_read",
     ]);
 
     if (!clarifier) {
@@ -1267,6 +1268,7 @@ export class CharacterImageService {
   private async buildClarifierPrompt(session: CharacterImageSessionState): Promise<{
     system: string;
     user: string;
+    cacheableUserPrefix?: string;
   }> {
     const charPack = session.sourceCharacterPack;
     const priorTurns = this.formatPriorTurns(session.turns);
@@ -1284,7 +1286,8 @@ export class CharacterImageService {
 
     const probeText = formatSuggestedProbeForPrompt(session.psychologyLedger);
 
-    let user = CHARACTER_IMAGE_CLARIFIER_USER_TEMPLATE
+    // Split into static prefix (cacheable) and dynamic suffix
+    const prefix = CHARACTER_IMAGE_CLARIFIER_USER_TEMPLATE
       .replace("{{CHARACTER_IDENTITIES}}", identities)
       .replace("{{CHARACTER_PROFILES_JSON}}", charProfilesJson)
       .replace("{{PREMISE}}", charPack.state_summary ?? "")
@@ -1294,31 +1297,37 @@ export class CharacterImageService {
       .replace("{{TONE_CHIPS}}", JSON.stringify(charPack.preferences?.tone_chips ?? []))
       .replace("{{ENSEMBLE_DYNAMIC}}", locked.ensemble_dynamic ?? "")
       .replace("{{VISUAL_SEED}}", session.visualSeed ?? "(none provided)")
-      .replace("{{PRIOR_TURNS}}", priorTurns)
-      .replace("{{PSYCHOLOGY_LEDGER}}", psychText)
-      .replace("{{CONSTRAINT_LEDGER}}", ledgerText)
-      .replace("{{TURN_NUMBER}}", turnNumber)
-      .replace("{{UPSTREAM_DEVELOPMENT_TARGETS}}", upstreamTargets)
-      + (probeText ? "\n\n" + probeText : "");
+      .replace("{{PRIOR_TURNS}}", "")
+      .replace("{{PSYCHOLOGY_LEDGER}}", "")
+      .replace("{{CONSTRAINT_LEDGER}}", "")
+      .replace("{{TURN_NUMBER}}", "")
+      .replace("{{UPSTREAM_DEVELOPMENT_TARGETS}}", "");
+
+    let dynamic = `\n\n--- TURN ${turnNumber} CONTEXT ---\n`;
+    dynamic += `\nPrior turns:\n${priorTurns}`;
+    dynamic += `\nConstraint ledger:\n${ledgerText}`;
+    dynamic += `\nPsychology ledger:\n${psychText}`;
+    dynamic += `\nUpstream development targets:\n${upstreamTargets}`;
+    if (probeText) dynamic += "\n\n" + probeText;
 
     const currentTurn = session.turns.length + 1;
     const directionMapText = formatDirectionMapForPrompt(session.psychologyLedger, currentTurn);
-    if (directionMapText) user += "\n\n" + directionMapText;
+    if (directionMapText) dynamic += "\n\n" + directionMapText;
 
     // ─── Cultural Intelligence Engine injection ───
     const culturalBrief = await this.getCulturalBrief(session, currentTurn);
     const culturalText = culturalResearchService.formatBriefForClarifier(culturalBrief);
     if (culturalText) {
-      user += "\n\n" + culturalText;
+      dynamic += "\n\n" + culturalText;
     }
 
     // ─── MUST HONOR constraint reinforcement (end of prompt = highest attention) ───
     const mustHonor = buildMustHonorBlock(session.constraintLedger ?? []);
     if (mustHonor) {
-      user += "\n\n" + mustHonor;
+      dynamic += "\n\n" + mustHonor;
     }
 
-    return { system: CHARACTER_IMAGE_CLARIFIER_SYSTEM, user };
+    return { system: CHARACTER_IMAGE_CLARIFIER_SYSTEM, user: prefix + dynamic, cacheableUserPrefix: prefix };
   }
 
   private async buildBuilderPrompt(session: CharacterImageSessionState): Promise<{

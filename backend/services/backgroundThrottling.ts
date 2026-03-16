@@ -87,7 +87,8 @@ export function shouldDiverge(
   turn: ThrottlingTurnInfo,
   session: ThrottlingSessionInfo,
 ): boolean {
-  if (turn.turnNumber < 2) return false;
+  // Turn 1: fire unconditionally — strongest exploration opportunity
+  if (turn.turnNumber === 1) return true;
 
   const prevTurn: ThrottlingPrevTurnInfo | null =
     session.turns.length >= 2 ? session.turns[session.turns.length - 2] : null;
@@ -112,7 +113,8 @@ export function shouldResearchCulture(
   turn: ThrottlingTurnInfo,
   _session: ThrottlingSessionInfo,
 ): boolean {
-  if (turn.turnNumber < 2) return false;
+  // Turn 1: cultural context is most impactful at the very start
+  if (turn.turnNumber === 1) return true;
   const meaningfulInput = turn.userSelection?.type === "free_text";
   const cadenceFallback = turn.turnNumber % 3 === 0;
   return meaningfulInput || cadenceFallback;
@@ -134,6 +136,15 @@ export function pickBackgroundTasks(
   turn: ThrottlingTurnInfo,
   session: ThrottlingSessionInfo,
 ): { consolidate: boolean; diverge: boolean; cultural: boolean } {
+  // Turn 1: fire all background tasks — most impactful moment for exploration
+  if (turn.turnNumber === 1) {
+    return {
+      consolidate: shouldConsolidate(turn, session),
+      diverge: true,
+      cultural: true,
+    };
+  }
+
   const wantsConsolidate = shouldConsolidate(turn, session);
   const wantsDiverge = shouldDiverge(turn, session);
   const wantsCultural = shouldResearchCulture(turn, session);

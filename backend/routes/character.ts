@@ -3,7 +3,7 @@ import fs from "fs/promises";
 import nodePath from "path";
 import { characterFeatureFlagGuard } from "../middleware/characterFeatureFlagGuard";
 import { characterService, characterStore, culturalStore } from "../services/runtime";
-import { handleRouteError, getModelOverride } from "./routeUtils";
+import { handleRouteError, getModelOverride, debugGuard } from "./routeUtils";
 
 export const characterRoutes = Router();
 
@@ -17,8 +17,8 @@ characterRoutes.post("/preview-prompt", async (req, res) => {
   if (!projectId || typeof projectId !== "string") {
     return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "projectId is required" });
   }
-  if (!stage || !["clarifier", "builder", "judge", "summary"].includes(stage)) {
-    return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "stage must be clarifier|builder|judge|summary" });
+  if (!stage || !["clarifier", "builder", "judge", "polish", "summary"].includes(stage)) {
+    return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "stage must be clarifier|builder|judge|polish|summary" });
   }
 
   try {
@@ -178,7 +178,7 @@ characterRoutes.get("/list-sessions", async (_req, res) => {
   }
 });
 
-characterRoutes.get("/debug/insights/:projectId", async (req, res) => {
+characterRoutes.get("/debug/insights/:projectId", debugGuard, async (req, res) => {
   try {
     const session = await characterService.getSession(req.params.projectId);
     const psychologyLedger = session?.psychologyLedger ?? null;
@@ -195,7 +195,7 @@ characterRoutes.get("/debug/insights/:projectId", async (req, res) => {
   }
 });
 
-characterRoutes.get("/debug/psychology/:projectId", async (req, res) => {
+characterRoutes.get("/debug/psychology/:projectId", debugGuard, async (req, res) => {
   try {
     const session = await characterService.getSession(req.params.projectId);
     if (!session?.psychologyLedger) {

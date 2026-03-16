@@ -28,11 +28,20 @@ export function handleRouteError(res: Response, err: unknown, label: string): vo
   }
 
   const msg = err instanceof Error ? err.message : "Unexpected server error";
-  res.status(500).json({ error: true, code: "LLM_CALL_FAILED", message: msg });
+  res.status(500).json({ error: true, code: "INTERNAL_ERROR", message: msg });
 }
 
 /** Extract model override from X-Model-Override header */
 export function getModelOverride(header: string | string[] | undefined): string | undefined {
   if (Array.isArray(header)) return header[0];
   return header;
+}
+
+/** Guard debug endpoints in production unless ENABLE_DEBUG_ROUTES is set */
+export function debugGuard(req: any, res: any, next: any): void {
+  if (process.env.NODE_ENV === "production" && !process.env.ENABLE_DEBUG_ROUTES) {
+    res.status(404).json({ error: true, code: "NOT_FOUND", message: "Not found" });
+    return;
+  }
+  next();
 }

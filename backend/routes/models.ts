@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { ModelConfig, SUPPORTED_MODELS, PROVIDER_MODELS, modelsByProvider } from "../../shared/modelConfig";
 import { llmClient } from "../services/runtime";
+import { debugGuard } from "./routeUtils";
 
 export const modelRoutes = Router();
 
@@ -73,6 +74,6 @@ modelRoutes.put("/models", (req, res) => {
 });
 
 /** GET /api/debug/tokens — accumulated token usage for this server session */
-modelRoutes.get("/debug/tokens", (_req, res) => {
+modelRoutes.get("/debug/tokens", debugGuard, (_req, res) => {
   return res.json(llmClient.getTokenUsage());
 });

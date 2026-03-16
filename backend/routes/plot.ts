@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { plotFeatureFlagGuard } from "../middleware/plotFeatureFlagGuard";
 import { plotService, culturalStore } from "../services/runtime";
-import { handleRouteError, getModelOverride } from "./routeUtils";
+import { handleRouteError, getModelOverride, debugGuard } from "./routeUtils";
 
 export const plotRoutes = Router();
 
@@ -17,8 +17,8 @@ plotRoutes.post("/preview-prompt", async (req, res) => {
   if (!projectId || typeof projectId !== "string") {
     return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "projectId is required" });
   }
-  if (!stage || !["clarifier", "builder", "judge", "summary"].includes(stage)) {
-    return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "stage must be clarifier|builder|judge|summary" });
+  if (!stage || !["clarifier", "builder", "judge", "polish", "summary"].includes(stage)) {
+    return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "stage must be clarifier|builder|judge|polish|summary" });
   }
 
   try {
@@ -150,7 +150,7 @@ plotRoutes.get("/export-session/:projectId", async (req, res) => {
 
 // ─── Debug Psychology ───
 
-plotRoutes.get("/debug/insights/:projectId", async (req, res) => {
+plotRoutes.get("/debug/insights/:projectId", debugGuard, async (req, res) => {
   try {
     const session = await plotService.getSession(req.params.projectId);
     const psychologyLedger = session?.psychologyLedger ?? null;
@@ -167,7 +167,7 @@ plotRoutes.get("/debug/insights/:projectId", async (req, res) => {
   }
 });
 
-plotRoutes.get("/debug/psychology/:projectId", async (req, res) => {
+plotRoutes.get("/debug/psychology/:projectId", debugGuard, async (req, res) => {
   try {
     const session = await plotService.getSession(req.params.projectId);
     if (!session?.psychologyLedger) {

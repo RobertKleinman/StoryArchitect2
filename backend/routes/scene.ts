@@ -3,7 +3,7 @@ import fs from "fs/promises";
 import nodePath from "path";
 import { sceneFeatureFlagGuard } from "../middleware/sceneFeatureFlagGuard";
 import { sceneService, sceneStore, culturalStore } from "../services/runtime";
-import { handleRouteError, getModelOverride } from "./routeUtils";
+import { handleRouteError, getModelOverride, debugGuard } from "./routeUtils";
 
 export const sceneRoutes = Router();
 
@@ -168,7 +168,7 @@ sceneRoutes.post("/complete", async (req, res) => {
 
 // ─── Debug endpoints (MUST be before /:projectId) ───
 
-sceneRoutes.get("/debug/insights/:projectId", async (req, res) => {
+sceneRoutes.get("/debug/insights/:projectId", debugGuard, async (req, res) => {
   try {
     const session = await sceneService.getSession(req.params.projectId);
     const psychologyLedger = session?.psychologyLedger ?? null;
@@ -186,7 +186,7 @@ sceneRoutes.get("/debug/insights/:projectId", async (req, res) => {
 });
 
 /** GET /api/scene/debug/scenes/:projectId — testing sidebar: raw scene output */
-sceneRoutes.get("/debug/scenes/:projectId", async (req, res) => {
+sceneRoutes.get("/debug/scenes/:projectId", debugGuard, async (req, res) => {
   try {
     const session = await sceneService.getSession(req.params.projectId);
     if (!session) {
@@ -208,7 +208,7 @@ sceneRoutes.get("/debug/scenes/:projectId", async (req, res) => {
 });
 
 /** GET /api/scene/debug/psychology/:projectId — psychology ledger debug */
-sceneRoutes.get("/debug/psychology/:projectId", async (req, res) => {
+sceneRoutes.get("/debug/psychology/:projectId", debugGuard, async (req, res) => {
   try {
     const session = await sceneService.getSession(req.params.projectId);
     if (!session?.psychologyLedger) {

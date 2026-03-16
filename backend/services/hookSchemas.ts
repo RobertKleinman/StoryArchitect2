@@ -57,6 +57,7 @@ export const HOOK_CLARIFIER_SCHEMA = {
         antagonist_form: { type: "string" },
         tone_chips: { type: "array", items: { type: "string" } },
         bans: { type: "array", items: { type: "string" } },
+        cast_scale: { type: "string" },
       },
       additionalProperties: false,
     },

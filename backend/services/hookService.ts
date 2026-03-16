@@ -269,6 +269,7 @@ export class HookService {
     // indicate a non-retryable shape issue — no point re-calling with identical prompt.
     // LLMClient.call() already retries transient transport errors (429/500/529).
     const clarifier = this.parseAndValidate<any>(clarifierRaw, [
+      "psychology_strategy",
       "hypothesis_line",
       "question",
       "options",

@@ -5,6 +5,7 @@ import { emitModuleStatus } from "./App";
 import { PsychologyOverlay } from "./PsychologyOverlay";
 import { EngineInsights } from "./EngineInsights";
 import { ModelSelector } from "./ModelSelector";
+import { PackPreview } from "./PackPreview";
 import type {
   PlotAssumptionResponse,
   PlotBuilderOutput,
@@ -186,6 +187,9 @@ export function PlotWorkshop() {
   // Constraint override state for regeneration
   const [showConstraintOverrides, setShowConstraintOverrides] = useState(false);
   const [constraintOverridesText, setConstraintOverridesText] = useState("");
+
+  // Locked pack for PackPreview display
+  const [lockedPack, setLockedPack] = useState<import("../../shared/types/plot").PlotPack | null>(null);
 
   // ─── Load available world sessions on mount ───
   React.useEffect(() => {
@@ -494,7 +498,8 @@ export function PlotWorkshop() {
   const lockPlot = async () => {
     setState(s => ({ ...s, loading: true, loadingMessage: "Locking plot...", error: null }));
     try {
-      await plotApi.lock(projectId);
+      const pack = await plotApi.lock(projectId);
+      setLockedPack(pack);
       setState(s => ({ ...s, phase: "locked", loading: false }));
       emitModuleStatus("plot", "locked");
     } catch (err: any) {
@@ -1237,6 +1242,7 @@ export function PlotWorkshop() {
       {state.phase === "locked" && (
         <div className="locked-phase">
           <h3>Plot Locked!</h3>
+          {lockedPack && <PackPreview pack={lockedPack} defaultExpanded />}
           <p>Your plot&apos;s tension chain, turning points, climax, and mysteries have been saved. These will drive all downstream generation.</p>
           <button type="button" className="btn-ghost" onClick={resetAll}>Start New Session</button>
         </div>
