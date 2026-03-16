@@ -129,6 +129,25 @@ sceneRoutes.post("/build", async (req, res) => {
   }
 });
 
+// ─── Generate All (skip clarification, build sequentially) ───
+
+/** POST /api/scene/generate-all — build all scenes sequentially, skipping per-scene clarification */
+sceneRoutes.post("/generate-all", async (req, res) => {
+  const modelOverride = getModelOverride(req.header("X-Model-Override"));
+  const { projectId } = req.body ?? {};
+
+  if (!projectId || typeof projectId !== "string") {
+    return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "projectId is required" });
+  }
+
+  try {
+    const result = await sceneService.generateAllScenes(projectId, modelOverride);
+    return res.json(result);
+  } catch (err) {
+    return handleError(res, err);
+  }
+});
+
 // ─── Phase 4: Final Judge ───
 
 /** POST /api/scene/final-judge — intensive full-work assessment */

@@ -63,9 +63,10 @@ import {
   extractDivergenceContext,
   formatDirectionMapForPrompt,
 } from "./divergenceExplorer";
-import { culturalResearchService } from "./runtime";
+import { culturalResearchService, storyBibleService, projectStore as runtimeProjectStore } from "./runtime";
 import { detectDirectedReferences, shouldRunCulturalResearch } from "./culturalResearchService";
 import type { CulturalResearchContext } from "./culturalResearchService";
+import { buildMustHonorBlock } from "./mustHonorBlock";
 
 // ─── API response types ───
 
@@ -853,6 +854,19 @@ export class WorldService {
       psychologyLedger: session.psychologyLedger,
     };
 
+    // Update story bible with world module output
+    try {
+      const existingBible = await runtimeProjectStore.getStoryBible(session.projectId);
+      const bible = await storyBibleService.generateBible(
+        session.projectId,
+        worldPack.state_summary ?? "",
+        existingBible ?? undefined,
+      );
+      await runtimeProjectStore.saveStoryBible(session.projectId, bible);
+    } catch (err) {
+      console.error("WORLD STORY BIBLE ERROR (non-fatal):", err);
+    }
+
     await this.worldStore.saveExport(session, worldPack);
 
     session.status = "locked";
@@ -926,11 +940,22 @@ export class WorldService {
     dynamic += (probeText ? "\n\n" + probeText : "");
     dynamic += (directionMapText ? "\n\n" + directionMapText : "");
 
+    // ─── Story Bible injection ───
+    const storyBible = await runtimeProjectStore.getStoryBible(session.projectId);
+    dynamic += "\n\n═══ STORY BIBLE (do NOT contradict — these are confirmed canonical facts) ═══\n" +
+      (storyBible || "(not yet available)");
+
     // ─── Cultural Intelligence Engine injection ───
     const culturalBrief = await this.getCulturalBrief(session, currentTurn);
     const culturalText = culturalResearchService.formatBriefForClarifier(culturalBrief);
     if (culturalText) {
       dynamic += "\n\n" + culturalText;
+    }
+
+    // ─── MUST HONOR constraint reinforcement (end of prompt = highest attention) ───
+    const mustHonor = buildMustHonorBlock(session.constraintLedger ?? []);
+    if (mustHonor) {
+      dynamic += "\n\n" + mustHonor;
     }
 
     return {
@@ -983,11 +1008,22 @@ export class WorldService {
       .replace("{{PSYCHOLOGY_SIGNALS}}", signalsText)
       .replace("{{CONSTRAINT_LEDGER}}", ledgerText);
 
+    // ─── Story Bible injection ───
+    const storyBibleBuilder = await runtimeProjectStore.getStoryBible(session.projectId);
+    dynamic += "\n\n═══ STORY BIBLE (do NOT contradict — these are confirmed canonical facts) ═══\n" +
+      (storyBibleBuilder || "(not yet available)");
+
     // ─── Cultural Intelligence Engine injection ───
     const culturalBrief = await this.getCulturalBriefForBuilder(session);
     const culturalText = culturalResearchService.formatBriefForBuilder(culturalBrief);
     if (culturalText) {
       dynamic += "\n\n" + culturalText;
+    }
+
+    // ─── MUST HONOR constraint reinforcement (end of prompt = highest attention) ───
+    const mustHonorBuilder = buildMustHonorBlock(session.constraintLedger ?? []);
+    if (mustHonorBuilder) {
+      dynamic += "\n\n" + mustHonorBuilder;
     }
 
     return {
