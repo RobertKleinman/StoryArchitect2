@@ -130,6 +130,7 @@ export interface CharacterProfile {
     vulnerability: string;
     tell: string;
     voice_pattern: string;
+    guilty_pleasure: string;  // a small indulgence that reveals hidden softness
   };
   // Role-specific (may be empty strings for non-applicable roles)
   antagonist_dials: {
@@ -140,6 +141,7 @@ export interface CharacterProfile {
   supporting_dials: {
     role_function: string;
     misread: string;
+    spark: string;  // the surprising quality that makes them irreplaceable
   };
   // Top-level character fields (new)
   threshold_statement: string;   // "I will never ___" — in their voice

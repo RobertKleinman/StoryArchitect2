@@ -65,7 +65,7 @@ import {
 import { culturalResearchService, storyBibleService, projectStore as runtimeProjectStore } from "./runtime";
 import { detectDirectedReferences, shouldRunCulturalResearch } from "./culturalResearchService";
 import type { CulturalResearchContext } from "./culturalResearchService";
-import { buildMustHonorBlock } from "./mustHonorBlock";
+import { buildMustHonorBlock, normalizeStringifiedFields } from "./mustHonorBlock";
 
 export class CharacterServiceError extends Error {
   code: "NOT_FOUND" | "INVALID_INPUT" | "LLM_PARSE_ERROR" | "LLM_CALL_FAILED";
@@ -313,6 +313,9 @@ export class CharacterService {
       throw new CharacterServiceError("LLM_PARSE_ERROR", "Failed to parse character clarifier response");
     }
 
+    // Normalize stringified fields (user_read, scope_recommendation) from JSON strings to objects
+    normalizeStringifiedFields(clarifier as unknown as Record<string, unknown>);
+
     // Record prompt history
     this.recordPromptHistory(
       session, "clarifier", prompt.system, prompt.user,
@@ -410,9 +413,15 @@ export class CharacterService {
       !turn.clarifierResponse.ready_for_characters &&
       session.turns.length >= 3
     ) {
-      turn.clarifierResponse.ready_for_characters = true;
-      turn.clarifierResponse.readiness_note =
-        turn.clarifierResponse.readiness_note || "Your cast has been taking shape nicely — ready to meet them!";
+      // Issue #23 gate: ensure protagonist has confirmed presentation before forcing readiness
+      const presentationConfirmed = (session.constraintLedger ?? []).some(
+        (e) => e.key.endsWith(".presentation") && e.confidence === "confirmed",
+      );
+      if (presentationConfirmed) {
+        turn.clarifierResponse.ready_for_characters = true;
+        turn.clarifierResponse.readiness_note =
+          turn.clarifierResponse.readiness_note || "Your cast has been taking shape nicely — ready to meet them!";
+      }
     }
 
     session.turns.push(turn);

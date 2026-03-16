@@ -318,6 +318,7 @@ export interface WorldSessionState {
   /** Accumulated development targets from all prior modules */
   developmentTargets: DevelopmentTarget[];
   status: "clarifying" | "generating" | "revealed" | "locked";
+  rerollCount: number;
   lastSavedAt?: string;
   /** Live build progress for tournament visibility (Issue #11) */
   buildProgress?: import("./api").BuildProgress;

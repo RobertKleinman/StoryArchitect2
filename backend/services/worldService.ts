@@ -66,7 +66,7 @@ import {
 import { culturalResearchService, storyBibleService, projectStore as runtimeProjectStore } from "./runtime";
 import { detectDirectedReferences, shouldRunCulturalResearch } from "./culturalResearchService";
 import type { CulturalResearchContext } from "./culturalResearchService";
-import { buildMustHonorBlock } from "./mustHonorBlock";
+import { buildMustHonorBlock, normalizeStringifiedFields } from "./mustHonorBlock";
 
 // ─── API response types ───
 
@@ -311,6 +311,7 @@ export class WorldService {
           constraintLedger: importedLedger,
           developmentTargets: devTargets,
           status: "clarifying",
+          rerollCount: 0,
           psychologyLedger: importedPsychLedger,
         };
       }
@@ -405,6 +406,9 @@ export class WorldService {
     if (!clarifier) {
       throw new WorldServiceError("LLM_PARSE_ERROR", "Failed to parse world clarifier output");
     }
+
+    // Normalize stringified fields (user_read, scope_recommendation) from JSON strings to objects
+    normalizeStringifiedFields(clarifier as unknown as Record<string, unknown>);
 
     // Ensure defaults
     if (!clarifier.missing_signal) clarifier.missing_signal = "";
@@ -752,6 +756,7 @@ export class WorldService {
       await this.worldStore.save(session);
     }
 
+    session.rerollCount = (session.rerollCount ?? 0) + 1;
     session.revealedWorld = undefined;
     session.revealedJudge = undefined;
 

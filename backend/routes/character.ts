@@ -236,6 +236,66 @@ characterRoutes.get("/debug/psychology/:projectId", debugGuard, async (req, res)
   }
 });
 
+// ─── Review (Issue #8 — "Meet your cast" last-tweaks before lock) ───
+
+characterRoutes.get("/review/:projectId", async (req, res) => {
+  try {
+    const session = await characterService.getSession(req.params.projectId);
+    if (!session?.revealedCharacters) {
+      return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "Characters not yet generated" });
+    }
+    const characters = Object.entries(session.revealedCharacters.characters).map(([roleKey, profile]: [string, any]) => ({
+      roleKey,
+      role: profile.role,
+      presentation: profile.presentation ?? "unspecified",
+      age_range: profile.age_range ?? "",
+      ethnicity: profile.ethnicity ?? "",
+      description_summary: profile.description?.slice(0, 200) ?? "",
+      confirmed_traits: Object.fromEntries(
+        (session.constraintLedger ?? [])
+          .filter((e: any) => e.key.startsWith(roleKey + ".") && e.confidence === "confirmed")
+          .map((e: any) => [e.key.replace(roleKey + ".", ""), e.value]),
+      ),
+      inferred_traits: Object.fromEntries(
+        (session.constraintLedger ?? [])
+          .filter((e: any) => e.key.startsWith(roleKey + ".") && e.confidence === "inferred")
+          .map((e: any) => [e.key.replace(roleKey + ".", ""), e.value]),
+      ),
+    }));
+    return res.json({
+      characters,
+      ready: session.status === "revealed",
+    });
+  } catch (err) {
+    return handleError(res, err);
+  }
+});
+
+characterRoutes.post("/review", async (req, res) => {
+  const { projectId, edits } = req.body ?? {};
+  if (!projectId || !Array.isArray(edits)) {
+    return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "projectId and edits[] are required" });
+  }
+  try {
+    const session = await characterService.getSession(projectId);
+    if (!session?.revealedCharacters) {
+      return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "Characters not yet generated" });
+    }
+    let applied = 0;
+    for (const edit of edits) {
+      const char = session.revealedCharacters.characters[edit.roleKey];
+      if (char && edit.field && edit.value !== undefined) {
+        (char as any)[edit.field] = edit.value;
+        applied++;
+      }
+    }
+    await characterStore.save(session);
+    return res.json({ applied });
+  } catch (err) {
+    return handleError(res, err);
+  }
+});
+
 // /:projectId MUST be after all /debug/* and other static GET routes
 characterRoutes.get("/:projectId", async (req, res) => {
   try {
