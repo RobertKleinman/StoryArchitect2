@@ -68,14 +68,14 @@ characterRoutes.post("/generate", async (req, res) => {
 
 characterRoutes.post("/reroll", async (req, res) => {
   const modelOverride = getModelOverride(req.header("X-Model-Override"));
-  const { projectId, promptOverrides } = req.body ?? {};
+  const { projectId, promptOverrides, constraintOverrides } = req.body ?? {};
 
   if (!projectId || typeof projectId !== "string") {
     return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "projectId is required" });
   }
 
   try {
-    const result = await characterService.reroll(projectId, modelOverride, promptOverrides);
+    const result = await characterService.reroll(projectId, modelOverride, promptOverrides, constraintOverrides);
     return res.json(result);
   } catch (err) {
     return handleError(res, err);
@@ -92,6 +92,35 @@ characterRoutes.post("/lock", async (req, res) => {
 
   try {
     const result = await characterService.lockCharacters(projectId, modelOverride);
+    return res.json(result);
+  } catch (err) {
+    return handleError(res, err);
+  }
+});
+
+// ─── Review endpoints (Issue 8) ───
+
+characterRoutes.get("/review/:projectId", async (req, res) => {
+  try {
+    const result = await characterService.getCharacterReview(req.params.projectId);
+    return res.json(result);
+  } catch (err) {
+    return handleError(res, err);
+  }
+});
+
+characterRoutes.post("/review", async (req, res) => {
+  const { projectId, edits } = req.body ?? {};
+
+  if (!projectId || typeof projectId !== "string") {
+    return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "projectId is required" });
+  }
+  if (!Array.isArray(edits)) {
+    return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "edits must be an array" });
+  }
+
+  try {
+    const result = await characterService.applyCharacterReviewEdits(projectId, edits);
     return res.json(result);
   } catch (err) {
     return handleError(res, err);

@@ -62,6 +62,9 @@ export const characterApi = {
   reset: (projectId: string) =>
     request<{ deleted: true }>(`/character/${projectId}`, { method: "DELETE" }),
 
+  exportSession: (projectId: string) =>
+    request<CharacterPack>(`/character/export-session/${projectId}`),
+
   /** Check if a hook export exists for the given project ID. Returns the export data or throws. */
   checkHookExport: (hookProjectId: string) =>
     request<{ hookPack: any; seedInput: string; sessionStatus: string }>(`/hook/export-session/${hookProjectId}`),

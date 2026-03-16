@@ -737,6 +737,7 @@ export class WorldService {
     projectId: string,
     modelOverride?: string,
     promptOverrides?: { builder?: WorldPromptOverrides; judge?: WorldPromptOverrides },
+    constraintOverrides?: Record<string, string>,
   ): Promise<WorldGenerateResponse> {
     const session = await this.worldStore.get(projectId);
     if (!session) {
@@ -746,10 +747,44 @@ export class WorldService {
       throw new WorldServiceError("INVALID_INPUT", "Must be in revealed status to reroll");
     }
 
+    if (constraintOverrides && Object.keys(constraintOverrides).length > 0) {
+      this.applyConstraintOverrides(session, constraintOverrides);
+      await this.worldStore.save(session);
+    }
+
     session.revealedWorld = undefined;
     session.revealedJudge = undefined;
 
     return this.runGenerate(projectId, modelOverride, promptOverrides);
+  }
+
+  private applyConstraintOverrides(
+    session: WorldSessionState,
+    overrides: Record<string, string>,
+  ): void {
+    if (!session.constraintLedger) session.constraintLedger = [];
+    const ledger = session.constraintLedger;
+    const turnNumber = session.turns.length;
+
+    for (const [key, value] of Object.entries(overrides)) {
+      const trimmed = value.trim();
+      if (!trimmed) continue;
+
+      const existingIdx = ledger.findIndex((e) => e.key === key);
+      const entry: WorldLedgerEntry = {
+        key,
+        value: trimmed,
+        source: "user_freeform",
+        confidence: "confirmed",
+        turnNumber,
+      };
+
+      if (existingIdx >= 0) {
+        ledger[existingIdx] = entry;
+      } else {
+        ledger.push(entry);
+      }
+    }
   }
 
   // ─── Lock World ───

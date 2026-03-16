@@ -6,6 +6,7 @@ import { PsychologyOverlay } from "./PsychologyOverlay";
 import { EngineInsights } from "./EngineInsights";
 import { PackPreview } from "./PackPreview";
 import { ModelSelector } from "./ModelSelector";
+import { PromptEditor } from "./PromptEditor";
 import type {
   CharacterAssumptionResponse,
   CharacterBuilderOutput,
@@ -13,6 +14,7 @@ import type {
   CharacterAssumption,
   CharacterJudgeScores,
   CharacterPack,
+  CharacterPromptOverrides,
   CharacterRelationshipUpdate,
   CharacterSurfaced,
 } from "../../shared/types/character";
@@ -173,6 +175,11 @@ export function CharacterWorkshop() {
   // Constraint override state for regeneration
   const [showConstraintOverrides, setShowConstraintOverrides] = useState(false);
   const [constraintOverridesText, setConstraintOverridesText] = useState("");
+
+  // Prompt preview / override state
+  const [promptPreview, setPromptPreview] = useState<{ stage: string; system: string; user: string } | null>(null);
+  const [promptOverrides, setPromptOverrides] = useState<CharacterPromptOverrides | undefined>(undefined);
+  const [builderPromptOverrides, setBuilderPromptOverrides] = useState<CharacterPromptOverrides | undefined>(undefined);
 
   // Load hook sessions on mount
   React.useEffect(() => {
@@ -363,6 +370,15 @@ export function CharacterWorkshop() {
     }
   };
 
+  const loadPromptPreview = async (stage: "clarifier" | "builder" | "judge" | "summary") => {
+    try {
+      const preview = await characterApi.previewPrompt({ projectId, stage });
+      setPromptPreview(preview);
+      setPromptOverrides(undefined);
+      setBuilderPromptOverrides(undefined);
+    } catch { /* prompt preview is optional */ }
+  };
+
   // ─── First Turn ───
 
   const startCharacterSession = async () => {
@@ -380,7 +396,10 @@ export function CharacterWorkshop() {
         projectId: freshId,
         hookProjectId,
         characterSeed: seed,
+        promptOverrides,
       });
+      setPromptPreview(null);
+      setPromptOverrides(undefined);
 
       const allAssumptions: CharacterAssumption[] = [];
       for (const char of response.clarifier.characters_surfaced ?? []) {
@@ -431,7 +450,10 @@ export function CharacterWorkshop() {
         hookProjectId,
         userSelection: selection,
         assumptionResponses: assumptionResponses.length > 0 ? assumptionResponses : undefined,
+        promptOverrides,
       });
+      setPromptPreview(null);
+      setPromptOverrides(undefined);
 
       const allAssumptions: CharacterAssumption[] = [];
       for (const char of response.clarifier.characters_surfaced ?? []) {
@@ -534,8 +556,11 @@ export function CharacterWorkshop() {
       );
 
       try {
-        const response = await characterApi.generate(projectId);
+        const tournamentOverrides = builderPromptOverrides ? { builder: builderPromptOverrides } : undefined;
+        const response = await characterApi.generate(projectId, tournamentOverrides);
         stopPolling();
+        setPromptPreview(null);
+        setBuilderPromptOverrides(undefined);
 
         setState((prev) => ({
           ...prev,
@@ -571,7 +596,8 @@ export function CharacterWorkshop() {
 
       try {
         const parsedOverrides = parseConstraintOverrides(constraintOverridesText);
-        const response = await characterApi.reroll(projectId, undefined, parsedOverrides);
+        const tournamentOverrides = builderPromptOverrides ? { builder: builderPromptOverrides } : undefined;
+        const response = await characterApi.reroll(projectId, tournamentOverrides, parsedOverrides);
         stopPolling();
 
         setState((prev) => ({
@@ -1071,6 +1097,25 @@ export function CharacterWorkshop() {
               >
                 Continue {state.selectedOptionId ? "with this direction" : state.freeTextValue.trim() ? "" : "with these choices"} &rarr;
               </button>
+            )}
+
+            {/* Prompt preview for clarifier */}
+            {promptPreview?.stage === "clarifier" && (
+              <PromptEditor stage="clarifier" systemPrompt={promptPreview.system} userPrompt={promptPreview.user} loading={state.loading} onOverridesChange={setPromptOverrides} />
+            )}
+            {!promptPreview && (
+              <button type="button" className="prompt-toggle" onClick={() => void loadPromptPreview("clarifier")}>View clarifier prompt</button>
+            )}
+
+            {state.turnNumber >= 2 && (
+              <>
+                {promptPreview?.stage === "builder" && (
+                  <PromptEditor stage="builder" systemPrompt={promptPreview.system} userPrompt={promptPreview.user} loading={state.loading} onOverridesChange={setBuilderPromptOverrides} />
+                )}
+                {promptPreview?.stage !== "builder" && (
+                  <button type="button" className="prompt-toggle" onClick={() => void loadPromptPreview("builder")}>View builder prompt</button>
+                )}
+              </>
             )}
 
             {state.turnNumber >= 2 && (

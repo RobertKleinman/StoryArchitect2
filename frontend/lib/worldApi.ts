@@ -64,6 +64,9 @@ export const worldApi = {
   reset: (projectId: string) =>
     request<{ deleted: true }>(`/world/${projectId}`, { method: "DELETE" }),
 
+  exportSession: (projectId: string) =>
+    request<WorldPack>(`/world/export-session/${projectId}`),
+
   /** Check if a character-image session exists (validates upstream is reachable) */
   checkCharacterImageSession: (characterImageProjectId: string) =>
     request<any>(`/character-image/${characterImageProjectId}`),

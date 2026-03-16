@@ -638,6 +638,7 @@ export class CharacterImageService {
     projectId: string,
     modelOverride?: string,
     promptOverrides?: { builder?: CharacterImagePromptOverrides; judge?: CharacterImagePromptOverrides },
+    constraintOverrides?: Record<string, string>,
   ): Promise<CharacterImageGenerateResponse> {
     const session = await this.imageStore.get(projectId);
     if (!session) {
@@ -647,10 +648,44 @@ export class CharacterImageService {
       throw new CharacterImageServiceError("INVALID_INPUT", "Must be in revealed status to reroll");
     }
 
+    if (constraintOverrides && Object.keys(constraintOverrides).length > 0) {
+      this.applyConstraintOverrides(session, constraintOverrides);
+      await this.imageStore.save(session);
+    }
+
     session.revealedSpecs = undefined;
     session.revealedJudge = undefined;
 
     return this.runGenerate(projectId, modelOverride, promptOverrides);
+  }
+
+  private applyConstraintOverrides(
+    session: CharacterImageSessionState,
+    overrides: Record<string, string>,
+  ): void {
+    if (!session.constraintLedger) session.constraintLedger = [];
+    const ledger = session.constraintLedger;
+    const turnNumber = (session.turns?.length ?? 0);
+
+    for (const [key, value] of Object.entries(overrides)) {
+      const trimmed = value.trim();
+      if (!trimmed) continue;
+
+      const existingIdx = ledger.findIndex((e) => e.key === key);
+      const entry: CharacterImageLedgerEntry = {
+        key,
+        value: trimmed,
+        source: "user_freeform",
+        confidence: "confirmed",
+        turnNumber,
+      };
+
+      if (existingIdx >= 0) {
+        ledger[existingIdx] = entry;
+      } else {
+        ledger.push(entry);
+      }
+    }
   }
 
   // ─── Generate Images (call anime-gen API for each character) ───

@@ -5,12 +5,14 @@ import { PsychologyOverlay } from "./PsychologyOverlay";
 import { EngineInsights } from "./EngineInsights";
 import { ModelSelector } from "./ModelSelector";
 import { PackPreview } from "./PackPreview";
+import { PromptEditor } from "./PromptEditor";
 import type {
   CharacterImageAssumptionResponse,
   CharacterImageBuilderOutput,
   CharacterImageClarifierOption,
   CharacterImageAssumption,
   CharacterImageJudgeScores,
+  CharacterImagePromptOverrides,
   GeneratedCharacterImage,
   VisualAnchor,
 } from "../../shared/types/characterImage";
@@ -186,6 +188,11 @@ export function CharacterImageWorkshop() {
   const fetchPsych = useMemo(() => () => characterImageApi.debugPsychology(projectId), [projectId]);
   const fetchInsights = useMemo(() => () => characterImageApi.debugInsights(projectId), [projectId]);
 
+  // Prompt preview / override state
+  const [promptPreview, setPromptPreview] = useState<{ stage: string; system: string; user: string } | null>(null);
+  const [promptOverrides, setPromptOverrides] = useState<CharacterImagePromptOverrides | undefined>(undefined);
+  const [builderPromptOverrides, setBuilderPromptOverrides] = useState<CharacterImagePromptOverrides | undefined>(undefined);
+
   // ─── Load available character sessions on mount ───
   React.useEffect(() => {
     setSessionsLoading(true);
@@ -284,6 +291,15 @@ export function CharacterImageWorkshop() {
     }
   };
 
+  const loadPromptPreview = async (stage: "clarifier" | "builder" | "judge" | "summary") => {
+    try {
+      const preview = await characterImageApi.previewPrompt({ projectId, stage });
+      setPromptPreview(preview);
+      setPromptOverrides(undefined);
+      setBuilderPromptOverrides(undefined);
+    } catch { /* prompt preview is optional */ }
+  };
+
   const startClarification = async () => {
     setState(s => ({ ...s, loading: true, loadingMessage: "Starting visual discovery...", error: null }));
     try {
@@ -295,7 +311,10 @@ export function CharacterImageWorkshop() {
         projectId: newId,
         characterProjectId,
         visualSeed: state.visualSeedValue || undefined,
+        promptOverrides,
       });
+      setPromptPreview(null);
+      setPromptOverrides(undefined);
 
       setState(s => ({
         ...s,
@@ -351,7 +370,10 @@ export function CharacterImageWorkshop() {
         characterProjectId,
         userSelection,
         assumptionResponses: assumptionResponses.length > 0 ? assumptionResponses : undefined,
+        promptOverrides,
       });
+      setPromptPreview(null);
+      setPromptOverrides(undefined);
 
       setState(s => ({
         ...s,
@@ -381,7 +403,10 @@ export function CharacterImageWorkshop() {
   const generateSpecs = async () => {
     setState(s => ({ ...s, phase: "generating", loading: true, loadingMessage: "Building visual descriptions...", error: null }));
     try {
-      const result = await characterImageApi.generate(projectId);
+      const tournamentOverrides = builderPromptOverrides ? { builder: builderPromptOverrides } : undefined;
+      const result = await characterImageApi.generate(projectId, tournamentOverrides);
+      setPromptPreview(null);
+      setBuilderPromptOverrides(undefined);
       setState(s => ({
         ...s,
         phase: "revealed",
@@ -399,7 +424,10 @@ export function CharacterImageWorkshop() {
     setState(s => ({ ...s, phase: "generating", loading: true, loadingMessage: "Saving style & building visual descriptions...", error: null }));
     try {
       await characterImageApi.setArtStyle(projectId, state.selectedArtStyle, state.artStyleCustomNote || undefined);
-      const result = await characterImageApi.generate(projectId);
+      const tournamentOverrides2 = builderPromptOverrides ? { builder: builderPromptOverrides } : undefined;
+      const result = await characterImageApi.generate(projectId, tournamentOverrides2);
+      setPromptPreview(null);
+      setBuilderPromptOverrides(undefined);
       setState(s => ({
         ...s,
         phase: "revealed",
@@ -415,7 +443,8 @@ export function CharacterImageWorkshop() {
   const rerollSpecs = async () => {
     setState(s => ({ ...s, loading: true, loadingMessage: "Regenerating visual descriptions...", error: null }));
     try {
-      const result = await characterImageApi.reroll(projectId);
+      const tournamentOverrides = builderPromptOverrides ? { builder: builderPromptOverrides } : undefined;
+      const result = await characterImageApi.reroll(projectId, tournamentOverrides);
       setState(s => ({
         ...s,
         revealedSpecs: result.specs,
@@ -879,6 +908,24 @@ export function CharacterImageWorkshop() {
                 );
               })}
             </div>
+          )}
+
+          {/* Prompt preview for clarifier */}
+          {promptPreview?.stage === "clarifier" && (
+            <PromptEditor stage="clarifier" systemPrompt={promptPreview.system} userPrompt={promptPreview.user} loading={state.loading} onOverridesChange={setPromptOverrides} />
+          )}
+          {!promptPreview && (
+            <button type="button" className="prompt-toggle" onClick={() => void loadPromptPreview("clarifier")}>View clarifier prompt</button>
+          )}
+          {state.readyForImages && (
+            <>
+              {promptPreview?.stage === "builder" && (
+                <PromptEditor stage="builder" systemPrompt={promptPreview.system} userPrompt={promptPreview.user} loading={state.loading} onOverridesChange={setBuilderPromptOverrides} />
+              )}
+              {promptPreview?.stage !== "builder" && (
+                <button type="button" className="prompt-toggle" onClick={() => void loadPromptPreview("builder")}>View builder prompt</button>
+              )}
+            </>
           )}
 
           <div className="action-row">

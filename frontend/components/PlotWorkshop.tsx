@@ -1,21 +1,29 @@
 import React, { useMemo, useState } from "react";
 import { plotApi } from "../lib/plotApi";
+import { hookApi } from "../lib/hookApi";
+import { characterApi } from "../lib/characterApi";
+import { worldApi } from "../lib/worldApi";
 import { startBuildProgressPolling } from "../lib/buildProgressPoller";
 import { emitModuleStatus } from "./App";
 import { PsychologyOverlay } from "./PsychologyOverlay";
 import { EngineInsights } from "./EngineInsights";
 import { ModelSelector } from "./ModelSelector";
 import { PackPreview } from "./PackPreview";
+import { PromptEditor } from "./PromptEditor";
 import type {
   PlotAssumptionResponse,
   PlotBuilderOutput,
   PlotClarifierOption,
   PlotAssumption,
   PlotJudgeScores,
+  PlotPromptOverrides,
   PlotDevelopmentTarget,
   TensionBeat,
   TurningPoint,
 } from "../../shared/types/plot";
+import type { HookPack } from "../../shared/types/hook";
+import type { CharacterPack } from "../../shared/types/character";
+import type { WorldPack } from "../../shared/types/world";
 
 type Phase =
   | "connect"
@@ -188,8 +196,18 @@ export function PlotWorkshop() {
   const [showConstraintOverrides, setShowConstraintOverrides] = useState(false);
   const [constraintOverridesText, setConstraintOverridesText] = useState("");
 
+  // Prompt preview / override state
+  const [promptPreview, setPromptPreview] = useState<{ stage: string; system: string; user: string } | null>(null);
+  const [promptOverrides, setPromptOverrides] = useState<PlotPromptOverrides | undefined>(undefined);
+  const [builderPromptOverrides, setBuilderPromptOverrides] = useState<PlotPromptOverrides | undefined>(undefined);
+
   // Locked pack for PackPreview display
   const [lockedPack, setLockedPack] = useState<import("../../shared/types/plot").PlotPack | null>(null);
+
+  // Upstream pack previews
+  const [upstreamHookPack, setUpstreamHookPack] = useState<HookPack | null>(null);
+  const [upstreamCharacterPack, setUpstreamCharacterPack] = useState<CharacterPack | null>(null);
+  const [upstreamWorldPack, setUpstreamWorldPack] = useState<WorldPack | null>(null);
 
   // ─── Load available world sessions on mount ───
   React.useEffect(() => {
@@ -336,9 +354,23 @@ export function PlotWorkshop() {
 
       setUpstreamValidated(true);
       setState(s => ({ ...s, phase: "seeding", loading: false }));
+
+      // Fetch upstream packs for preview (fire and forget)
+      hookApi.exportSession(finalHookId).then(p => setUpstreamHookPack(p)).catch(() => {});
+      characterApi.exportSession(finalCharId).then(p => setUpstreamCharacterPack(p)).catch(() => {});
+      worldApi.exportSession(finalWorldId).then(p => setUpstreamWorldPack(p)).catch(() => {});
     } catch (err: any) {
       setState(s => ({ ...s, loading: false, error: `Upstream validation failed: ${err.message}. Complete and lock the World module first.` }));
     }
+  };
+
+  const loadPromptPreview = async (stage: "clarifier" | "builder" | "judge" | "summary") => {
+    try {
+      const preview = await plotApi.previewPrompt({ projectId, stage });
+      setPromptPreview(preview);
+      setPromptOverrides(undefined);
+      setBuilderPromptOverrides(undefined);
+    } catch { /* prompt preview is optional */ }
   };
 
   const startClarification = async () => {
@@ -355,7 +387,10 @@ export function PlotWorkshop() {
         characterProjectId,
         hookProjectId,
         plotSeed: state.plotSeedValue || undefined,
+        promptOverrides,
       });
+      setPromptPreview(null);
+      setPromptOverrides(undefined);
 
       setState(s => ({
         ...s,
@@ -418,7 +453,10 @@ export function PlotWorkshop() {
         hookProjectId,
         userSelection,
         assumptionResponses: assumptionResponses.length > 0 ? assumptionResponses : undefined,
+        promptOverrides,
       });
+      setPromptPreview(null);
+      setPromptOverrides(undefined);
 
       setState(s => ({
         ...s,
@@ -453,8 +491,11 @@ export function PlotWorkshop() {
       (msg) => setState(s => ({ ...s, loadingMessage: msg })),
     );
     try {
-      const result = await plotApi.generate(projectId);
+      const tournamentOverrides = builderPromptOverrides ? { builder: builderPromptOverrides } : undefined;
+      const result = await plotApi.generate(projectId, tournamentOverrides);
       stopPolling();
+      setPromptPreview(null);
+      setBuilderPromptOverrides(undefined);
       setState(s => ({
         ...s,
         phase: "revealed",
@@ -479,7 +520,8 @@ export function PlotWorkshop() {
     );
     try {
       const parsedOverrides = parseConstraintOverrides(constraintOverridesText);
-      const result = await plotApi.reroll(projectId, undefined, parsedOverrides);
+      const tournamentOverrides = builderPromptOverrides ? { builder: builderPromptOverrides } : undefined;
+      const result = await plotApi.reroll(projectId, tournamentOverrides, parsedOverrides);
       stopPolling();
       setState(s => ({
         ...s,
@@ -814,6 +856,14 @@ export function PlotWorkshop() {
       {/* ─── Phase: Plot Seed ─── */}
       {state.phase === "seeding" && (
         <div className="seed-phase">
+          {(upstreamHookPack || upstreamCharacterPack || upstreamWorldPack) && (
+            <div className="upstream-packs">
+              {upstreamHookPack && <PackPreview pack={upstreamHookPack} />}
+              {upstreamCharacterPack && <PackPreview pack={upstreamCharacterPack} />}
+              {upstreamWorldPack && <PackPreview pack={upstreamWorldPack} />}
+            </div>
+          )}
+
           <h3>What kind of plot do you envision?</h3>
           <p>Describe the story spine, pacing, twist locations, or emotional peaks you imagine — or leave blank and we'll build it from your world, characters, and hook.</p>
           <textarea
@@ -990,6 +1040,24 @@ export function PlotWorkshop() {
                 );
               })}
             </div>
+          )}
+
+          {/* Prompt preview for clarifier */}
+          {promptPreview?.stage === "clarifier" && (
+            <PromptEditor stage="clarifier" systemPrompt={promptPreview.system} userPrompt={promptPreview.user} loading={state.loading} onOverridesChange={setPromptOverrides} />
+          )}
+          {!promptPreview && (
+            <button type="button" className="prompt-toggle" onClick={() => void loadPromptPreview("clarifier")}>View clarifier prompt</button>
+          )}
+          {state.readyForPlot && (
+            <>
+              {promptPreview?.stage === "builder" && (
+                <PromptEditor stage="builder" systemPrompt={promptPreview.system} userPrompt={promptPreview.user} loading={state.loading} onOverridesChange={setBuilderPromptOverrides} />
+              )}
+              {promptPreview?.stage !== "builder" && (
+                <button type="button" className="prompt-toggle" onClick={() => void loadPromptPreview("builder")}>View builder prompt</button>
+              )}
+            </>
           )}
 
           <div className="action-row">

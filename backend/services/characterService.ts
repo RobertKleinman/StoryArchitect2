@@ -555,6 +555,7 @@ export class CharacterService {
     projectId: string,
     modelOverride?: string,
     promptOverrides?: { builder?: CharacterPromptOverrides; judge?: CharacterPromptOverrides },
+    constraintOverrides?: Record<string, string>,
   ): Promise<CharacterGenerateResponse> {
     const session = await this.charStore.get(projectId);
     if (!session) {
@@ -564,11 +565,45 @@ export class CharacterService {
       throw new CharacterServiceError("INVALID_INPUT", "Must be in revealed status to reroll");
     }
 
+    if (constraintOverrides && Object.keys(constraintOverrides).length > 0) {
+      this.applyConstraintOverrides(session, constraintOverrides);
+      await this.charStore.save(session);
+    }
+
     // Clear revealed state and regenerate
     session.revealedCharacters = undefined;
     session.revealedJudge = undefined;
 
     return this.executeTournament(session, modelOverride, false, promptOverrides);
+  }
+
+  private applyConstraintOverrides(
+    session: CharacterSessionState,
+    overrides: Record<string, string>,
+  ): void {
+    if (!session.constraintLedger) session.constraintLedger = [];
+    const ledger = session.constraintLedger;
+    const turnNumber = session.turns.length;
+
+    for (const [key, value] of Object.entries(overrides)) {
+      const trimmed = value.trim();
+      if (!trimmed) continue;
+
+      const existingIdx = ledger.findIndex((e) => e.key === key);
+      const entry: CharacterLedgerEntry = {
+        key,
+        value: trimmed,
+        source: "user_freeform",
+        confidence: "confirmed",
+        turnNumber,
+      };
+
+      if (existingIdx >= 0) {
+        ledger[existingIdx] = entry;
+      } else {
+        ledger.push(entry);
+      }
+    }
   }
 
   /**
@@ -1030,6 +1065,104 @@ export class CharacterService {
 
   async resetSession(projectId: string): Promise<void> {
     await this.charStore.delete(projectId);
+  }
+
+  // ─── Character Review (Issue 8) ───
+
+  async getCharacterReview(
+    projectId: string,
+  ): Promise<{
+    characters: Array<{
+      roleKey: string;
+      role: string;
+      presentation: string;
+      age_range: string;
+      ethnicity: string;
+      description_summary: string;
+      confirmed_traits: Record<string, string>;
+      inferred_traits: Record<string, string>;
+    }>;
+    ready: boolean;
+  }> {
+    const session = await this.charStore.get(projectId);
+    if (!session) {
+      throw new CharacterServiceError("NOT_FOUND", "Character session not found");
+    }
+
+    const ledger = session.constraintLedger ?? [];
+    const characters: Array<{
+      roleKey: string; role: string; presentation: string;
+      age_range: string; ethnicity: string; description_summary: string;
+      confirmed_traits: Record<string, string>; inferred_traits: Record<string, string>;
+    }> = [];
+
+    for (const [roleKey, charState] of Object.entries(session.characters)) {
+      const confirmed: Record<string, string> = {};
+      const inferred: Record<string, string> = {};
+
+      for (const entry of ledger) {
+        if (entry.key.startsWith(`${roleKey}.`)) {
+          const traitName = entry.key.slice(roleKey.length + 1);
+          if (entry.confidence === "confirmed") {
+            confirmed[traitName] = entry.value;
+          } else {
+            inferred[traitName] = entry.value;
+          }
+        }
+      }
+
+      const presentation = confirmed.presentation ?? inferred.presentation ?? "unspecified";
+      const age_range = confirmed.age_range ?? inferred.age_range ?? "";
+      const ethnicity = confirmed.ethnicity ?? inferred.ethnicity ?? "";
+
+      const descParts: string[] = [];
+      if (charState.want) descParts.push(`Wants: ${charState.want}`);
+      if (charState.misbelief) descParts.push(`Misbelief: ${charState.misbelief}`);
+      const description_summary = descParts.join(". ").slice(0, 300) || roleKey;
+
+      characters.push({
+        roleKey, role: roleKey, presentation, age_range, ethnicity,
+        description_summary, confirmed_traits: confirmed, inferred_traits: inferred,
+      });
+    }
+
+    return { characters, ready: Object.keys(session.characters).length > 0 };
+  }
+
+  async applyCharacterReviewEdits(
+    projectId: string,
+    edits: Array<{ roleKey: string; field: string; value: string }>,
+  ): Promise<{ applied: number }> {
+    const session = await this.charStore.get(projectId);
+    if (!session) {
+      throw new CharacterServiceError("NOT_FOUND", "Character session not found");
+    }
+
+    if (!session.constraintLedger) session.constraintLedger = [];
+    const ledger = session.constraintLedger;
+    const turnNumber = session.turns.length;
+    let applied = 0;
+
+    for (const edit of edits) {
+      const trimmed = edit.value.trim();
+      if (!trimmed) continue;
+
+      const key = `${edit.roleKey}.${edit.field}`;
+      const existingIdx = ledger.findIndex((e) => e.key === key);
+      const entry: CharacterLedgerEntry = {
+        key, value: trimmed, source: "user_freeform", confidence: "confirmed", turnNumber,
+      };
+
+      if (existingIdx >= 0) {
+        ledger[existingIdx] = entry;
+      } else {
+        ledger.push(entry);
+      }
+      applied++;
+    }
+
+    await this.charStore.save(session);
+    return { applied };
   }
 
   // ─── Prompt Builders (private) ───
