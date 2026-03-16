@@ -119,9 +119,12 @@ export class LLMClient {
       } catch (err: unknown) {
         const isHttpRetriable =
           err instanceof ProviderHttpError && err.isRetriable;
-        // Treat timeouts / network aborts as retriable
-        const isTimeout =
-          (err instanceof Error && /timed?\s*out|abort|ECONNRESET|ETIMEDOUT|socket hang up/i.test(err.message));
+        // Treat timeouts / network aborts as retriable (Anthropic SDK wraps
+        // ECONNRESET as "terminated" in the top-level message, so check cause chain too)
+        const errMsg = err instanceof Error
+          ? [err.message, (err as any).cause?.message, (err as any).cause?.cause?.message].filter(Boolean).join(" ")
+          : "";
+        const isTimeout = /timed?\s*out|abort|terminated|ECONNRESET|ETIMEDOUT|socket hang up/i.test(errMsg);
         const isRetriable = isHttpRetriable || isTimeout;
 
         if (!isRetriable || attempt === maxAttempts) {
