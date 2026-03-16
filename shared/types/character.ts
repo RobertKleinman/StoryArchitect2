@@ -291,6 +291,8 @@ export interface CharacterSessionState {
   /** characterPack is no longer stored on session — it's saved as an export via charStore.saveExport() */
   status: "clarifying" | "generating" | "revealed" | "locked";
   lastSavedAt?: string;
+  /** Live build progress for tournament visibility (Issue #11) */
+  buildProgress?: import("./api").BuildProgress;
   promptHistory?: CharacterPromptHistoryEntry[];
   consecutiveHighReadiness?: number;
   rerollCount: number;
@@ -303,8 +305,6 @@ export interface CharacterSessionState {
   };
   /** User psychology ledger — imported from hook module + accumulated here */
   psychologyLedger?: import("./userPsychology").UserPsychologyLedger;
-  /** Live build/judge progress — polled by frontend during generation */
-  buildProgress?: import("./api").BuildProgress;
 }
 
 export interface CharacterTurn {

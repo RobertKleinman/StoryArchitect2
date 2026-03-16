@@ -22,6 +22,16 @@ const providers: Record<LLMProvider, ILLMProvider> = {
   }),
 };
 
+// ── Token tracking ───────────────────────────────────────────────────
+
+export interface TokenUsage {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  calls: number;
+}
+
 // ── Public types (unchanged from before) ────────────────────────────
 
 export interface CallOptions {
@@ -33,16 +43,6 @@ export interface CallOptions {
   /** Static prefix of user prompt — cached separately by Anthropic for faster TTFT.
    *  Other providers prepend it to the user prompt string. */
   cacheableUserPrefix?: string;
-}
-
-// ── Token Usage ─────────────────────────────────────────────────────
-
-export interface TokenUsage {
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite: number;
-  calls: number;
 }
 
 // ── LLMClient ───────────────────────────────────────────────────────
@@ -61,11 +61,6 @@ export class LLMClient {
 
   getConfig(): ModelConfig {
     return { ...this.config };
-  }
-
-  /** Returns accumulated token usage across all LLM calls in this process lifetime. */
-  getTokenUsage(): TokenUsage {
-    return { ...this.sessionTokens };
   }
 
   /**
@@ -112,7 +107,7 @@ export class LLMClient {
           `provider=${providerName} model=${model}`,
         );
 
-        // Accumulate token usage
+        // Accumulate session-wide token usage
         this.sessionTokens.input += u.inputTokens ?? 0;
         this.sessionTokens.output += u.outputTokens ?? 0;
         this.sessionTokens.cacheRead += u.cacheReadTokens ?? 0;
@@ -148,8 +143,12 @@ export class LLMClient {
       }
     }
 
-    // Unreachable — loop always returns or throws — but satisfies TypeScript return type
     throw new Error(`LLM [${role}] failed after max retries`);
+  }
+
+  /** Returns a snapshot of accumulated token usage across all calls in this process lifetime */
+  getTokenUsage(): TokenUsage {
+    return { ...this.sessionTokens };
   }
 }
 

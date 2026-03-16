@@ -32,7 +32,7 @@ declare module "fs" {
 declare module "dotenv/config" {}
 
 declare module "cors" {
-  const cors: () => unknown;
+  const cors: (options?: { origin?: string | string[] | boolean }) => unknown;
   export default cors;
 }
 
@@ -46,8 +46,10 @@ declare module "express" {
     status(code: number): Response;
     json(data: unknown): Response;
     sendFile(path: string): void;
+    headersSent: boolean;
   }
   export type NextFunction = () => void;
+  export type ErrorHandler = (err: Error, req: Request, res: Response, next: NextFunction) => unknown;
   export type Handler = (req: Request, res: Response) => unknown;
   export interface RouterLike {
     use(...args: unknown[]): unknown;
@@ -57,12 +59,15 @@ declare module "express" {
     delete(path: string, handler: Handler): unknown;
   }
   export function Router(): RouterLike;
+  interface HttpServer {
+    close(cb?: () => void): void;
+  }
   interface Express extends RouterLike {
-    listen(port: number | string, cb?: () => void): void;
+    listen(port: number | string, cb?: () => void): HttpServer;
   }
   interface ExpressFactory {
     (): Express;
-    json(): unknown;
+    json(options?: { limit?: string }): unknown;
     static(root: string): unknown;
   }
   const express: ExpressFactory;

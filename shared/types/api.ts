@@ -8,6 +8,9 @@ import {
   PromptOverrides,
 } from "./hook";
 
+import type { CulturalBrief } from "./cultural";
+import type { UserPsychologyLedger, DirectionMapSnapshot } from "./userPsychology";
+
 import {
   CharacterClarifierResponse,
   CharacterBuilderOutput,
@@ -57,13 +60,9 @@ import {
   ReadableScene,
 } from "./scene";
 
-import type { CulturalBrief } from "./cultural";
-import type {
-  UserPsychologyLedger,
-  DirectionMapSnapshot,
-} from "./userPsychology";
+// ─── Build Progress (Issue #11: Tournament Visibility) ───
 
-/** Build progress for tournament visibility — polled by frontend during generation */
+/** Emitted on session state during builder-judge tournament to give the frontend live progress */
 export interface BuildProgress {
   attempt: number;
   maxAttempts: number;
@@ -315,9 +314,9 @@ export interface SceneDebugResponse {
   rhythmSnapshot: SceneSessionState["rhythmSnapshot"] | null;
 }
 
-// ─── Engine Insights Debug (Issue 4) ───
+// ─── Engine Insights (Issue 4: Debug/Insights Panel) ───
 
-/** GET /api/:module/debug/:projectId — unified debug/insights panel data */
+/** GET /api/:module/debug/insights/:projectId */
 export interface EngineInsightsResponse {
   psychologyLedger: UserPsychologyLedger | null;
   culturalBrief: CulturalBrief | null;
@@ -349,6 +348,7 @@ export interface AuditTarget {
   suggestion?: string;
 }
 
+/** GET /api/scene/audit/:projectId */
 export interface PreSceneAuditResponse {
   critical: AuditTarget[];
   review: AuditTarget[];
@@ -356,11 +356,13 @@ export interface PreSceneAuditResponse {
   totalCount: number;
 }
 
+/** POST /api/scene/audit/resolve */
 export interface AuditResolveRequest {
   projectId: string;
   resolvedTargets: string[];
 }
 
+/** POST /api/scene/audit/resolve */
 export interface AuditResolveResponse {
   resolved: string[];
   remaining: number;

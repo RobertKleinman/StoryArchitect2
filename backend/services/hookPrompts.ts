@@ -495,12 +495,15 @@ Before scoring, ask yourself: "Would a reader describe this hook to a friend at 
 
 ${JUDGE_PREMORTEM}
 
-Score each 0–10: specificity, drawability, page_turn, mechanism, freshness, user_fit.
+THINK FIRST:
+Start with "analysis" — write 2-4 sentences of private reasoning. Walk through each hard-fail check. What's the mechanism? Is the emotional promise specific or generic? Would you describe this to a friend at 2am? This reasoning is not shown to the user but it MUST come first — it forces you to think before scoring.
+
+Then score each 0–10: specificity, drawability, page_turn, mechanism, freshness, user_fit.
 Identify the most_generic_part (quote the weakest phrase from the hook).
 Provide one_fix_instruction (one concrete action to improve it).
 
 OUTPUT:
-Return ONLY valid JSON: {"pass": bool, "hard_fail_reasons": [], "scores": {}, "most_generic_part": "...", "one_fix_instruction": "..."}
+Return ONLY valid JSON: {"analysis": "...", "pass": bool, "hard_fail_reasons": [], "scores": {}, "most_generic_part": "...", "one_fix_instruction": "..."}
 No markdown fences. No commentary.`;
 
 export const HOOK_JUDGE_USER_TEMPLATE = `Judge this hook candidate:

@@ -8,48 +8,10 @@ import type {
 import type {
   CharacterClarifyResponse,
   CharacterGenerateResponse,
+  EngineInsightsResponse,
 } from "../../shared/types/api";
 import type { UserPsychologyLedger } from "../../shared/types/userPsychology";
-
-const BASE = "/api";
-
-const DEFAULT_TIMEOUT_MS = 180_000;
-
-async function request<T>(path: string, options?: RequestInit & { timeoutMs?: number }): Promise<T> {
-  const { timeoutMs, ...fetchOptions } = options ?? {};
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs ?? DEFAULT_TIMEOUT_MS);
-
-  try {
-    const res = await fetch(`${BASE}${path}`, {
-      headers: { "Content-Type": "application/json" },
-      ...fetchOptions,
-      signal: controller.signal,
-    });
-
-    let data: any;
-    const ct = res.headers.get("content-type") ?? "";
-    if (ct.includes("application/json")) {
-      data = await res.json();
-    } else {
-      const text = await res.text();
-      data = { message: text || `Server error (${res.status})` };
-    }
-
-    if (!res.ok || data.error) {
-      throw new Error(data?.message ?? "Something went wrong");
-    }
-
-    return data as T;
-  } catch (err) {
-    if (err instanceof DOMException && err.name === "AbortError") {
-      throw new Error(`Request to ${path} timed out after ${((timeoutMs ?? DEFAULT_TIMEOUT_MS) / 1000).toFixed(0)}s`);
-    }
-    throw err;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
+import { request } from "./apiClient";
 
 export const characterApi = {
   clarify: (body: {
@@ -85,27 +47,6 @@ export const characterApi = {
       body: JSON.stringify({ projectId }),
     }),
 
-  getReview: (projectId: string) =>
-    request<{
-      characters: Array<{
-        roleKey: string;
-        role: string;
-        presentation: string;
-        age_range: string;
-        ethnicity: string;
-        description_summary: string;
-        confirmed_traits: Record<string, string>;
-        inferred_traits: Record<string, string>;
-      }>;
-      ready: boolean;
-    }>(`/character/review/${projectId}`),
-
-  applyReviewEdits: (projectId: string, edits: Array<{ roleKey: string; field: string; value: string }>) =>
-    request<{ applied: number }>("/character/review", {
-      method: "POST",
-      body: JSON.stringify({ projectId, edits }),
-    }),
-
   getSession: (projectId: string) =>
     request<CharacterSessionState>(`/character/${projectId}`),
 
@@ -130,7 +71,7 @@ export const characterApi = {
     request<{ psychologyLedger: UserPsychologyLedger | null }>(`/character/debug/psychology/${projectId}`),
 
   debugInsights: (projectId: string) =>
-    request<import("../../shared/types/api").EngineInsightsResponse>(`/character/debug/insights/${projectId}`),
+    request<EngineInsightsResponse>(`/character/debug/insights/${projectId}`),
 
   listHookSessions: () =>
     request<{
@@ -145,4 +86,25 @@ export const characterApi = {
         hasExport: boolean;
       }>;
     }>("/hook/list-sessions"),
+
+  getReview: (projectId: string) =>
+    request<{
+      characters: Array<{
+        roleKey: string;
+        role: string;
+        presentation: string;
+        age_range: string;
+        ethnicity: string;
+        description_summary: string;
+        confirmed_traits: Record<string, string>;
+        inferred_traits: Record<string, string>;
+      }>;
+      ready: boolean;
+    }>(`/character/review/${projectId}`),
+
+  applyReviewEdits: (projectId: string, edits: Array<{ roleKey: string; field: string; value: string }>) =>
+    request<{ applied: number }>("/character/review", {
+      method: "POST",
+      body: JSON.stringify({ projectId, edits }),
+    }),
 };

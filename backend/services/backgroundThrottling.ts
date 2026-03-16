@@ -117,3 +117,46 @@ export function shouldResearchCulture(
   const cadenceFallback = turn.turnNumber % 3 === 0;
   return meaningfulInput || cadenceFallback;
 }
+
+/**
+ * Pick which background tasks should actually run this turn.
+ *
+ * Prevents "background storms" where consolidation + divergence + cultural
+ * all fire simultaneously, saturating API rate limits and competing for tokens.
+ *
+ * Priority: consolidation > divergence > cultural (consolidation keeps the
+ * signal store healthy, which improves all downstream tasks).
+ *
+ * On free-text turns (strongest signal), allow up to 2 concurrent tasks.
+ * Otherwise, allow only 1.
+ */
+export function pickBackgroundTasks(
+  turn: ThrottlingTurnInfo,
+  session: ThrottlingSessionInfo,
+): { consolidate: boolean; diverge: boolean; cultural: boolean } {
+  const wantsConsolidate = shouldConsolidate(turn, session);
+  const wantsDiverge = shouldDiverge(turn, session);
+  const wantsCultural = shouldResearchCulture(turn, session);
+
+  const isFreeText = turn.userSelection?.type === "free_text";
+  const maxConcurrent = isFreeText ? 2 : 1;
+
+  const result = { consolidate: false, diverge: false, cultural: false };
+  let running = 0;
+
+  // Priority order: consolidate > diverge > cultural
+  if (wantsConsolidate && running < maxConcurrent) {
+    result.consolidate = true;
+    running++;
+  }
+  if (wantsDiverge && running < maxConcurrent) {
+    result.diverge = true;
+    running++;
+  }
+  if (wantsCultural && running < maxConcurrent) {
+    result.cultural = true;
+    running++;
+  }
+
+  return result;
+}

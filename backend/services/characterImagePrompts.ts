@@ -408,8 +408,11 @@ Score each 0–10:
 Provide distinctiveness_notes: specific observations about which characters are too similar and why.
 Provide one_fix_instruction: the single change that would improve the cast most.
 
+THINK FIRST:
+Start with "analysis" — write 2-4 sentences of private reasoning. Can you tell these characters apart at a glance? Do the visual designs feel TRUE to who these characters are psychologically? This reasoning must come first in your JSON output.
+
 OUTPUT:
-Return ONLY valid JSON. No markdown fences.`;
+Return ONLY valid JSON: {"analysis": "...", "pass": ..., ...}. No markdown fences.`;
 
 export const CHARACTER_IMAGE_JUDGE_USER_TEMPLATE = `Judge these character visual descriptions:
 {{VISUAL_SPECS_JSON}}

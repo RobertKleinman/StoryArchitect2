@@ -397,7 +397,7 @@ export interface PlotSessionState {
   promptHistory?: PlotPromptHistoryEntry[];
   tournamentProgress?: PlotTournamentProgress;
   lastSavedAt?: string;
-  /** Live build/judge progress — polled by frontend during generation */
+  /** Live build progress for tournament visibility (Issue #11) */
   buildProgress?: import("./api").BuildProgress;
 }
 

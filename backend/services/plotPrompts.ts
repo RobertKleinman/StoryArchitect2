@@ -645,8 +645,11 @@ WEAKNESSES — for EACH plot area that has room to grow, provide:
 
 UPSTREAM TARGET ASSESSMENT — for each upstream development target, assess whether the plot addressed it.
 
+THINK FIRST:
+Start with "analysis" — write 2-4 sentences of private reasoning. Walk through each hard-fail check for this specific plot. Test the causal chain. Does every turning point earn the next? Does the climax feel like an inevitable surprise? This reasoning must come first in your JSON output.
+
 OUTPUT:
-Return ONLY valid JSON. No markdown fences.`;
+Return ONLY valid JSON: {"analysis": "...", "pass": ..., ...}. No markdown fences.`;
 
 export const PLOT_JUDGE_USER_TEMPLATE = `Judge this generated plot:
 {{PLOT_JSON}}

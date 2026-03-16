@@ -3,29 +3,13 @@ import fs from "fs/promises";
 import nodePath from "path";
 import { worldFeatureFlagGuard } from "../middleware/worldFeatureFlagGuard";
 import { worldService, culturalStore } from "../services/runtime";
-import { WorldServiceError } from "../services/worldService";
+import { handleRouteError, getModelOverride } from "./routeUtils";
 
 export const worldRoutes = Router();
 
 worldRoutes.use(worldFeatureFlagGuard);
 
-function getModelOverride(header: string | string[] | undefined): string | undefined {
-  if (Array.isArray(header)) return header[0];
-  return header;
-}
-
-function handleError(res: any, err: unknown) {
-  console.error("WORLD ROUTE ERROR:", err);
-  if (err instanceof WorldServiceError) {
-    const status = err.code === "NOT_FOUND" ? 404
-      : err.code === "INVALID_INPUT" ? 400
-      : err.code === "LLM_PARSE_ERROR" ? 422
-      : 502;
-    return res.status(status).json({ error: true, code: err.code, message: err.message });
-  }
-  const msg = err instanceof Error ? err.message : "Unexpected server error";
-  return res.status(500).json({ error: true, code: "LLM_CALL_FAILED", message: msg });
-}
+const handleError = (res: any, err: unknown) => handleRouteError(res, err, "WORLD");
 
 // ─── Preview Prompt ───
 
@@ -115,14 +99,14 @@ worldRoutes.post("/generate", async (req, res) => {
 
 worldRoutes.post("/reroll", async (req, res) => {
   const modelOverride = getModelOverride(req.header("X-Model-Override"));
-  const { projectId, promptOverrides, constraintOverrides } = req.body ?? {};
+  const { projectId, promptOverrides } = req.body ?? {};
 
   if (!projectId || typeof projectId !== "string") {
     return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "projectId is required" });
   }
 
   try {
-    const result = await worldService.reroll(projectId, modelOverride, promptOverrides, constraintOverrides);
+    const result = await worldService.reroll(projectId, modelOverride, promptOverrides);
     return res.json(result);
   } catch (err) {
     return handleError(res, err);
@@ -163,6 +147,23 @@ worldRoutes.get("/export-session/:projectId", async (req, res) => {
 
 // ─── Debug Psychology ───
 
+worldRoutes.get("/debug/insights/:projectId", async (req, res) => {
+  try {
+    const session = await worldService.getSession(req.params.projectId);
+    const psychologyLedger = session?.psychologyLedger ?? null;
+    let culturalBrief = null;
+    try {
+      const turnNumber = session?.turns?.length ?? 99;
+      culturalBrief = await culturalStore.getCachedBrief(req.params.projectId, "world", turnNumber + 10);
+    } catch { /* no brief cached yet */ }
+    const divergenceMap = psychologyLedger?.lastDirectionMap ?? null;
+    const developmentTargets = session?.developmentTargets ?? [];
+    return res.json({ psychologyLedger, culturalBrief, divergenceMap, developmentTargets });
+  } catch (err) {
+    return handleError(res, err);
+  }
+});
+
 worldRoutes.get("/debug/psychology/:projectId", async (req, res) => {
   try {
     const session = await worldService.getSession(req.params.projectId);
@@ -170,31 +171,6 @@ worldRoutes.get("/debug/psychology/:projectId", async (req, res) => {
       return res.json({ psychologyLedger: null });
     }
     return res.json({ psychologyLedger: session.psychologyLedger });
-  } catch (err) {
-    return handleError(res, err);
-  }
-});
-
-/** GET /api/world/debug/insights/:projectId — unified engine insights panel */
-worldRoutes.get("/debug/insights/:projectId", async (req, res) => {
-  try {
-    const session = await worldService.getSession(req.params.projectId);
-    const psychologyLedger = session?.psychologyLedger ?? null;
-
-    // Cultural brief
-    let culturalBrief = null;
-    try {
-      const turnNumber = session?.turns?.length ?? 0;
-      culturalBrief = await culturalStore.getCachedBrief(req.params.projectId, "world", turnNumber);
-    } catch {}
-
-    // Divergence map from psychology ledger
-    const divergenceMap = psychologyLedger?.lastDirectionMap ?? null;
-
-    // Development targets from session
-    const developmentTargets = session?.developmentTargets ?? [];
-
-    return res.json({ psychologyLedger, culturalBrief, divergenceMap, developmentTargets });
   } catch (err) {
     return handleError(res, err);
   }

@@ -102,8 +102,8 @@ interface CharImageSessionInfo {
   hasExport: boolean;
   artStyle: string;
   characterCount: number;
-  characterNames: string[];
-  hookPremise: string;
+  characterNames?: string[];
+  hookPremise?: string;
 }
 
 interface CharSessionInfo {
@@ -743,9 +743,9 @@ export function WorldWorkshop() {
                       </span>
                       <span className="session-cast-count">{s.characterCount} characters</span>
                     </div>
-                    {s.characterNames.length > 0 && (
+                    {(s.characterNames?.length ?? 0) > 0 && (
                       <div className="session-card-roles">
-                        {s.characterNames.map(name => (
+                        {(s.characterNames ?? []).map(name => (
                           <span key={name} className="role-chip">{name}</span>
                         ))}
                       </div>

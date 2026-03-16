@@ -2,36 +2,40 @@ import type { BuildProgress } from "../../shared/types/api";
 
 /**
  * Format a BuildProgress object into a user-friendly loading message.
- * Returns a string like "Refining your story... (quality check 2/3)"
  */
 export function formatBuildProgress(progress: BuildProgress, moduleName: string): string {
-  const { attempt, maxAttempts, status, lastFailReason } = progress;
+  const { attempt, maxAttempts, status } = progress;
 
   switch (status) {
     case "building":
-      if (maxAttempts > 1) {
-        return `Crafting ${moduleName}... (candidate ${attempt}/${maxAttempts})`;
+      if (maxAttempts === 1) {
+        return `Crafting your ${moduleName}\u2026`;
       }
-      return `Building your ${moduleName}...`;
+      return `Crafting ${moduleName}\u2026 (candidate ${attempt}/${maxAttempts})`;
+
     case "judging":
-      if (maxAttempts > 1) {
-        return `Quality checking ${moduleName}... (check ${attempt}/${maxAttempts})`;
+      if (maxAttempts === 1) {
+        return `Quality-checking your ${moduleName}\u2026`;
       }
-      return `Quality checking your ${moduleName}...`;
+      return `Quality-checking ${moduleName}\u2026 (candidate ${attempt}/${maxAttempts})`;
+
     case "passed":
-      return `Found a great ${moduleName}! Finalizing...`;
+      return `Found a great ${moduleName}!`;
+
     case "failed_retrying":
-      return `Refining your ${moduleName}... (quality check ${attempt}/${maxAttempts})`;
+      return `Refining your ${moduleName}\u2026 (quality check ${attempt}/${maxAttempts})`;
+
     case "best_effort":
-      return `Selecting best ${moduleName}...`;
+      return `Selecting the best ${moduleName}\u2026`;
+
     default:
-      return `Working on your ${moduleName}...`;
+      return `Working on your ${moduleName}\u2026`;
   }
 }
 
 /**
- * Start polling for build progress updates.
- * Calls the session getter on an interval and invokes onProgress when buildProgress changes.
+ * Start polling a session endpoint for buildProgress updates.
+ * Calls `onMessage` whenever the progress changes, providing a user-friendly string.
  * Returns a cleanup function to stop polling.
  */
 export function startBuildProgressPolling(
@@ -40,26 +44,33 @@ export function startBuildProgressPolling(
   onMessage: (message: string) => void,
   intervalMs = 2000,
 ): () => void {
-  let lastStatus = "";
-  let lastAttempt = 0;
+  let lastKey = "";
+  let stopped = false;
 
-  const interval = setInterval(async () => {
+  const poll = async () => {
+    if (stopped) return;
     try {
       const session = await getSession();
-      const progress = session?.buildProgress;
-      if (!progress) return;
-
-      // Only update if something changed
-      const key = `${progress.status}-${progress.attempt}`;
-      if (key === `${lastStatus}-${lastAttempt}`) return;
-      lastStatus = progress.status;
-      lastAttempt = progress.attempt;
-
-      onMessage(formatBuildProgress(progress, moduleName));
+      if (stopped) return;
+      if (session?.buildProgress) {
+        const bp = session.buildProgress;
+        const key = `${bp.attempt}-${bp.status}`;
+        if (key !== lastKey) {
+          lastKey = key;
+          onMessage(formatBuildProgress(bp, moduleName));
+        }
+      }
     } catch {
-      // Silently ignore polling errors — the main request will surface real errors
+      // Ignore polling errors — the main request will surface real errors
     }
-  }, intervalMs);
+  };
 
-  return () => clearInterval(interval);
+  const timer = setInterval(poll, intervalMs);
+  // Kick off an initial poll immediately
+  void poll();
+
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
 }

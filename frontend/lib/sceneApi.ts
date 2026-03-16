@@ -9,52 +9,16 @@ import type {
   ScenePlanClarifyResponse,
   SceneClarifyResponse,
   SceneBuildResponse,
-  SceneGenerateAllResponse,
   SceneFinalJudgeResponse,
   SceneCompleteResponse,
+  SceneGenerateAllResponse,
   SceneDebugResponse,
+  EngineInsightsResponse,
+  PreSceneAuditResponse,
+  AuditResolveResponse,
 } from "../../shared/types/api";
 import type { UserPsychologyLedger } from "../../shared/types/userPsychology";
-
-const BASE = "/api";
-
-const DEFAULT_TIMEOUT_MS = 180_000;
-
-async function request<T>(path: string, options?: RequestInit & { timeoutMs?: number }): Promise<T> {
-  const { timeoutMs, ...fetchOptions } = options ?? {};
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs ?? DEFAULT_TIMEOUT_MS);
-
-  try {
-    const res = await fetch(`${BASE}${path}`, {
-      headers: { "Content-Type": "application/json" },
-      ...fetchOptions,
-      signal: controller.signal,
-    });
-
-    let data: any;
-    const ct = res.headers.get("content-type") ?? "";
-    if (ct.includes("application/json")) {
-      data = await res.json();
-    } else {
-      const text = await res.text();
-      data = { message: text || `Server error (${res.status})` };
-    }
-
-    if (!res.ok || data.error) {
-      throw new Error(data?.message ?? "Something went wrong");
-    }
-
-    return data as T;
-  } catch (err) {
-    if (err instanceof DOMException && err.name === "AbortError") {
-      throw new Error(`Request to ${path} timed out after ${((timeoutMs ?? DEFAULT_TIMEOUT_MS) / 1000).toFixed(0)}s`);
-    }
-    throw err;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
+import { request } from "./apiClient";
 
 export const sceneApi = {
   // ─── Phase 0: Planning ───
@@ -114,16 +78,6 @@ export const sceneApi = {
       timeoutMs: 360_000, // 6 min — builder + minor judge
     }),
 
-  // ─── Generate All (batch build) ───
-
-  /** Build all scenes sequentially, skipping clarification */
-  generateAll: (projectId: string) =>
-    request<SceneGenerateAllResponse>("/scene/generate-all", {
-      method: "POST",
-      body: JSON.stringify({ projectId }),
-      timeoutMs: 600_000, // 10 min — builds all scenes sequentially
-    }),
-
   // ─── Phase 4: Final Judge ───
 
   /** Run intensive full-work assessment */
@@ -160,15 +114,15 @@ export const sceneApi = {
     request<{ psychologyLedger: UserPsychologyLedger | null }>(`/scene/debug/psychology/${projectId}`),
 
   debugInsights: (projectId: string) =>
-    request<import("../../shared/types/api").EngineInsightsResponse>(`/scene/debug/insights/${projectId}`),
+    request<EngineInsightsResponse>(`/scene/debug/insights/${projectId}`),
 
   // ─── Pre-Scene Audit ───
 
   getAudit: (projectId: string) =>
-    request<import("../../shared/types/api").PreSceneAuditResponse>(`/scene/audit/${projectId}`),
+    request<PreSceneAuditResponse>(`/scene/audit/${projectId}`),
 
   resolveAudit: (projectId: string, resolvedTargets: string[]) =>
-    request<import("../../shared/types/api").AuditResolveResponse>("/scene/audit/resolve", {
+    request<AuditResolveResponse>("/scene/audit/resolve", {
       method: "POST",
       body: JSON.stringify({ projectId, resolvedTargets }),
     }),
@@ -207,6 +161,14 @@ export const sceneApi = {
         hasExport: boolean;
       }>;
     }>("/scene/list-sessions"),
+
+  /** Build all scenes sequentially, skipping clarification */
+  generateAll: (projectId: string) =>
+    request<SceneGenerateAllResponse>("/scene/generate-all", {
+      method: "POST",
+      body: JSON.stringify({ projectId }),
+      timeoutMs: 600_000, // 10 min — builds all scenes sequentially
+    }),
 
   /** Get a plot session to resolve upstream chain */
   getPlotSession: (plotProjectId: string) =>

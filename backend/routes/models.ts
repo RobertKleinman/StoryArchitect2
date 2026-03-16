@@ -72,7 +72,7 @@ modelRoutes.put("/models", (req, res) => {
   return res.json(llmClient.getConfig());
 });
 
-/** GET /api/debug/tokens — accumulated token usage across all LLM calls */
+/** GET /api/debug/tokens — accumulated token usage for this server session */
 modelRoutes.get("/debug/tokens", (_req, res) => {
   return res.json(llmClient.getTokenUsage());
 });

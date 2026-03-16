@@ -3,29 +3,13 @@ import fs from "fs/promises";
 import nodePath from "path";
 import { characterImageFeatureFlagGuard } from "../middleware/characterImageFeatureFlagGuard";
 import { characterImageService, characterImageStore, animeGenClient, culturalStore } from "../services/runtime";
-import { CharacterImageServiceError } from "../services/characterImageService";
+import { handleRouteError, getModelOverride } from "./routeUtils";
 
 export const characterImageRoutes = Router();
 
 characterImageRoutes.use(characterImageFeatureFlagGuard);
 
-function getModelOverride(header: string | string[] | undefined): string | undefined {
-  if (Array.isArray(header)) return header[0];
-  return header;
-}
-
-function handleError(res: any, err: unknown) {
-  console.error("CHARACTER IMAGE ROUTE ERROR:", err);
-  if (err instanceof CharacterImageServiceError) {
-    const status = err.code === "NOT_FOUND" ? 404
-      : err.code === "INVALID_INPUT" ? 400
-      : err.code === "IMAGE_GEN_FAILED" ? 503
-      : 502;
-    return res.status(status).json({ error: true, code: err.code, message: err.message });
-  }
-  const msg = err instanceof Error ? err.message : "Unexpected server error";
-  return res.status(500).json({ error: true, code: "LLM_CALL_FAILED", message: msg });
-}
+const handleError = (res: any, err: unknown) => handleRouteError(res, err, "CHARACTER IMAGE");
 
 characterImageRoutes.post("/preview-prompt", async (req, res) => {
   const { projectId, stage } = req.body ?? {};
@@ -247,6 +231,23 @@ characterImageRoutes.post("/set-art-style", async (req, res) => {
   }
 });
 
+characterImageRoutes.get("/debug/insights/:projectId", async (req, res) => {
+  try {
+    const session = await characterImageService.getSession(req.params.projectId);
+    const psychologyLedger = session?.psychologyLedger ?? null;
+    let culturalBrief = null;
+    try {
+      const turnNumber = session?.turns?.length ?? 99;
+      culturalBrief = await culturalStore.getCachedBrief(req.params.projectId, "character_image", turnNumber + 10);
+    } catch { /* no brief cached yet */ }
+    const divergenceMap = psychologyLedger?.lastDirectionMap ?? null;
+    const developmentTargets: any[] = [];
+    return res.json({ psychologyLedger, culturalBrief, divergenceMap, developmentTargets });
+  } catch (err) {
+    return handleError(res, err);
+  }
+});
+
 characterImageRoutes.get("/debug/psychology/:projectId", async (req, res) => {
   try {
     const session = await characterImageService.getSession(req.params.projectId);
@@ -254,31 +255,6 @@ characterImageRoutes.get("/debug/psychology/:projectId", async (req, res) => {
       return res.json({ psychologyLedger: null });
     }
     return res.json({ psychologyLedger: session.psychologyLedger });
-  } catch (err) {
-    return handleError(res, err);
-  }
-});
-
-/** GET /api/character-image/debug/insights/:projectId — unified engine insights panel */
-characterImageRoutes.get("/debug/insights/:projectId", async (req, res) => {
-  try {
-    const session = await characterImageService.getSession(req.params.projectId);
-    const psychologyLedger = session?.psychologyLedger ?? null;
-
-    // Cultural brief
-    let culturalBrief = null;
-    try {
-      const turnNumber = session?.turns?.length ?? 0;
-      culturalBrief = await culturalStore.getCachedBrief(req.params.projectId, "character_image", turnNumber);
-    } catch {}
-
-    // Divergence map from psychology ledger
-    const divergenceMap = psychologyLedger?.lastDirectionMap ?? null;
-
-    // CharacterImage module has no formal developmentTargets array
-    const developmentTargets: any[] = [];
-
-    return res.json({ psychologyLedger, culturalBrief, divergenceMap, developmentTargets });
   } catch (err) {
     return handleError(res, err);
   }
@@ -325,8 +301,6 @@ characterImageRoutes.get("/list-sessions", async (_req, res) => {
       hasExport: boolean;
       artStyle: string;
       characterCount: number;
-      characterNames: string[];
-      hookPremise: string;
     }> = [];
 
     for (const file of sessionFiles) {
@@ -344,33 +318,14 @@ characterImageRoutes.get("/list-sessions", async (_req, res) => {
           ? Object.keys(session.revealedSpecs.characters ?? {}).length
           : 0;
 
-        // Extract character names from upstream character pack
-        const characterNames: string[] = [];
-        const charPack = session.sourceCharacterPack;
-        if (charPack?.locked?.characters) {
-          for (const [role, char] of Object.entries(charPack.locked.characters as Record<string, any>)) {
-            characterNames.push(char.role ?? role);
-          }
-        }
-
-        // Extract hook premise from upstream character pack's hook reference or state summary
-        let hookPremise = "";
-        if (charPack?.state_summary) {
-          // Use first sentence of state_summary as a concise preview
-          const firstSentence = charPack.state_summary.split(/[.!?]\s/)[0];
-          hookPremise = firstSentence ? firstSentence.substring(0, 120) : "";
-        }
-
         sessions.push({
           projectId: session.projectId,
           characterProjectId: session.characterProjectId ?? "",
           status: session.status,
           turnCount: session.turns?.length ?? 0,
           hasExport,
-          artStyle: session.artStylePreference?.style ?? session.artStyle ?? "",
+          artStyle: session.artStyle ?? "",
           characterCount: charCount,
-          characterNames,
-          hookPremise,
         });
       } catch { /* skip corrupt files */ }
     }

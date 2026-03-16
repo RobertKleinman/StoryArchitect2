@@ -51,21 +51,20 @@ import {
   formatEngineDialsForPrompt,
   snapshotBaselineForNewModule,
   runConsolidation,
-  applyConsolidation,
   formatSuggestedProbeForPrompt,
   markProbeConsumed,
+  moduleBoundaryConsolidation,
 } from "./psychologyEngine";
 import type { RawSignalObservation, BehaviorSummary, AdaptationPlan } from "../../shared/types/userPsychology";
-import { shouldConsolidate as shouldConsolidateThrottled, shouldDiverge as shouldDivergeThrottled } from "./backgroundThrottling";
+import { pickBackgroundTasks } from "./backgroundThrottling";
 import {
   runDivergenceExploration,
   extractDivergenceContext,
   formatDirectionMapForPrompt,
 } from "./divergenceExplorer";
-import { culturalResearchService, storyBibleService, projectStore as runtimeProjectStore } from "./runtime";
+import { culturalResearchService } from "./runtime";
 import { detectDirectedReferences, shouldRunCulturalResearch } from "./culturalResearchService";
 import type { CulturalResearchContext } from "./culturalResearchService";
-import { buildMustHonorBlock, normalizeStringifiedFields } from "./mustHonorBlock";
 
 export class CharacterServiceError extends Error {
   code: "NOT_FOUND" | "INVALID_INPUT" | "LLM_PARSE_ERROR" | "LLM_CALL_FAILED";
@@ -312,9 +311,6 @@ export class CharacterService {
       throw new CharacterServiceError("LLM_PARSE_ERROR", "Failed to parse character clarifier response");
     }
 
-    // Normalize stringified JSON fields (user_read)
-    normalizeStringifiedFields(clarifier as unknown as Record<string, unknown>);
-
     // Record prompt history
     this.recordPromptHistory(
       session, "clarifier", prompt.system, prompt.user,
@@ -428,24 +424,27 @@ export class CharacterService {
 
     await this.charStore.save(session);
 
-    // ─── Fire background work (non-blocking, throttled) ───
-    if (shouldConsolidateThrottled(turn, session)) {
+    // ─── Fire background work (non-blocking, coordinated to avoid storms) ───
+    const bgTasks = pickBackgroundTasks(turn, session);
+
+    if (bgTasks.consolidate) {
       this.fireBackgroundConsolidation(session.projectId, turn.turnNumber, "character")
         .catch(err => console.error("[PSYCH] Character consolidation fire failed:", err));
     }
 
-    if (shouldDivergeThrottled(turn, session)) {
-      this.fireBackgroundDivergence(session.projectId, turn.turnNumber, "character")
+    if (bgTasks.diverge) {
+      this.fireBackgroundDivergence(session, turn.turnNumber, "character")
         .catch(err => console.error("[DIVERGENCE] Character exploration fire failed:", err));
     }
 
-    // Fire background cultural research (non-blocking, throttled)
-    const hasCachedBrief = !!(await culturalResearchService.getBriefForBuilder(
-      session.projectId, "character", turn.turnNumber,
-    ).catch(() => null));
-    if (shouldRunCulturalResearch({ turnNumber: turn.turnNumber, userSelection: turn.userSelection, hasCachedBrief })) {
-      this.fireBackgroundCulturalResearch(session, turn.turnNumber)
-        .catch(err => console.error("[CULTURAL] Background research fire failed:", err));
+    if (bgTasks.cultural) {
+      const hasCachedBrief = !!(await culturalResearchService.getBriefForBuilder(
+        session.projectId, "character", turn.turnNumber,
+      ).catch(() => null));
+      if (shouldRunCulturalResearch({ turnNumber: turn.turnNumber, userSelection: turn.userSelection, hasCachedBrief })) {
+        this.fireBackgroundCulturalResearch(session, turn.turnNumber)
+          .catch(err => console.error("[CULTURAL] Background research fire failed:", err));
+      }
     }
 
     return {
@@ -474,19 +473,18 @@ export class CharacterService {
     );
 
     if (snapshot) {
+      // Re-read the LATEST session to avoid overwriting concurrent changes.
+      // IMPORTANT: Only graft consolidation-owned fields — NOT the entire ledger.
+      // Divergence explorer may have saved lastDirectionMap concurrently;
+      // replacing the whole ledger would clobber it (and vice versa).
       const freshSession = await this.charStore.get(projectId);
       if (!freshSession) return;
 
-      if (!freshSession.psychologyLedger) freshSession.psychologyLedger = createEmptyLedger();
-
-      const staleIds = new Set(sessionForConsolidation.psychologyLedger!.signalStore.map(s => s.id));
-      const newSignals = freshSession.psychologyLedger.signalStore.filter(s => !staleIds.has(s.id));
-
-      applyConsolidation(freshSession.psychologyLedger, snapshot.result, turnNumber, module);
-      freshSession.psychologyLedger.signalStore.push(...newSignals);
-      freshSession.psychologyLedger.lastConsolidation = snapshot;
-      freshSession.psychologyLedger.signalCountAtLastConsolidation = freshSession.psychologyLedger.signalStore.length;
-
+      if (!freshSession.psychologyLedger) freshSession.psychologyLedger = sessionForConsolidation.psychologyLedger;
+      else {
+        freshSession.psychologyLedger.signalStore = sessionForConsolidation.psychologyLedger.signalStore;
+        freshSession.psychologyLedger.lastConsolidation = sessionForConsolidation.psychologyLedger.lastConsolidation;
+      }
       freshSession.lastSavedAt = new Date().toISOString();
       await this.charStore.save(freshSession);
     }
@@ -496,14 +494,10 @@ export class CharacterService {
    * Fire-and-forget background divergence exploration for character module.
    */
   private async fireBackgroundDivergence(
-    projectId: string,
+    session: CharacterSessionState,
     turnNumber: number,
     module: "hook" | "character" | "character_image" | "world",
   ): Promise<void> {
-    // Re-read fresh session to avoid using a stale reference
-    const session = await this.charStore.get(projectId);
-    if (!session) return;
-
     const psychSummary = formatPsychologyLedgerForPrompt(session.psychologyLedger);
     // Build a state snapshot from character-module fields for divergence explorer
     const characterState: Record<string, unknown> = {};
@@ -538,135 +532,6 @@ export class CharacterService {
     }
   }
 
-  // ─── Character Review (pre-builder review/edit) ───
-
-  async getCharacterReview(projectId: string): Promise<{
-    characters: Array<{
-      roleKey: string;
-      role: string;
-      presentation: string;
-      age_range: string;
-      ethnicity: string;
-      description_summary: string;
-      confirmed_traits: Record<string, string>;
-      inferred_traits: Record<string, string>;
-    }>;
-    ready: boolean;
-  }> {
-    const session = await this.charStore.get(projectId);
-    if (!session) throw new CharacterServiceError("NOT_FOUND", "Character session not found");
-
-    const characters: Array<{
-      roleKey: string;
-      role: string;
-      presentation: string;
-      age_range: string;
-      ethnicity: string;
-      description_summary: string;
-      confirmed_traits: Record<string, string>;
-      inferred_traits: Record<string, string>;
-    }> = [];
-
-    for (const [roleKey, charState] of Object.entries(session.characters ?? {})) {
-      const confirmed: Record<string, string> = {};
-      const inferred: Record<string, string> = {};
-
-      // Extract traits from constraint ledger for this character
-      for (const entry of session.constraintLedger ?? []) {
-        if (entry.key.includes(roleKey)) {
-          if (entry.confidence === "confirmed") {
-            confirmed[entry.key] = entry.value;
-          } else {
-            inferred[entry.key] = entry.value;
-          }
-        }
-      }
-
-      // Derive presentation, age_range, ethnicity from confirmed traits or defaults
-      const presentationEntry = session.constraintLedger?.find(
-        (e) => e.key.includes(roleKey) &&
-               (e.key.includes("presentation") || e.key.includes("gender"))
-      );
-      const ageEntry = session.constraintLedger?.find(
-        (e) => e.key.includes(roleKey) && e.key.includes("age")
-      );
-      const ethnicityEntry = session.constraintLedger?.find(
-        (e) => e.key.includes(roleKey) && e.key.includes("ethnicity")
-      );
-
-      // Build a description summary from available state
-      const descParts: string[] = [];
-      if (charState.want) descParts.push(`Wants: ${charState.want}`);
-      if (charState.misbelief) descParts.push(`Believes: ${charState.misbelief}`);
-      if (charState.stakes) descParts.push(`Stakes: ${charState.stakes}`);
-
-      characters.push({
-        roleKey,
-        role: roleKey,
-        presentation: presentationEntry?.value ?? "unspecified",
-        age_range: ageEntry?.value ?? "",
-        ethnicity: ethnicityEntry?.value ?? "",
-        description_summary: descParts.join(". ") || "(not yet developed)",
-        confirmed_traits: confirmed,
-        inferred_traits: inferred,
-      });
-    }
-
-    // Determine readiness based on the latest clarifier turn
-    const lastTurn = session.turns[session.turns.length - 1];
-    const ready = !!lastTurn?.clarifierResponse?.ready_for_characters;
-
-    return { characters, ready };
-  }
-
-  async applyCharacterReviewEdits(
-    projectId: string,
-    edits: Array<{ roleKey: string; field: string; value: string }>,
-  ): Promise<{ applied: number }> {
-    const session = await this.charStore.get(projectId);
-    if (!session) throw new CharacterServiceError("NOT_FOUND", "Character session not found");
-
-    if (!session.constraintLedger) session.constraintLedger = [];
-
-    let applied = 0;
-    for (const edit of edits) {
-      // Update or add the constraint ledger entry
-      const existingIdx = session.constraintLedger.findIndex(
-        (e) => e.key === `${edit.roleKey}.${edit.field}`,
-      );
-      const entry: CharacterLedgerEntry = {
-        key: `${edit.roleKey}.${edit.field}`,
-        value: edit.value,
-        source: "user_typed",
-        confidence: "confirmed",
-        turnNumber: session.turns.length,
-      };
-
-      if (existingIdx >= 0) {
-        session.constraintLedger[existingIdx] = entry;
-      } else {
-        session.constraintLedger.push(entry);
-      }
-
-      // Also update the character state directly if applicable
-      const charState = session.characters[edit.roleKey];
-      if (charState) {
-        if (edit.field === "presentation" || edit.field === "age_range" || edit.field === "ethnicity" || edit.field === "description") {
-          (charState as Record<string, unknown>)[edit.field] = edit.value;
-        }
-      }
-
-      applied++;
-    }
-
-    // Store the review edits for the builder prompt
-    (session as unknown as Record<string, unknown>).reviewEdits = edits;
-    session.lastSavedAt = new Date().toISOString();
-    await this.charStore.save(session);
-
-    return { applied };
-  }
-
   // ─── Generate (tournament: adaptive multi-candidate + judge) ───
 
   async runGenerate(
@@ -688,7 +553,6 @@ export class CharacterService {
     projectId: string,
     modelOverride?: string,
     promptOverrides?: { builder?: CharacterPromptOverrides; judge?: CharacterPromptOverrides },
-    constraintOverrides?: Record<string, string>,
   ): Promise<CharacterGenerateResponse> {
     const session = await this.charStore.get(projectId);
     if (!session) {
@@ -698,49 +562,11 @@ export class CharacterService {
       throw new CharacterServiceError("INVALID_INPUT", "Must be in revealed status to reroll");
     }
 
-    // Apply constraint overrides to the ledger before re-running the tournament
-    if (constraintOverrides && Object.keys(constraintOverrides).length > 0) {
-      this.applyConstraintOverrides(session, constraintOverrides);
-    }
-
     // Clear revealed state and regenerate
     session.revealedCharacters = undefined;
     session.revealedJudge = undefined;
 
     return this.executeTournament(session, modelOverride, false, promptOverrides);
-  }
-
-  /**
-   * Apply user-provided constraint overrides to the session's constraint ledger.
-   * Existing entries are updated in-place; new keys are appended as confirmed entries.
-   */
-  private applyConstraintOverrides(
-    session: CharacterSessionState,
-    overrides: Record<string, string>,
-  ): void {
-    if (!session.constraintLedger) session.constraintLedger = [];
-    const ledger = session.constraintLedger;
-    const turnNumber = session.turns.length;
-
-    for (const [key, value] of Object.entries(overrides)) {
-      const trimmed = value.trim();
-      if (!trimmed) continue;
-
-      const existingIdx = ledger.findIndex((e) => e.key === key);
-      const entry: CharacterLedgerEntry = {
-        key,
-        value: trimmed,
-        source: "user_freeform",
-        confidence: "confirmed",
-        turnNumber,
-      };
-
-      if (existingIdx >= 0) {
-        ledger[existingIdx] = entry;
-      } else {
-        ledger.push(entry);
-      }
-    }
   }
 
   /**
@@ -764,6 +590,7 @@ export class CharacterService {
       judgeResults: [],
       phase: "builders",
     };
+    // Initialize build progress for frontend polling (Issue #11)
     session.buildProgress = { attempt: 1, maxAttempts: 3, status: "building" };
     session.lastSavedAt = new Date().toISOString();
     await this.charStore.save(session);
@@ -797,8 +624,9 @@ export class CharacterService {
     for (let i = 0; i < temperatures.length; i++) {
       const temp = temperatures[i];
 
-      // Update build progress
+      // Update build progress for this candidate
       session.buildProgress = { attempt: i + 1, maxAttempts: temperatures.length, status: "building" };
+      session.lastSavedAt = new Date().toISOString();
       await this.charStore.save(session);
 
       // Run builder for this candidate
@@ -841,6 +669,7 @@ export class CharacterService {
 
       // Run judge for this candidate
       session.buildProgress = { attempt: i + 1, maxAttempts: temperatures.length, status: "judging" };
+      session.lastSavedAt = new Date().toISOString();
       await this.charStore.save(session);
 
       const judgePrompt = this.buildJudgePrompt(builderParsed, session);
@@ -896,12 +725,14 @@ export class CharacterService {
         }
       } else {
         candidates.push({ cast: builderParsed, judge: judgeParsed });
-        const failReason = judgeParsed.hard_fail_reasons?.[0] ?? judgeParsed.one_fix_instruction ?? "Quality below threshold";
-        if (i < temperatures.length - 1) {
-          session.buildProgress = { attempt: i + 1, maxAttempts: temperatures.length, status: "failed_retrying", lastFailReason: failReason };
-        } else {
-          session.buildProgress = { attempt: i + 1, maxAttempts: temperatures.length, status: "best_effort", lastFailReason: failReason };
-        }
+        const isLast = i === temperatures.length - 1;
+        session.buildProgress = {
+          attempt: i + 1,
+          maxAttempts: temperatures.length,
+          status: isLast ? "best_effort" : "failed_retrying",
+          lastFailReason: judgeParsed.one_fix_instruction,
+        };
+        session.lastSavedAt = new Date().toISOString();
         await this.charStore.save(session);
       }
     }
@@ -1003,7 +834,7 @@ export class CharacterService {
     session.status = "revealed";
     session.rerollCount = resetRerollCount ? 0 : (session.rerollCount ?? 0) + 1;
     session.tournamentProgress = undefined;  // Clear progress on success
-    session.buildProgress = undefined;       // Clear build progress on completion
+    session.buildProgress = undefined;       // Clear build progress on reveal
     session.lastSavedAt = new Date().toISOString();
 
     await this.charStore.save(session);
@@ -1114,8 +945,6 @@ export class CharacterService {
         role: profile.role,
         description: profile.description,
         presentation: profile.presentation ?? "unspecified",
-        age_range: profile.age_range,
-        ethnicity: profile.ethnicity,
         psychological_profile: {
           ...profile.core_dials,
           ...profile.secondary_dials,
@@ -1127,6 +956,11 @@ export class CharacterService {
         cost_type: profile.cost_type ?? "",
         volatility: profile.volatility ?? "",
       };
+    }
+
+    // Module boundary consolidation: prune low-confidence signals before handoff
+    if (session.psychologyLedger) {
+      session.psychologyLedger = moduleBoundaryConsolidation(session.psychologyLedger);
     }
 
     const characterPack: CharacterPack = {
@@ -1166,20 +1000,6 @@ export class CharacterService {
     session.status = "locked";
     session.lastSavedAt = new Date().toISOString();
     await this.charStore.save(session);
-
-    // Generate/update story bible (non-fatal — session is already saved)
-    try {
-      const bibleKey = session.hookProjectId;
-      const existingBible = await runtimeProjectStore.getStoryBible(bibleKey);
-      const bible = await storyBibleService.generateBible(
-        bibleKey,
-        characterPack.state_summary ?? "",
-        existingBible ?? undefined,
-      );
-      await runtimeProjectStore.saveStoryBible(bibleKey, bible);
-    } catch (err) {
-      console.error("STORY BIBLE UPDATE ERROR (non-fatal):", err);
-    }
 
     return characterPack;
   }
@@ -1258,22 +1078,11 @@ export class CharacterService {
     dynamic += (probeText ? "\n\n" + probeText : "");
     dynamic += (directionMapText ? "\n\n" + directionMapText : "");
 
-    // ─── Story Bible injection ───
-    const storyBible = await runtimeProjectStore.getStoryBible(session.hookProjectId);
-    dynamic += "\n\n═══ STORY BIBLE (do NOT contradict — these are confirmed canonical facts) ═══\n" +
-      (storyBible || "(not yet available)");
-
     // ─── Cultural Intelligence Engine injection ───
     const culturalBrief = await this.getCulturalBrief(session, currentTurn);
     const culturalText = culturalResearchService.formatBriefForClarifier(culturalBrief);
     if (culturalText) {
       dynamic += "\n\n" + culturalText;
-    }
-
-    // ─── MUST HONOR constraint reinforcement (end of prompt = highest attention) ───
-    const mustHonor = buildMustHonorBlock(session.constraintLedger ?? []);
-    if (mustHonor) {
-      dynamic += "\n\n" + mustHonor;
     }
 
     return {
@@ -1308,34 +1117,16 @@ export class CharacterService {
     // Dynamic suffix — changes (prior turns, psychology signals, constraint ledger)
     const ledgerText = this.formatLedgerForPrompt(session.constraintLedger ?? [], false);
     const signalsText = formatSignalsForBuilderJudge(session.psychologyLedger);
-    // Format review edits if any
-    const reviewEdits = ((session as unknown as Record<string, unknown>).reviewEdits as Array<{ roleKey: string; field: string; value: string }>) ?? [];
-    const reviewEditsText = reviewEdits.length > 0
-      ? reviewEdits.map((e) => `${e.roleKey}.${e.field} = "${e.value}"`).join("\n")
-      : "(no review edits)";
-
     let dynamic = CHARACTER_BUILDER_USER_DYNAMIC
       .replace("{{PRIOR_TURNS}}", this.formatPriorTurns(session.turns))
       .replace("{{PSYCHOLOGY_SIGNALS}}", signalsText)
-      .replace("{{CONSTRAINT_LEDGER}}", ledgerText)
-      .replace("{{CHARACTER_REVIEW_EDITS}}", reviewEditsText);
-
-    // ─── Story Bible injection ───
-    const storyBible = await runtimeProjectStore.getStoryBible(session.hookProjectId);
-    dynamic += "\n\n═══ STORY BIBLE (do NOT contradict — these are confirmed canonical facts) ═══\n" +
-      (storyBible || "(not yet available)");
+      .replace("{{CONSTRAINT_LEDGER}}", ledgerText);
 
     // ─── Cultural Intelligence Engine injection ───
     const culturalBrief = await this.getCulturalBriefForBuilder(session);
     const culturalText = culturalResearchService.formatBriefForBuilder(culturalBrief);
     if (culturalText) {
       dynamic += "\n\n" + culturalText;
-    }
-
-    // ─── MUST HONOR constraint reinforcement (end of prompt = highest attention) ───
-    const mustHonor = buildMustHonorBlock(session.constraintLedger ?? []);
-    if (mustHonor) {
-      dynamic += "\n\n" + mustHonor;
     }
 
     return {
@@ -1418,7 +1209,6 @@ export class CharacterService {
       .replace("{{CAST_JSON}}", JSON.stringify(cast))
       .replace("{{PREMISE}}", hook.locked.premise)
       .replace("{{EMOTIONAL_PROMISE}}", hook.locked.emotional_promise)
-      .replace("{{CHARACTER_SEED}}", session.characterSeed ?? "(no explicit seed — inferred from hook)")
       .replace("{{CAST_STATE_JSON}}", castStateJson)
       .replace("{{PSYCHOLOGY_SIGNALS}}", signalsText)
       .replace("{{UPSTREAM_DEVELOPMENT_TARGETS}}", upstreamTargets);

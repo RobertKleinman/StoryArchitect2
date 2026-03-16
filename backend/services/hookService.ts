@@ -50,9 +50,10 @@ import {
   applyConsolidation,
   formatSuggestedProbeForPrompt,
   markProbeConsumed,
+  moduleBoundaryConsolidation,
 } from "./psychologyEngine";
 import type { RawSignalObservation, BehaviorSummary, AdaptationPlan } from "../../shared/types/userPsychology";
-import { shouldConsolidate as shouldConsolidateThrottled, shouldDiverge as shouldDivergeThrottled } from "./backgroundThrottling";
+import { pickBackgroundTasks } from "./backgroundThrottling";
 import {
   runDivergenceExploration,
   extractDivergenceContext,
@@ -369,24 +370,28 @@ export class HookService {
 
     await this.store.save(session);
 
-    // ─── Fire background work (non-blocking, throttled) ───
-    if (shouldConsolidateThrottled(turn, session)) {
+    // ─── Fire background work (non-blocking, coordinated to avoid storms) ───
+    const bgTasks = pickBackgroundTasks(turn, session);
+
+    if (bgTasks.consolidate) {
       this.fireBackgroundConsolidation(session.projectId, turn.turnNumber, "hook")
         .catch(err => console.error("[PSYCH] Background consolidation fire failed:", err));
     }
 
-    if (shouldDivergeThrottled(turn, session)) {
+    if (bgTasks.diverge) {
       this.fireBackgroundDivergence(session.projectId, turn.turnNumber, "hook")
         .catch(err => console.error("[DIVERGENCE] Background exploration fire failed:", err));
     }
 
-    // Fire background cultural research (non-blocking, throttled)
-    const hasCachedBrief = !!(await culturalResearchService.getBriefForBuilder(
-      session.projectId, "hook", turn.turnNumber,
-    ).catch(() => null));
-    if (shouldRunCulturalResearch({ turnNumber: turn.turnNumber, userSelection: turn.userSelection, hasCachedBrief })) {
-      this.fireBackgroundCulturalResearch(session, turn.turnNumber)
-        .catch(err => console.error("[CULTURAL] Background research fire failed:", err));
+    if (bgTasks.cultural) {
+      // Only fire if we don't already have a fresh brief
+      const hasCachedBrief = !!(await culturalResearchService.getBriefForBuilder(
+        session.projectId, "hook", turn.turnNumber,
+      ).catch(() => null));
+      if (shouldRunCulturalResearch({ turnNumber: turn.turnNumber, userSelection: turn.userSelection, hasCachedBrief })) {
+        this.fireBackgroundCulturalResearch(session, turn.turnNumber)
+          .catch(err => console.error("[CULTURAL] Background research fire failed:", err));
+      }
     }
 
     return {
@@ -563,6 +568,7 @@ export class HookService {
       judgeResults: [],
       phase: "builders",
     };
+    // Initialize build progress for frontend polling (Issue #11)
     session.buildProgress = { attempt: 1, maxAttempts: 3, status: "building" };
     session.lastSavedAt = new Date().toISOString();
     await this.store.save(session);
@@ -579,8 +585,9 @@ export class HookService {
     for (let i = 0; i < temperatures.length; i++) {
       const temp = temperatures[i];
 
-      // Update build progress
+      // Update build progress for this candidate
       session.buildProgress = { attempt: i + 1, maxAttempts: temperatures.length, status: "building" };
+      session.lastSavedAt = new Date().toISOString();
       await this.store.save(session);
 
       // Run builder for this candidate
@@ -612,6 +619,7 @@ export class HookService {
 
       // Run judge for this candidate
       session.buildProgress = { attempt: i + 1, maxAttempts: temperatures.length, status: "judging" };
+      session.lastSavedAt = new Date().toISOString();
       await this.store.save(session);
 
       const judgePrompt = this.buildJudgePrompt(builderParsed, session.currentState, session.psychologyLedger);
@@ -670,12 +678,15 @@ export class HookService {
       } else {
         // Failed candidate: store and continue
         candidates.push({ hook: builderParsed, judge: judgeParsed });
+        const isLast = i === temperatures.length - 1;
         const failReason = judgeParsed.hard_fail_reasons?.[0] ?? judgeParsed.one_fix_instruction ?? "Quality below threshold";
-        if (i < temperatures.length - 1) {
-          session.buildProgress = { attempt: i + 1, maxAttempts: temperatures.length, status: "failed_retrying", lastFailReason: failReason };
-        } else {
-          session.buildProgress = { attempt: i + 1, maxAttempts: temperatures.length, status: "best_effort", lastFailReason: failReason };
-        }
+        session.buildProgress = {
+          attempt: i + 1,
+          maxAttempts: temperatures.length,
+          status: isLast ? "best_effort" : "failed_retrying",
+          lastFailReason: failReason,
+        };
+        session.lastSavedAt = new Date().toISOString();
         await this.store.save(session);
       }
     }
@@ -773,7 +784,7 @@ export class HookService {
     session.status = "revealed";
     session.rerollCount = resetRerollCount ? 0 : session.rerollCount + 1;
     session.tournamentProgress = undefined;  // Clear progress on success
-    session.buildProgress = undefined;       // Clear build progress on completion
+    session.buildProgress = undefined;       // Clear build progress on reveal
     session.lastSavedAt = new Date().toISOString();
 
     await this.store.save(session);
@@ -903,6 +914,11 @@ export class HookService {
       }
       return true;
     });
+
+    // Module boundary consolidation: prune low-confidence signals before handoff
+    if (session.psychologyLedger) {
+      session.psychologyLedger = moduleBoundaryConsolidation(session.psychologyLedger);
+    }
 
     const hookPack: HookPack = {
       module: "hook",

@@ -597,8 +597,11 @@ WEAKNESSES — for EACH world area that has room to grow, provide:
 
 UPSTREAM TARGET ASSESSMENT — for each upstream development target, assess whether the world addressed it.
 
+THINK FIRST:
+Start with "analysis" — write 2-4 sentences of private reasoning. Walk through each hard-fail check for this specific world. Could you set varied scenes here? What makes this world CONSTRAIN characters rather than just contain them? This reasoning must come first in your JSON output.
+
 OUTPUT:
-Return ONLY valid JSON. No markdown fences.`;
+Return ONLY valid JSON: {"analysis": "...", "pass": ..., ...}. No markdown fences.`;
 
 export const WORLD_JUDGE_USER_TEMPLATE = `Judge this generated world:
 {{WORLD_JSON}}

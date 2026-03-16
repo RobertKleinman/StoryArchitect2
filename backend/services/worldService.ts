@@ -52,21 +52,20 @@ import {
   formatEngineDialsForPrompt,
   snapshotBaselineForNewModule,
   runConsolidation,
-  applyConsolidation,
   formatSuggestedProbeForPrompt,
   markProbeConsumed,
+  moduleBoundaryConsolidation,
 } from "./psychologyEngine";
 import type { RawSignalObservation, BehaviorSummary, AdaptationPlan } from "../../shared/types/userPsychology";
-import { shouldConsolidate as shouldConsolidateThrottled, shouldDiverge as shouldDivergeThrottled } from "./backgroundThrottling";
+import { pickBackgroundTasks } from "./backgroundThrottling";
 import {
   runDivergenceExploration,
   extractDivergenceContext,
   formatDirectionMapForPrompt,
 } from "./divergenceExplorer";
-import { culturalResearchService, storyBibleService, projectStore as runtimeProjectStore } from "./runtime";
+import { culturalResearchService } from "./runtime";
 import { detectDirectedReferences, shouldRunCulturalResearch } from "./culturalResearchService";
 import type { CulturalResearchContext } from "./culturalResearchService";
-import { buildMustHonorBlock, normalizeStringifiedFields } from "./mustHonorBlock";
 
 // ─── API response types ───
 
@@ -354,7 +353,7 @@ export class WorldService {
 
         // Record assumption deltas for psychology
         if (session.psychologyLedger) {
-          const offeredIds = previousTurn.clarifierResponse.assumptions?.map((a: any) => a.id) ?? assumptionResponses.map(r => r.assumptionId);
+          const offeredIds = assumptionResponses.map(r => r.assumptionId);
           const respondedIds = assumptionResponses
             .filter(r => r.action !== "not_ready")
             .map(r => r.assumptionId);
@@ -405,9 +404,6 @@ export class WorldService {
     if (!clarifier) {
       throw new WorldServiceError("LLM_PARSE_ERROR", "Failed to parse world clarifier output");
     }
-
-    // Normalize stringified JSON fields (user_read)
-    normalizeStringifiedFields(clarifier as unknown as Record<string, unknown>);
 
     // Ensure defaults
     if (!clarifier.missing_signal) clarifier.missing_signal = "";
@@ -478,24 +474,27 @@ export class WorldService {
 
     await this.worldStore.save(session!);
 
-    // ─── Fire background work (non-blocking, throttled) ───
-    if (shouldConsolidateThrottled(turn, session!)) {
+    // ─── Fire background work (non-blocking, coordinated to avoid storms) ───
+    const bgTasks = pickBackgroundTasks(turn, session!);
+
+    if (bgTasks.consolidate) {
       this.fireBackgroundConsolidation(session!.projectId, turn.turnNumber, "world")
         .catch(err => console.error("[PSYCH] World consolidation fire failed:", err));
     }
 
-    if (shouldDivergeThrottled(turn, session!)) {
-      this.fireBackgroundDivergence(session!.projectId, turn.turnNumber, "world")
+    if (bgTasks.diverge) {
+      this.fireBackgroundDivergence(session!, turn.turnNumber, "world")
         .catch(err => console.error("[DIVERGENCE] World exploration fire failed:", err));
     }
 
-    // Fire background cultural research (non-blocking, throttled)
-    const hasCachedBrief = !!(await culturalResearchService.getBriefForBuilder(
-      session!.projectId, "world", turn.turnNumber,
-    ).catch(() => null));
-    if (shouldRunCulturalResearch({ turnNumber: turn.turnNumber, userSelection: turn.userSelection, hasCachedBrief })) {
-      this.fireBackgroundCulturalResearch(session!, turn.turnNumber)
-        .catch(err => console.error("[CULTURAL] Background research fire failed:", err));
+    if (bgTasks.cultural) {
+      const hasCachedBrief = !!(await culturalResearchService.getBriefForBuilder(
+        session!.projectId, "world", turn.turnNumber,
+      ).catch(() => null));
+      if (shouldRunCulturalResearch({ turnNumber: turn.turnNumber, userSelection: turn.userSelection, hasCachedBrief })) {
+        this.fireBackgroundCulturalResearch(session!, turn.turnNumber)
+          .catch(err => console.error("[CULTURAL] Background research fire failed:", err));
+      }
     }
 
     return {
@@ -524,19 +523,18 @@ export class WorldService {
     );
 
     if (snapshot) {
+      // Re-read the LATEST session to avoid overwriting concurrent changes.
+      // IMPORTANT: Only graft consolidation-owned fields — NOT the entire ledger.
+      // Divergence explorer may have saved lastDirectionMap concurrently;
+      // replacing the whole ledger would clobber it (and vice versa).
       const freshSession = await this.worldStore.get(projectId);
       if (!freshSession) return;
 
-      if (!freshSession.psychologyLedger) freshSession.psychologyLedger = createEmptyLedger();
-
-      const staleIds = new Set(sessionForConsolidation.psychologyLedger!.signalStore.map(s => s.id));
-      const newSignals = freshSession.psychologyLedger.signalStore.filter(s => !staleIds.has(s.id));
-
-      applyConsolidation(freshSession.psychologyLedger, snapshot.result, turnNumber, module);
-      freshSession.psychologyLedger.signalStore.push(...newSignals);
-      freshSession.psychologyLedger.lastConsolidation = snapshot;
-      freshSession.psychologyLedger.signalCountAtLastConsolidation = freshSession.psychologyLedger.signalStore.length;
-
+      if (!freshSession.psychologyLedger) freshSession.psychologyLedger = sessionForConsolidation.psychologyLedger;
+      else {
+        freshSession.psychologyLedger.signalStore = sessionForConsolidation.psychologyLedger.signalStore;
+        freshSession.psychologyLedger.lastConsolidation = sessionForConsolidation.psychologyLedger.lastConsolidation;
+      }
       freshSession.lastSavedAt = new Date().toISOString();
       await this.worldStore.save(freshSession);
     }
@@ -546,14 +544,10 @@ export class WorldService {
    * Fire-and-forget background divergence exploration for world module.
    */
   private async fireBackgroundDivergence(
-    projectId: string,
+    session: WorldSessionState,
     turnNumber: number,
     module: "hook" | "character" | "character_image" | "world",
   ): Promise<void> {
-    // Re-read fresh session to avoid using a stale reference
-    const session = await this.worldStore.get(projectId);
-    if (!session) return;
-
     const psychSummary = formatPsychologyLedgerForPrompt(session.psychologyLedger);
     // Build a state snapshot from world-module fields for divergence explorer
     const worldState: Record<string, unknown> = {};
@@ -604,6 +598,7 @@ export class WorldService {
     }
 
     session.status = "generating";
+    // Build progress for frontend polling (Issue #11) — single attempt for world
     session.buildProgress = { attempt: 1, maxAttempts: 1, status: "building" };
     await this.worldStore.save(session);
 
@@ -716,7 +711,7 @@ export class WorldService {
     session.revealedWorld = builderResult;
     session.revealedJudge = judgeResult ?? undefined;
     session.status = "revealed";
-    session.buildProgress = undefined;
+    session.buildProgress = undefined;  // Clear build progress on reveal
     session.lastSavedAt = new Date().toISOString();
 
     await this.worldStore.save(session);
@@ -741,7 +736,6 @@ export class WorldService {
     projectId: string,
     modelOverride?: string,
     promptOverrides?: { builder?: WorldPromptOverrides; judge?: WorldPromptOverrides },
-    constraintOverrides?: Record<string, string>,
   ): Promise<WorldGenerateResponse> {
     const session = await this.worldStore.get(projectId);
     if (!session) {
@@ -751,49 +745,10 @@ export class WorldService {
       throw new WorldServiceError("INVALID_INPUT", "Must be in revealed status to reroll");
     }
 
-    // Apply constraint overrides to the ledger before re-running the builder/judge
-    if (constraintOverrides && Object.keys(constraintOverrides).length > 0) {
-      this.applyConstraintOverrides(session, constraintOverrides);
-      await this.worldStore.save(session);
-    }
-
     session.revealedWorld = undefined;
     session.revealedJudge = undefined;
 
     return this.runGenerate(projectId, modelOverride, promptOverrides);
-  }
-
-  /**
-   * Apply user-provided constraint overrides to the session's constraint ledger.
-   * Existing entries are updated in-place; new keys are appended as confirmed entries.
-   */
-  private applyConstraintOverrides(
-    session: WorldSessionState,
-    overrides: Record<string, string>,
-  ): void {
-    if (!session.constraintLedger) session.constraintLedger = [];
-    const ledger = session.constraintLedger;
-    const turnNumber = session.turns.length;
-
-    for (const [key, value] of Object.entries(overrides)) {
-      const trimmed = value.trim();
-      if (!trimmed) continue;
-
-      const existingIdx = ledger.findIndex((e) => e.key === key);
-      const entry: WorldLedgerEntry = {
-        key,
-        value: trimmed,
-        source: "user_freeform",
-        confidence: "confirmed",
-        turnNumber,
-      };
-
-      if (existingIdx >= 0) {
-        ledger[existingIdx] = entry;
-      } else {
-        ledger.push(entry);
-      }
-    }
   }
 
   // ─── Lock World ───
@@ -861,6 +816,11 @@ export class WorldService {
       }
     }
 
+    // Module boundary consolidation: prune low-confidence signals before handoff
+    if (session.psychologyLedger) {
+      session.psychologyLedger = moduleBoundaryConsolidation(session.psychologyLedger);
+    }
+
     const worldPack: WorldPack = {
       module: "world",
       locked: {
@@ -898,20 +858,6 @@ export class WorldService {
     session.status = "locked";
     session.lastSavedAt = new Date().toISOString();
     await this.worldStore.save(session);
-
-    // Generate/update story bible (non-fatal — session is already saved)
-    try {
-      const bibleKey = session.hookProjectId;
-      const existingBible = await runtimeProjectStore.getStoryBible(bibleKey);
-      const bible = await storyBibleService.generateBible(
-        bibleKey,
-        worldPack.state_summary ?? "",
-        existingBible ?? undefined,
-      );
-      await runtimeProjectStore.saveStoryBible(bibleKey, bible);
-    } catch (err) {
-      console.error("STORY BIBLE UPDATE ERROR (non-fatal):", err);
-    }
 
     return worldPack;
   }
@@ -980,22 +926,11 @@ export class WorldService {
     dynamic += (probeText ? "\n\n" + probeText : "");
     dynamic += (directionMapText ? "\n\n" + directionMapText : "");
 
-    // ─── Story Bible injection ───
-    const storyBible = await runtimeProjectStore.getStoryBible(session.hookProjectId);
-    dynamic += "\n\n═══ STORY BIBLE (do NOT contradict — these are confirmed canonical facts) ═══\n" +
-      (storyBible || "(not yet available)");
-
     // ─── Cultural Intelligence Engine injection ───
     const culturalBrief = await this.getCulturalBrief(session, currentTurn);
     const culturalText = culturalResearchService.formatBriefForClarifier(culturalBrief);
     if (culturalText) {
       dynamic += "\n\n" + culturalText;
-    }
-
-    // ─── MUST HONOR constraint reinforcement (end of prompt = highest attention) ───
-    const mustHonor = buildMustHonorBlock(session.constraintLedger ?? []);
-    if (mustHonor) {
-      dynamic += "\n\n" + mustHonor;
     }
 
     return {
@@ -1048,22 +983,11 @@ export class WorldService {
       .replace("{{PSYCHOLOGY_SIGNALS}}", signalsText)
       .replace("{{CONSTRAINT_LEDGER}}", ledgerText);
 
-    // ─── Story Bible injection ───
-    const storyBible = await runtimeProjectStore.getStoryBible(session.hookProjectId);
-    dynamic += "\n\n═══ STORY BIBLE (do NOT contradict — these are confirmed canonical facts) ═══\n" +
-      (storyBible || "(not yet available)");
-
     // ─── Cultural Intelligence Engine injection ───
     const culturalBrief = await this.getCulturalBriefForBuilder(session);
     const culturalText = culturalResearchService.formatBriefForBuilder(culturalBrief);
     if (culturalText) {
       dynamic += "\n\n" + culturalText;
-    }
-
-    // ─── MUST HONOR constraint reinforcement (end of prompt = highest attention) ───
-    const mustHonor = buildMustHonorBlock(session.constraintLedger ?? []);
-    if (mustHonor) {
-      dynamic += "\n\n" + mustHonor;
     }
 
     return {
@@ -1547,30 +1471,19 @@ This is a suggestion, not a rule. If ${stuckFocus} still needs work, keep going.
   private updatePsychologyHeuristics(session: WorldSessionState): void {
     if (!session.psychologyLedger) return;
 
-    let typedCount = 0;
-    let clickedCount = 0;
-    let totalAssumptions = 0;
-    let deferredAssumptions = 0;
-    let changedAssumptions = 0;
-    const responseLengths: number[] = [];
+    const lastTurn = session.turns[session.turns.length - 1];
+    if (!lastTurn?.userSelection) return;
 
-    for (const turn of session.turns) {
-      if (!turn.userSelection) continue;
+    const typedCount = lastTurn.userSelection.type === "free_text" ? 1 : 0;
+    const clickedCount = lastTurn.userSelection.type === "option" || lastTurn.userSelection.type === "surprise_me" ? 1 : 0;
 
-      if (turn.userSelection.type === "free_text") {
-        typedCount++;
-        if (turn.userSelection.label) {
-          responseLengths.push(turn.userSelection.label.split(/\s+/).length);
-        }
-      } else {
-        clickedCount++;
-      }
-
-      const assumptionStats = turn.assumptionResponses ?? [];
-      totalAssumptions += assumptionStats.length;
-      deferredAssumptions += assumptionStats.filter(r => r.action === "not_ready").length;
-      changedAssumptions += assumptionStats.filter(r => r.action === "alternative" || r.action === "freeform").length;
-    }
+    const assumptionStats = lastTurn.assumptionResponses ?? [];
+    const totalAssumptions = assumptionStats.length;
+    const deferredAssumptions = assumptionStats.filter(r => r.action === "not_ready").length;
+    const changedAssumptions = assumptionStats.filter(r => r.action === "alternative" || r.action === "freeform").length;
+    const responseLengths = lastTurn.userSelection.type === "free_text" && lastTurn.userSelection.label
+      ? [lastTurn.userSelection.label.length]
+      : [];
 
     updateHeuristics(session.psychologyLedger, {
       typedCount,
