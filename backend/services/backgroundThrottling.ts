@@ -127,8 +127,8 @@ export function shouldResearchCulture(
  * Priority: consolidation > divergence > cultural (consolidation keeps the
  * signal store healthy, which improves all downstream tasks).
  *
- * On free-text turns (strongest signal), allow up to 2 concurrent tasks.
- * Otherwise, allow only 1.
+ * On free-text turns (strongest signal), allow all 3 concurrent tasks.
+ * Otherwise, allow up to 2 (consolidation + one exploration task).
  */
 export function pickBackgroundTasks(
   turn: ThrottlingTurnInfo,
@@ -139,7 +139,7 @@ export function pickBackgroundTasks(
   const wantsCultural = shouldResearchCulture(turn, session);
 
   const isFreeText = turn.userSelection?.type === "free_text";
-  const maxConcurrent = isFreeText ? 2 : 1;
+  const maxConcurrent = isFreeText ? 3 : 2;
 
   const result = { consolidate: false, diverge: false, cultural: false };
   let running = 0;

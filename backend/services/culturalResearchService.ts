@@ -174,7 +174,7 @@ export class CulturalResearchService {
         contractPrompt,
         {
           temperature: 0.3,  // Low temp for accurate summarization
-          maxTokens: 800,
+          maxTokens: 1500,
           jsonSchema: RESEARCH_CONTRACT_SCHEMA,
         },
       );

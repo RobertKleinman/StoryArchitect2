@@ -117,8 +117,12 @@ export class LLMClient {
         // Structured outputs = already valid JSON; otherwise strip fences
         return options?.jsonSchema ? response.text : stripJsonFences(response.text);
       } catch (err: unknown) {
-        const isRetriable =
+        const isHttpRetriable =
           err instanceof ProviderHttpError && err.isRetriable;
+        // Treat timeouts / network aborts as retriable
+        const isTimeout =
+          (err instanceof Error && /timed?\s*out|abort|ECONNRESET|ETIMEDOUT|socket hang up/i.test(err.message));
+        const isRetriable = isHttpRetriable || isTimeout;
 
         if (!isRetriable || attempt === maxAttempts) {
           const totalMs = Date.now() - callStart;
@@ -136,8 +140,9 @@ export class LLMClient {
           retryAfterToMs(retryAfter) ??
           Math.min(1000 * Math.pow(2, attempt - 1), 8000);
 
+        const reason = isTimeout ? "timeout" : (err as ProviderHttpError).status;
         console.warn(
-          `LLM [${role}] attempt ${attempt} failed (${(err as ProviderHttpError).status}), retrying in ${waitMs}ms...`,
+          `LLM [${role}] attempt ${attempt} failed (${reason}), retrying in ${waitMs}ms...`,
         );
         await sleep(waitMs);
       }
