@@ -87,14 +87,8 @@ export async function runDivergenceExploration(
       return null;
     }
 
-    // Constraint compliance filter: remove futures that clearly violate confirmed constraints.
-    // This is conservative — only drops obvious violations, not subtle mismatches.
-    const filtered = filterConstraintViolations(parsed, context.confirmedConstraints);
-    if (filtered.families.length === 0) {
-      console.warn("[DIVERGENCE] All families filtered out by constraint compliance — using unfiltered map");
-      // Fall back to unfiltered rather than returning nothing
-    }
-    const finalMap = filtered.families.length > 0 ? filtered : parsed;
+    // Constraint compliance filter: flag (not remove) futures that violate confirmed constraints.
+    const finalMap = filterConstraintViolations(parsed, context.confirmedConstraints);
 
     const snapshot: DirectionMapSnapshot = {
       timestamp: new Date().toISOString(),
@@ -147,8 +141,8 @@ export function formatDirectionMapForPrompt(
     const noveltyTag = family.novelty >= 0.7 ? " ★ UNEXPLORED" : family.novelty >= 0.4 ? " ~ partially explored" : "";
     lines.push(`▸ ${family.name}${noveltyTag}`);
     lines.push(`  ${family.signature}`);
-    // Include top 2 futures as examples
-    const topFutures = family.futures.slice(0, 2);
+    // Include top 2 non-vetoed futures as examples
+    const topFutures = family.futures.filter(f => !f.constraintVeto).slice(0, 2);
     for (const f of topFutures) {
       lines.push(`  → "${f.label}": ${f.sketch}`);
     }
@@ -231,60 +225,63 @@ const ANTONYM_PAIRS: Record<string, string[]> = {
 };
 
 /**
- * Conservative constraint compliance filter. Removes futures whose sketches
- * contain obvious antonyms of confirmed constraint values.
+ * Constraint compliance filter: flags (but does NOT remove) futures whose
+ * sketches contain obvious antonyms of confirmed constraint values.
  *
- * This is deliberately conservative — it only catches clear violations where
- * a constraint value has known antonyms and the future sketch explicitly
- * uses one. Ambiguous cases are left in. The goal is to remove obvious
- * garbage without killing creative exploration.
+ * Previously this silently deleted flagged futures. Now it marks them with
+ * a constraintVeto field so they appear in debug output and false-positive
+ * rates can be tracked.
+ *
+ * The clarifier prompt formatter skips vetoed futures, so they don't
+ * influence generation — but they're preserved for observability.
  */
 function filterConstraintViolations(
   map: DirectionMap,
   confirmedConstraints: Record<string, string>,
 ): DirectionMap {
-  const constraintValues = Object.values(confirmedConstraints);
-  if (constraintValues.length === 0) return map;
+  const constraintEntries = Object.entries(confirmedConstraints);
+  if (constraintEntries.length === 0) return map;
 
-  // Build a set of antonym words that would violate confirmed constraints
-  const violationWords = new Set<string>();
-  for (const value of constraintValues) {
+  // Build a map of antonym words → source constraint value
+  const violationWordToConstraint = new Map<string, string>();
+  for (const [, value] of constraintEntries) {
     const lowerValue = value.toLowerCase().trim();
-    // Check each word in the constraint value against known antonym pairs
     for (const word of lowerValue.split(/[\s,;/]+/)) {
       const antonyms = ANTONYM_PAIRS[word];
       if (antonyms) {
-        for (const a of antonyms) violationWords.add(a);
+        for (const a of antonyms) violationWordToConstraint.set(a, value);
       }
     }
   }
 
-  if (violationWords.size === 0) return map; // No detectable antonyms — skip filter
+  if (violationWordToConstraint.size === 0) return map;
 
-  let totalDropped = 0;
-  const filteredFamilies = map.families
-    .map(family => {
-      const filteredFutures = family.futures.filter(future => {
-        const sketchLower = future.sketch.toLowerCase();
-        // A future is dropped only if its sketch contains a violation word
-        // AND the violation word isn't a substring of a longer benign word
-        for (const vw of violationWords) {
-          // Word-boundary check: the violation word must appear as a standalone word
-          const regex = new RegExp(`\\b${vw.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&")}\\b`, "i");
-          if (regex.test(sketchLower)) {
-            totalDropped++;
-            return false;
-          }
+  let totalFlagged = 0;
+  const flaggedFamilies = map.families.map(family => {
+    const taggedFutures = family.futures.map(future => {
+      const sketchLower = future.sketch.toLowerCase();
+      for (const [vw, constraintValue] of violationWordToConstraint) {
+        const regex = new RegExp(`\\b${vw.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&")}\\b`, "i");
+        if (regex.test(sketchLower)) {
+          totalFlagged++;
+          return {
+            ...future,
+            constraintVeto: {
+              reason: `Sketch contains "${vw}" which contradicts confirmed constraint "${constraintValue}"`,
+              matchedWord: vw,
+              constraintValue,
+            },
+          };
         }
-        return true;
-      });
-      return { ...family, futures: filteredFutures };
-    })
-    .filter(family => family.futures.length > 0);
+      }
+      return future;
+    });
+    return { ...family, futures: taggedFutures };
+  });
 
-  if (totalDropped > 0) {
-    console.log(`[DIVERGENCE] Constraint filter dropped ${totalDropped} futures, ${map.families.length - filteredFamilies.length} families emptied`);
+  if (totalFlagged > 0) {
+    console.log(`[DIVERGENCE] Constraint filter flagged ${totalFlagged} futures (preserved for observability)`);
   }
 
-  return { ...map, families: filteredFamilies };
+  return { ...map, families: flaggedFamilies };
 }

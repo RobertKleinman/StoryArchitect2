@@ -11,7 +11,8 @@ export type HookRole = "clarifier" | "builder" | "judge" | "summary" | "polish"
   | "psych_consolidator"
   | "divergence_explorer"
   | "cultural_summarizer"
-  | "cultural_researcher";
+  | "cultural_researcher"
+  | "hook_escalation";
 
 export interface ModelConfig {
   clarifier: string;
@@ -53,6 +54,8 @@ export interface ModelConfig {
   cultural_summarizer: string;
   /** Cultural Intelligence Engine — produces evidence briefs */
   cultural_researcher: string;
+  /** Escalation mechanic — heightens user creative input (feature-flagged) */
+  hook_escalation: string;
 }
 
 // ── Provider detection from model string ────────────────────────────
@@ -195,4 +198,6 @@ export const DEFAULT_MODEL_CONFIG: ModelConfig = {
   // Cultural Intelligence Engine
   cultural_summarizer: FAST,      // compression task — fast tier
   cultural_researcher: FAST,      // background research — fast tier
+  // Escalation
+  hook_escalation: FAST,          // micro-call — speed-critical, max 200 tokens
 };

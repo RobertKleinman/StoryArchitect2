@@ -424,6 +424,12 @@ export interface StoryFuture {
   powerDynamic: "dominance" | "equality" | "vulnerability" | "reversal" | "escalation";
   /** Why this direction is interesting — 1 sentence max */
   hook: string;
+  /** If set, this future was flagged by the constraint compliance filter (not removed, just flagged) */
+  constraintVeto?: {
+    reason: string;
+    matchedWord: string;
+    constraintValue: string;
+  };
 }
 
 /**

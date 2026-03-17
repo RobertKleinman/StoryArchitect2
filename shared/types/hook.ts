@@ -72,6 +72,8 @@ export interface HookClarifierResponse {
   } | null;
   /** Structured behavior signals about the user */
   user_read: import("./userPsychology").StructuredUserRead;
+  /** Escalation note (injected server-side when ENABLE_ESCALATION is on) */
+  escalation_note?: string;
 }
 
 // ─── HookBuilder ───

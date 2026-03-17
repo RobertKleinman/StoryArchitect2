@@ -127,6 +127,14 @@ export interface ScenePlan {
   mystery_hook_activity?: Array<{ hook_question: string; action: "planted" | "paid_off" | "sustained" }>;
   /** User steering directions merged from clarifier (populated by service, not LLM) */
   user_steering?: string;
+
+  // ─── Strategic ambiguity (feature-flagged via ENABLE_STRATEGIC_AMBIGUITY) ───
+  /** What to deliberately leave unsaid/unseen in this scene */
+  ambiguity_target?: string;
+  /** What must NOT be obscured (objective, emotional clarity, causal readability) */
+  must_not_obscure?: string;
+  /** Domain of ambiguity: visual, motivation, history, threat, symbolic */
+  ambiguity_domain?: "visual" | "motivation" | "history" | "threat" | "symbolic";
 }
 
 // ─── Scene Rhythm (tracks pattern across scenes for variety) ───
@@ -201,6 +209,14 @@ export interface SceneBuilderOutput {
   };
   /** 2-3 sentence continuity bridge for the next scene: where characters stand, what tension carries forward, what the reader expects */
   continuity_anchor: string;
+
+  // Feature-flagged ledger updates (optional, populated when flags are enabled)
+  /** Consequence status updates from this scene */
+  consequence_updates?: Array<{ choiceId: string; status: "acknowledged" | "overdue" }>;
+  /** UDQ status updates from this scene */
+  udq_updates?: Array<{ question: string; status: "opened" | "escalated" | "answered" | "deferred" }>;
+  /** Which echoed motifs were used in this scene */
+  echo_usage?: Array<{ motif: string }>;
 }
 
 // ─── Consistency Check (retroactive N-1 review) ───
@@ -486,6 +502,52 @@ export interface SceneWritingTurn {
 
 export type SceneTurn = ScenePlanningTurn | SceneWritingTurn;
 
+// ─── Choice Consequence Ledger (feature-flagged via ENABLE_CONSEQUENCE_LEDGER) ───
+
+export interface ConsequenceEntry {
+  choiceId: string;
+  /** Which turn/scene the user made this choice */
+  sourceTurn: number;
+  /** What the user decided */
+  decision: string;
+  /** What's at stake because of this decision */
+  stakes: string;
+  /** Scene index by which this consequence should surface (soft deadline) */
+  owedSceneWindowEnd: number;
+  /** Current status */
+  status: "pending" | "acknowledged" | "overdue";
+}
+
+// ─── UDQ Ledger (feature-flagged via ENABLE_UDQ_LEDGER) ───
+
+export interface UDQEntry {
+  /** The dramatic question */
+  question: string;
+  /** Scene index where this question was first raised */
+  openedInScene: number;
+  /** Scene index where this question was last escalated */
+  lastEscalatedScene?: number;
+  /** Current status */
+  status: "opened" | "escalated" | "answered" | "deferred";
+}
+
+// ─── Echo Ledger (feature-flagged via ENABLE_ECHO_LEDGER) ───
+
+export interface EchoEntry {
+  /** The user-originated motif or detail */
+  motif: string;
+  /** Why this is worth echoing */
+  priority: "symbolic" | "sensory" | "emotional" | "distinctive";
+  /** Scene index where this motif originated */
+  originScene: number;
+  /** How many times this has been echoed back */
+  timesEchoed: number;
+  /** Last scene index where this was echoed */
+  lastEchoedScene?: number;
+  /** Minimum scenes before echoing again */
+  echoCooldown: number;
+}
+
 // ─── Artifact Provenance ───
 
 export interface ArtifactProvenance {
@@ -586,6 +648,11 @@ export interface SceneSessionState {
   // ─── Constraint ledger & development targets ───
   constraintLedger: SceneLedgerEntry[];
   developmentTargets: SceneDevelopmentTarget[];
+
+  // ─── Feature-flagged ledgers ───
+  consequenceLedger?: ConsequenceEntry[];
+  udqLedger?: UDQEntry[];
+  echoLedger?: EchoEntry[];
 
   // ─── Final judge ───
   finalJudge?: FinalJudgeOutput;

@@ -87,7 +87,7 @@ import { culturalResearchService } from "./runtime";
 import { detectDirectedReferences, shouldRunCulturalResearch } from "./culturalResearchService";
 import type { CulturalResearchContext } from "./culturalResearchService";
 import { buildMustHonorBlock, normalizeStringifiedFields } from "./mustHonorBlock";
-import { logPromptBlocks } from "./contextObservability";
+import { logPromptBlocks, compressCharacterProfilesJson } from "./contextObservability";
 
 // ─── Error class ───
 
@@ -213,7 +213,11 @@ export class SceneService {
 
     // Build planner prompt
     const plannerUser = this.buildPlannerUserPrompt(plotPack, sourceCharacterPack, sourceWorldPack, sourceHookPack, importedPsychLedger);
-    const plannerSystem = promptOverrides?.system ?? SCENE_PLANNER_SYSTEM;
+    let plannerSystemBase = SCENE_PLANNER_SYSTEM;
+    if (process.env.ENABLE_STRATEGIC_AMBIGUITY) {
+      plannerSystemBase += `\n\nSTRATEGIC AMBIGUITY (optional but encouraged):\nFor each scene, you MAY include:\n- ambiguity_target: What to deliberately leave unsaid, unseen, or unresolved. The gap where the reader's imagination works.\n- must_not_obscure: What MUST remain clear (objective, emotional clarity, causal readability are never hidden).\n- ambiguity_domain: One of "visual" | "motivation" | "history" | "threat" | "symbolic".\nNot every scene needs ambiguity. But scenes that over-explain everything make readers passive. The best scenes have one thing the reader is left to wonder about.`;
+    }
+    const plannerSystem = promptOverrides?.system ?? plannerSystemBase;
     const plannerUserFinal = promptOverrides?.user ?? plannerUser;
 
     // Call planner LLM
@@ -878,9 +882,14 @@ export class SceneService {
     session.builtScenes.push(builtScene);
     session.currentSceneIndex++;
 
+    // Process feature-flagged ledger updates from builder output
+    this.processLedgerUpdates(session, builderOutput, sceneIndex);
+
     // Check if all scenes are built
     if (session.currentSceneIndex >= session.scenePlan!.length) {
       session.status = "reviewing";
+      // Mark overdue consequences
+      this.markOverdueConsequences(session);
     }
 
     session.lastSavedAt = new Date().toISOString();
@@ -927,7 +936,26 @@ export class SceneService {
       Array.from(allCharactersInvolved)
     );
 
-    const system = promptOverrides?.system ?? SCENE_FINAL_JUDGE_SYSTEM;
+    let judgeSystemBase = SCENE_FINAL_JUDGE_SYSTEM;
+    if (process.env.ENABLE_STRATEGIC_AMBIGUITY) {
+      const scenesWithAmbiguity = (session.scenePlan ?? []).filter(s => s.ambiguity_target);
+      if (scenesWithAmbiguity.length > 0) {
+        judgeSystemBase += `\n\nSTRATEGIC AMBIGUITY CHECK:\nSome scene plans include ambiguity_target (what to leave unsaid). Verify:\n- Ambiguity is PRESERVED: the builder did not over-explain or fill in the gap.\n- Clarity is MAINTAINED: objective, emotional arc, and causal readability are NOT obscured.\nFlag as issue_class "prose" if ambiguity was violated (over-resolved or made vague).`;
+      }
+    }
+    if (process.env.ENABLE_CONSEQUENCE_LEDGER && session.consequenceLedger?.length) {
+      const overdue = session.consequenceLedger.filter(c => c.status === "overdue");
+      if (overdue.length > 0) {
+        judgeSystemBase += `\n\nCONSEQUENCE CHECK:\nThe following user choices are OVERDUE for consequences:\n${overdue.map(c => `- "${c.decision}" (due by scene ${c.owedSceneWindowEnd}): ${c.stakes}`).join("\n")}\nFlag as issue_class "logic" (should_fix) if these consequences are not addressed anywhere in the completed scenes.`;
+      }
+    }
+    if (process.env.ENABLE_UDQ_LEDGER && session.udqLedger?.length) {
+      const open = session.udqLedger.filter(q => q.status === "opened" || q.status === "escalated");
+      if (open.length > 0) {
+        judgeSystemBase += `\n\nDRAMATIC QUESTION CHECK:\nOpen dramatic questions the reader is waiting on:\n${open.map(q => `- "${q.question}" [${q.status}]`).join("\n")}\nNot every question needs answering, but flag as issue_class "structural" if major questions are completely ignored across the entire work.`;
+      }
+    }
+    const system = promptOverrides?.system ?? judgeSystemBase;
     const user = promptOverrides?.user ?? SCENE_FINAL_JUDGE_USER_TEMPLATE
       .replace("{{ALL_SCENES_JSON}}", allScenesJson)
       .replace("{{ALL_PLANS_JSON}}", allPlansJson)
@@ -1315,11 +1343,16 @@ export class SceneService {
       .map(t => `[${t.id}] ${t.target}${t.current_gap ? ` (gap: ${t.current_gap})` : ""}${t.suggestion ? ` → ${t.suggestion}` : ""}`)
       .join("\n") || "(none)";
 
+    // Selective context compression: compress character profiles to reduce token count
+    const charProfilesJson = process.env.ENABLE_CONTEXT_COMPRESSION
+      ? compressCharacterProfilesJson(JSON.stringify(relevantCharacters))
+      : JSON.stringify(relevantCharacters);
+
     const cacheablePrefix = SCENE_BUILDER_USER_PREFIX
       .replace("{{SCENE_PLAN_JSON}}", JSON.stringify(scenePlan))
       .replace("{{USER_STEERING}}", userSteeringText)
       .replace("{{SCENE_CONSTRAINTS}}", sceneConstraints)
-      .replace("{{CHARACTER_PROFILES_JSON}}", JSON.stringify(relevantCharacters))
+      .replace("{{CHARACTER_PROFILES_JSON}}", charProfilesJson)
       .replace("{{CHARACTER_VISUALS_JSON}}", charVisuals)
       .replace("{{WORLD_SUMMARY}}", worldContext)
       .replace("{{RELATIONSHIP_TENSIONS}}", relationshipTensions)
@@ -1354,7 +1387,61 @@ export class SceneService {
       dynamicSuffix += "\n\n" + builderMustHonor;
     }
 
-    const system = promptOverrides?.system ?? SCENE_BUILDER_SYSTEM;
+    // ─── Consequence ledger: inject active/overdue consequences ───
+    if (process.env.ENABLE_CONSEQUENCE_LEDGER && session.consequenceLedger?.length) {
+      const active = session.consequenceLedger.filter(c =>
+        c.status === "pending" || c.status === "overdue"
+      );
+      if (active.length > 0) {
+        const overdue = active.filter(c => c.status === "overdue");
+        const pending = active.filter(c => c.status === "pending");
+        let block = "\n\n═══ CHOICE CONSEQUENCES (must influence this scene) ═══";
+        if (overdue.length > 0) {
+          block += "\nOVERDUE (should surface NOW):";
+          for (const c of overdue) block += `\n- "${c.decision}" → stakes: ${c.stakes}`;
+        }
+        if (pending.length > 0) {
+          block += "\nPENDING (weave in when natural):";
+          for (const c of pending) block += `\n- "${c.decision}" → stakes: ${c.stakes} (due by scene ${c.owedSceneWindowEnd})`;
+        }
+        dynamicSuffix += block;
+      }
+    }
+
+    // ─── Echo ledger: inject echo candidates ───
+    if (process.env.ENABLE_ECHO_LEDGER && session.echoLedger?.length) {
+      const currentSceneIdx = session.currentSceneIndex;
+      const candidates = session.echoLedger.filter(e =>
+        (currentSceneIdx - (e.lastEchoedScene ?? e.originScene)) >= e.echoCooldown
+      );
+      if (candidates.length > 0) {
+        let block = "\n\n═══ ECHO CANDIDATES (user-originated motifs to weave back in) ═══";
+        block += "\nThese are details the user introduced. Echoing them creates co-authorship. Use 0-2 per scene, subtly.";
+        for (const e of candidates.slice(0, 4)) {
+          block += `\n- [${e.priority}] "${e.motif}" (from scene ${e.originScene}, echoed ${e.timesEchoed}x)`;
+        }
+        dynamicSuffix += block;
+      }
+    }
+
+    // ─── UDQ ledger: inject open dramatic questions ───
+    if (process.env.ENABLE_UDQ_LEDGER && session.udqLedger?.length) {
+      const open = session.udqLedger.filter(q => q.status === "opened" || q.status === "escalated");
+      if (open.length > 0) {
+        let block = "\n\n═══ OPEN DRAMATIC QUESTIONS (reader is waiting for answers) ═══";
+        block += "\nNot every scene must address these. But awareness of what the reader is waiting for improves payoff timing.";
+        for (const q of open) {
+          block += `\n- "${q.question}" [${q.status}] (opened scene ${q.openedInScene})`;
+        }
+        dynamicSuffix += block;
+      }
+    }
+
+    let builderSystemBase = SCENE_BUILDER_SYSTEM;
+    if (process.env.ENABLE_STRATEGIC_AMBIGUITY && scenePlan.ambiguity_target) {
+      builderSystemBase += `\n\nSTRATEGIC AMBIGUITY for this scene:\n- LEAVE UNSAID/UNSEEN: ${scenePlan.ambiguity_target}\n- MUST NOT OBSCURE: ${scenePlan.must_not_obscure ?? "objective, emotional clarity, causal readability"}\n- DOMAIN: ${scenePlan.ambiguity_domain ?? "unspecified"}\nHonor the negative space. Do NOT over-explain or fill in the gap. The reader's imagination is your collaborator.`;
+    }
+    const system = promptOverrides?.system ?? builderSystemBase;
     const user = promptOverrides?.user ?? (cacheablePrefix + dynamicSuffix);
 
     // Context observability: log token estimates per block
@@ -1950,5 +2037,64 @@ export class SceneService {
       }
     }
     return [...new Set(refs)];
+  }
+
+  // ─── Feature-flagged ledger helpers ───
+
+  private processLedgerUpdates(
+    session: SceneSessionState,
+    builderOutput: SceneBuilderOutput,
+    sceneIndex: number,
+  ): void {
+    // Consequence ledger updates
+    if (process.env.ENABLE_CONSEQUENCE_LEDGER && builderOutput.consequence_updates?.length) {
+      if (!session.consequenceLedger) session.consequenceLedger = [];
+      for (const update of builderOutput.consequence_updates) {
+        const entry = session.consequenceLedger.find(c => c.choiceId === update.choiceId);
+        if (entry && (update.status === "acknowledged" || update.status === "overdue")) {
+          entry.status = update.status;
+        }
+      }
+    }
+
+    // UDQ ledger updates
+    if (process.env.ENABLE_UDQ_LEDGER && builderOutput.udq_updates?.length) {
+      if (!session.udqLedger) session.udqLedger = [];
+      for (const update of builderOutput.udq_updates) {
+        const existing = session.udqLedger.find(q => q.question === update.question);
+        if (existing) {
+          existing.status = update.status;
+          if (update.status === "escalated") existing.lastEscalatedScene = sceneIndex;
+        } else if (update.status === "opened") {
+          session.udqLedger.push({
+            question: update.question,
+            openedInScene: sceneIndex,
+            status: "opened",
+          });
+        }
+      }
+    }
+
+    // Echo ledger updates
+    if (process.env.ENABLE_ECHO_LEDGER && builderOutput.echo_usage?.length) {
+      if (!session.echoLedger) session.echoLedger = [];
+      for (const usage of builderOutput.echo_usage) {
+        const entry = session.echoLedger.find(e => e.motif === usage.motif);
+        if (entry) {
+          entry.timesEchoed++;
+          entry.lastEchoedScene = sceneIndex;
+        }
+      }
+    }
+  }
+
+  private markOverdueConsequences(session: SceneSessionState): void {
+    if (!session.consequenceLedger) return;
+    const totalScenes = session.builtScenes.length;
+    for (const entry of session.consequenceLedger) {
+      if (entry.status === "pending" && entry.owedSceneWindowEnd <= totalScenes) {
+        entry.status = "overdue";
+      }
+    }
   }
 }

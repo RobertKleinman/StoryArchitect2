@@ -133,6 +133,10 @@ const scenePlanSchema = {
         additionalProperties: false,
       },
     },
+    // Strategic ambiguity (optional, feature-flagged)
+    ambiguity_target: { type: "string" },
+    must_not_obscure: { type: "string" },
+    ambiguity_domain: { type: "string" },
   },
   required: [
     "scene_id", "beat_ids", "title", "purpose", "setting",
@@ -299,6 +303,42 @@ export const SCENE_BUILDER_SCHEMA = {
     continuity_anchor: {
       type: "string",
       description: "2-3 sentence bridge for the next scene: where characters stand emotionally, what tension carries forward, what the reader expects next"
+    },
+    // Feature-flagged ledger updates (optional)
+    consequence_updates: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          choiceId: { type: "string" },
+          status: { type: "string" },
+        },
+        required: ["choiceId", "status"],
+        additionalProperties: false,
+      },
+    },
+    udq_updates: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          question: { type: "string" },
+          status: { type: "string" },
+        },
+        required: ["question", "status"],
+        additionalProperties: false,
+      },
+    },
+    echo_usage: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          motif: { type: "string" },
+        },
+        required: ["motif"],
+        additionalProperties: false,
+      },
     },
   },
   required: ["scene_id", "vn_scene", "readable", "delivery_notes", "continuity_anchor"],

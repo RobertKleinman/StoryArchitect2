@@ -332,6 +332,29 @@ export class HookService {
     }
     this.updatePsychologyHeuristics(session);
 
+    // ─── Escalation mechanic (feature-flagged) ───
+    // When user provides free-text creative input, optionally heighten/complicate
+    if (
+      process.env.ENABLE_ESCALATION &&
+      userSelection?.type === "free_text" &&
+      userSelection.label.length > 20 // substantial free-text, not just "yes" or "ok"
+    ) {
+      const shouldEscalate = this.shouldEscalate(session.psychologyLedger);
+      if (shouldEscalate) {
+        try {
+          const escalated = await this.runEscalationMicroCall(
+            session, userSelection.label, modelOverride,
+          );
+          if (escalated) {
+            // Inject the escalated version as a note on the clarifier response
+            clarifier.escalation_note = escalated;
+          }
+        } catch (err) {
+          console.warn("[HOOK] Escalation micro-call failed (non-fatal):", err);
+        }
+      }
+    }
+
     const turn: HookTurn = {
       turnNumber: session.turns.length + 1,
       clarifierResponse: clarifier,
@@ -1605,5 +1628,62 @@ export class HookService {
       changedAssumptions,
       responseLengths,
     });
+  }
+
+  // ─── Escalation mechanic helpers ───
+
+  private shouldEscalate(ledger?: import("../../shared/types/userPsychology").UserPsychologyLedger): boolean {
+    if (!ledger) return false;
+    // Check control orientation — directors get less escalation, explorers get more
+    const signals = ledger.signalStore ?? [];
+    const controlSignals = signals.filter((s: any) =>
+      s.category === "control_orientation" || s.category === "engagement_style"
+    );
+    // Look for explorer-like signals
+    const explorerScore = controlSignals.reduce((sum: number, s: any) => {
+      if (s.hypothesis.toLowerCase().includes("explorer") || s.hypothesis.toLowerCase().includes("curious")) {
+        return sum + s.weight;
+      }
+      if (s.hypothesis.toLowerCase().includes("director") || s.hypothesis.toLowerCase().includes("control")) {
+        return sum - s.weight;
+      }
+      return sum;
+    }, 0);
+    // Escalate for explorers (positive score), skip for directors (negative)
+    // Neutral: escalate ~50% of the time
+    if (explorerScore > 0.3) return true;
+    if (explorerScore < -0.3) return false;
+    return Math.random() > 0.5;
+  }
+
+  private async runEscalationMicroCall(
+    session: HookSessionState,
+    userInput: string,
+    modelOverride?: string,
+  ): Promise<string | null> {
+    const system = `You are EscalationEngine. The user just contributed a creative idea to the story. Your job is to heighten it — make it more dangerous, more emotionally charged, more surprising, or more specific. Return ONE sentence that takes their idea and raises the stakes. Do NOT change the core idea. Just sharpen it.
+
+Rules:
+- ONE sentence only
+- Must preserve the user's creative intent
+- Make it more vivid, dangerous, specific, or emotionally charged
+- Do NOT contradict what they said — build on it`;
+
+    const user = `User's creative input: "${userInput}"\n\nCurrent story state: ${JSON.stringify(session.currentState)}\n\nReturn ONE heightened sentence.`;
+
+    try {
+      const raw = await this.llm.call("hook_escalation", system, user, {
+        temperature: 0.9,
+        maxTokens: 200,
+        modelOverride,
+      });
+      const trimmed = raw.trim();
+      if (trimmed.length > 10 && trimmed.length < 500) {
+        return trimmed;
+      }
+      return null;
+    } catch {
+      return null;
+    }
   }
 }
