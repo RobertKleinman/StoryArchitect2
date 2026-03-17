@@ -975,8 +975,9 @@ export class SceneService {
     ];
     const mustFixCount = allIssues.filter(i => i.severity === "must_fix").length;
     const structuralClasses = new Set(["continuity", "structural", "emotional", "logic"]);
+    // Default missing issue_class to "structural" (conservative — old data without class gets counted)
     const structuralShouldFixCount = allIssues.filter(
-      i => i.severity === "should_fix" && structuralClasses.has(i.issue_class ?? ""),
+      i => i.severity === "should_fix" && structuralClasses.has(i.issue_class ?? "structural"),
     ).length;
     if (mustFixCount > 0 || structuralShouldFixCount >= 2) {
       if (judge.pass) {

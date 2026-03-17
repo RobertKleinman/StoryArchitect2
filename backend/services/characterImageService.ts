@@ -956,17 +956,21 @@ export class CharacterImageService {
       : typedVsClicked === "mostly_clicked" ? "explorer" as const
       : "mixed" as const;
 
-    // Build locked characters
+    // Build locked characters — hydrate base64 from refs for downstream consumers
     const lockedCharacters: CharacterImagePack["locked"]["characters"] = {};
     for (const role of roles) {
       const spec = session.revealedSpecs.characters[role];
       const image = session.generatedImages[role];
+      // After extraction, image_base64 is removed and lives in image_ref file
+      let base64 = image.image_base64;
+      if (!base64 && image.image_ref) {
+        base64 = (await this.imageStore.readImageBase64(image.image_ref)) ?? undefined;
+      }
       lockedCharacters[role] = {
         role: spec.role,
         visual_description: spec,
-        // After extraction, image lives in image_ref; fall back to inline for compat
         image_ref: image.image_ref,
-        image_base64: image.image_base64,
+        image_base64: base64,
         enhanced_prompt: image.enhanced_prompt,
       };
     }
