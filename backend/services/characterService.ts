@@ -66,6 +66,7 @@ import { culturalResearchService, storyBibleService, projectStore as runtimeProj
 import { detectDirectedReferences, shouldRunCulturalResearch } from "./culturalResearchService";
 import type { CulturalResearchContext } from "./culturalResearchService";
 import { buildMustHonorBlock, normalizeStringifiedFields } from "./mustHonorBlock";
+import { withProjectLock } from "../storage/projectMutex";
 
 export class CharacterServiceError extends Error {
   code: "NOT_FOUND" | "INVALID_INPUT" | "LLM_PARSE_ERROR" | "LLM_CALL_FAILED";
@@ -484,20 +485,24 @@ export class CharacterService {
     );
 
     if (snapshot) {
-      // Re-read the LATEST session to avoid overwriting concurrent changes.
-      // IMPORTANT: Only graft consolidation-owned fields — NOT the entire ledger.
-      // Divergence explorer may have saved lastDirectionMap concurrently;
-      // replacing the whole ledger would clobber it (and vice versa).
-      const freshSession = await this.charStore.get(projectId);
-      if (!freshSession) return;
+      await withProjectLock(projectId, async () => {
+        // Re-read the LATEST session to avoid overwriting concurrent changes.
+        // IMPORTANT: Only graft consolidation-owned fields — NOT the entire ledger.
+        // Divergence explorer may have saved lastDirectionMap concurrently;
+        // replacing the whole ledger would clobber it (and vice versa).
+        const freshSession = await this.charStore.get(projectId);
+        if (!freshSession) return;
 
-      if (!freshSession.psychologyLedger) freshSession.psychologyLedger = sessionForConsolidation.psychologyLedger;
-      else {
-        freshSession.psychologyLedger.signalStore = sessionForConsolidation.psychologyLedger.signalStore;
-        freshSession.psychologyLedger.lastConsolidation = sessionForConsolidation.psychologyLedger.lastConsolidation;
-      }
-      freshSession.lastSavedAt = new Date().toISOString();
-      await this.charStore.save(freshSession);
+        if (sessionForConsolidation.psychologyLedger) {
+          if (!freshSession.psychologyLedger) freshSession.psychologyLedger = sessionForConsolidation.psychologyLedger;
+          else {
+            freshSession.psychologyLedger.signalStore = sessionForConsolidation.psychologyLedger.signalStore;
+            freshSession.psychologyLedger.lastConsolidation = sessionForConsolidation.psychologyLedger.lastConsolidation;
+          }
+        }
+        freshSession.lastSavedAt = new Date().toISOString();
+        await this.charStore.save(freshSession);
+      });
     }
   }
 
@@ -533,13 +538,15 @@ export class CharacterService {
     const snapshot = await runDivergenceExploration(context, this.llm);
 
     if (snapshot) {
-      const freshSession = await this.charStore.get(session.projectId);
-      if (!freshSession) return;
+      await withProjectLock(session.projectId, async () => {
+        const freshSession = await this.charStore.get(session.projectId);
+        if (!freshSession) return;
 
-      if (!freshSession.psychologyLedger) freshSession.psychologyLedger = createEmptyLedger();
-      freshSession.psychologyLedger.lastDirectionMap = snapshot;
-      freshSession.lastSavedAt = new Date().toISOString();
-      await this.charStore.save(freshSession);
+        if (!freshSession.psychologyLedger) freshSession.psychologyLedger = createEmptyLedger();
+        freshSession.psychologyLedger.lastDirectionMap = snapshot;
+        freshSession.lastSavedAt = new Date().toISOString();
+        await this.charStore.save(freshSession);
+      });
     }
   }
 
@@ -873,6 +880,16 @@ export class CharacterService {
     } catch (err) {
       // Non-fatal: if polish fails, use the raw descriptions
       console.error("CHAR POLISH ERROR (using raw descriptions):", err);
+    }
+
+    // Validate presentation field on each character (critical for downstream image gen)
+    const validPresentations = ["male", "female", "androgynous", "non-binary", "unspecified"];
+    for (const [roleKey, profile] of Object.entries(winner.cast.characters)) {
+      const p = (profile as any).presentation;
+      if (p && !validPresentations.includes(p)) {
+        console.warn(`[CHARACTER] Invalid presentation "${p}" for ${roleKey} — coercing to "unspecified"`);
+        (profile as any).presentation = "unspecified";
+      }
     }
 
     session.revealedCharacters = winner.cast;

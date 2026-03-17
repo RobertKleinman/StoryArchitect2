@@ -27,6 +27,7 @@ export const SHARED_USER_READ_INSTRUCTIONS = `Output as STRUCTURED JSON (not fre
         category: "content_preferences" | "control_orientation" | "power_dynamics" | "tonal_risk" | "narrative_ownership" | "engagement_satisfaction",
         adaptationConsequence: "what the pipeline should DO differently — concrete action, not vibe",
         contradictionCriteria: "what user action would prove this wrong — specific and testable",
+        source: "explicit" | "inferred",  // "explicit" = user directly stated this (e.g. "I want gothic horror"), "inferred" = you deduced it from behavior
         reinforcesSignalId: "s2",  // optional: if this SUPPORTS a prior signal, name it — avoids duplicates
         contradictsSignalId: "s3"  // optional: if this contradicts a prior signal, name it
       }
@@ -101,7 +102,13 @@ SIGNAL RULES — READ THESE CAREFULLY:
      fit any existing signal. New signals are expensive — the store caps at 12.
    - DO NOT restate prior signals with different words. Either reinforce with new evidence or don't.
 
-7. DEEPENING RULE (after turn 2):
+7. SOURCE CLASSIFICATION:
+   Set source to "explicit" when the user DIRECTLY STATED a preference (e.g. typed "I want gothic horror",
+   "make it dark", "no romance"). Set source to "inferred" when you're deducing from behavior patterns
+   (e.g. they consistently pick darker options, they ignore romance suggestions). Explicit signals are
+   protected from decay — they represent the user's stated creative vision.
+
+8. DEEPENING RULE (after turn 2):
    After turn 2, new signals MUST add information, not restate.
    "Prefers dark themes" → already captured. DON'T output again.
    "Specifically interested in moral corruption, not violence — chose 'slow moral slide' over 'brutal revenge'" → NEW information.

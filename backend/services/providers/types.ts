@@ -15,6 +15,8 @@ export interface ProviderCallOptions {
 
 export interface ProviderResponse {
   text: string;
+  /** Why the model stopped: "end_turn" (normal), "max_tokens" (truncated), etc. */
+  stopReason: string;
   usage: {
     inputTokens: number;
     outputTokens: number;

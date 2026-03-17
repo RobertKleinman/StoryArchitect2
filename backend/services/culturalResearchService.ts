@@ -68,8 +68,7 @@ export class CulturalResearchService {
     // Feature flag check
     if (!process.env.ENABLE_CULTURAL_ENGINE) return null;
 
-    // Skip on turn 1 — not enough creative state to research
-    if (context.turnNumber < 2) return null;
+    // Turn 1 is fine — the seed input alone provides rich cultural research signal
 
     // Check cache
     const cached = await this.store.getCachedBrief(
@@ -199,7 +198,7 @@ export class CulturalResearchService {
         researchPrompt,
         {
           temperature: 0.8,  // Higher temp for creative research
-          maxTokens: 2500,
+          maxTokens: 4096,
           jsonSchema: CULTURAL_BRIEF_SCHEMA,
         },
       );
@@ -301,8 +300,10 @@ export interface CulturalThrottlingInfo {
 }
 
 export function shouldRunCulturalResearch(info: CulturalThrottlingInfo): boolean {
-  if (info.turnNumber < 2) return false;
   if (info.hasCachedBrief) return false;
+
+  // Turn 1: always fire — seed input is the richest moment for cultural grounding
+  if (info.turnNumber <= 1) return true;
 
   const meaningfulInput = info.userSelection?.type === "free_text";
   const cadenceFallback = info.turnNumber % 3 === 0;

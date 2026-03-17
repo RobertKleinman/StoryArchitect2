@@ -67,6 +67,7 @@ import { culturalResearchService, storyBibleService, projectStore as runtimeProj
 import { detectDirectedReferences, shouldRunCulturalResearch } from "./culturalResearchService";
 import type { CulturalResearchContext } from "./culturalResearchService";
 import { buildMustHonorBlock, normalizeStringifiedFields } from "./mustHonorBlock";
+import { withProjectLock } from "../storage/projectMutex";
 
 // ─── API response types ───
 
@@ -528,20 +529,24 @@ export class WorldService {
     );
 
     if (snapshot) {
-      // Re-read the LATEST session to avoid overwriting concurrent changes.
-      // IMPORTANT: Only graft consolidation-owned fields — NOT the entire ledger.
-      // Divergence explorer may have saved lastDirectionMap concurrently;
-      // replacing the whole ledger would clobber it (and vice versa).
-      const freshSession = await this.worldStore.get(projectId);
-      if (!freshSession) return;
+      await withProjectLock(projectId, async () => {
+        // Re-read the LATEST session to avoid overwriting concurrent changes.
+        // IMPORTANT: Only graft consolidation-owned fields — NOT the entire ledger.
+        // Divergence explorer may have saved lastDirectionMap concurrently;
+        // replacing the whole ledger would clobber it (and vice versa).
+        const freshSession = await this.worldStore.get(projectId);
+        if (!freshSession) return;
 
-      if (!freshSession.psychologyLedger) freshSession.psychologyLedger = sessionForConsolidation.psychologyLedger;
-      else {
-        freshSession.psychologyLedger.signalStore = sessionForConsolidation.psychologyLedger.signalStore;
-        freshSession.psychologyLedger.lastConsolidation = sessionForConsolidation.psychologyLedger.lastConsolidation;
-      }
-      freshSession.lastSavedAt = new Date().toISOString();
-      await this.worldStore.save(freshSession);
+        if (sessionForConsolidation.psychologyLedger) {
+          if (!freshSession.psychologyLedger) freshSession.psychologyLedger = sessionForConsolidation.psychologyLedger;
+          else {
+            freshSession.psychologyLedger.signalStore = sessionForConsolidation.psychologyLedger.signalStore;
+            freshSession.psychologyLedger.lastConsolidation = sessionForConsolidation.psychologyLedger.lastConsolidation;
+          }
+        }
+        freshSession.lastSavedAt = new Date().toISOString();
+        await this.worldStore.save(freshSession);
+      });
     }
   }
 
@@ -577,13 +582,15 @@ export class WorldService {
     const snapshot = await runDivergenceExploration(context, this.llm);
 
     if (snapshot) {
-      const freshSession = await this.worldStore.get(session.projectId);
-      if (!freshSession) return;
+      await withProjectLock(session.projectId, async () => {
+        const freshSession = await this.worldStore.get(session.projectId);
+        if (!freshSession) return;
 
-      if (!freshSession.psychologyLedger) freshSession.psychologyLedger = createEmptyLedger();
-      freshSession.psychologyLedger.lastDirectionMap = snapshot;
-      freshSession.lastSavedAt = new Date().toISOString();
-      await this.worldStore.save(freshSession);
+        if (!freshSession.psychologyLedger) freshSession.psychologyLedger = createEmptyLedger();
+        freshSession.psychologyLedger.lastDirectionMap = snapshot;
+        freshSession.lastSavedAt = new Date().toISOString();
+        await this.worldStore.save(freshSession);
+      });
     }
   }
 

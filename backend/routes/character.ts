@@ -4,6 +4,7 @@ import nodePath from "path";
 import { characterFeatureFlagGuard } from "../middleware/characterFeatureFlagGuard";
 import { characterService, characterStore, culturalStore } from "../services/runtime";
 import { handleRouteError, getModelOverride, debugGuard } from "./routeUtils";
+import { buildInflightKey, acquireInflight, releaseInflight } from "../services/inflightGuard";
 
 export const characterRoutes = Router();
 
@@ -40,6 +41,11 @@ characterRoutes.post("/clarify", async (req, res) => {
     return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "hookProjectId is required" });
   }
 
+  const inflightKey = buildInflightKey(projectId, "character", "clarify");
+  if (!acquireInflight(inflightKey)) {
+    return res.status(409).json({ error: true, code: "IN_FLIGHT", message: "A clarifier turn is already in progress for this project" });
+  }
+
   try {
     const result = await characterService.runClarifierTurn(
       projectId, hookProjectId, userSelection, modelOverride, promptOverrides, assumptionResponses, characterSeed
@@ -47,6 +53,8 @@ characterRoutes.post("/clarify", async (req, res) => {
     return res.json(result);
   } catch (err) {
     return handleError(res, err);
+  } finally {
+    releaseInflight(inflightKey);
   }
 });
 
@@ -58,11 +66,18 @@ characterRoutes.post("/generate", async (req, res) => {
     return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "projectId is required" });
   }
 
+  const inflightKey = buildInflightKey(projectId, "character", "generate");
+  if (!acquireInflight(inflightKey)) {
+    return res.status(409).json({ error: true, code: "IN_FLIGHT", message: "Character generation is already in progress for this project" });
+  }
+
   try {
     const result = await characterService.runGenerate(projectId, modelOverride, promptOverrides);
     return res.json(result);
   } catch (err) {
     return handleError(res, err);
+  } finally {
+    releaseInflight(inflightKey);
   }
 });
 
@@ -74,11 +89,18 @@ characterRoutes.post("/reroll", async (req, res) => {
     return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "projectId is required" });
   }
 
+  const inflightKey = buildInflightKey(projectId, "character", "reroll");
+  if (!acquireInflight(inflightKey)) {
+    return res.status(409).json({ error: true, code: "IN_FLIGHT", message: "Character reroll is already in progress for this project" });
+  }
+
   try {
     const result = await characterService.reroll(projectId, modelOverride, promptOverrides, constraintOverrides);
     return res.json(result);
   } catch (err) {
     return handleError(res, err);
+  } finally {
+    releaseInflight(inflightKey);
   }
 });
 
@@ -164,7 +186,7 @@ characterRoutes.get("/list-sessions", async (_req, res) => {
     try {
       const allFiles: string[] = await fs.readdir(dataDir);
       sessionFiles = allFiles.filter((f: string) => f.endsWith(".json"));
-    } catch { /* empty dir */ }
+    } catch (err) { console.warn("[CHARACTER] readdir failed:", err); }
 
     const sessions: Array<{
       projectId: string;
@@ -187,7 +209,7 @@ characterRoutes.get("/list-sessions", async (_req, res) => {
         try {
           await fs.readFile(nodePath.join(exportDir, file), "utf-8");
           hasExport = true;
-        } catch {}
+        } catch (err) { console.warn("[CHARACTER] non-critical error:", err); }
 
         sessions.push({
           projectId: session.projectId,
@@ -198,7 +220,7 @@ characterRoutes.get("/list-sessions", async (_req, res) => {
           hasExport,
           ensembleDynamic: session.revealedCharacters?.ensemble_dynamic ?? "",
         });
-      } catch { /* skip corrupt files */ }
+      } catch (err) { console.warn("[CHARACTER] skipping corrupt file:", err); }
     }
 
     return res.json({ sessions });
@@ -213,9 +235,8 @@ characterRoutes.get("/debug/insights/:projectId", debugGuard, async (req, res) =
     const psychologyLedger = session?.psychologyLedger ?? null;
     let culturalBrief = null;
     try {
-      const turnNumber = session?.turns?.length ?? 99;
-      culturalBrief = await culturalStore.getCachedBrief(req.params.projectId, "character", turnNumber + 10);
-    } catch { /* no brief cached yet */ }
+      culturalBrief = await culturalStore.getCachedBrief(req.params.projectId, "character", 0);
+    } catch (err) { console.warn("[CHARACTER] no cached cultural brief:", err); }
     const divergenceMap = psychologyLedger?.lastDirectionMap ?? null;
     const developmentTargets: any[] = [];
     return res.json({ psychologyLedger, culturalBrief, divergenceMap, developmentTargets });
@@ -231,66 +252,6 @@ characterRoutes.get("/debug/psychology/:projectId", debugGuard, async (req, res)
       return res.json({ psychologyLedger: null });
     }
     return res.json({ psychologyLedger: session.psychologyLedger });
-  } catch (err) {
-    return handleError(res, err);
-  }
-});
-
-// ─── Review (Issue #8 — "Meet your cast" last-tweaks before lock) ───
-
-characterRoutes.get("/review/:projectId", async (req, res) => {
-  try {
-    const session = await characterService.getSession(req.params.projectId);
-    if (!session?.revealedCharacters) {
-      return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "Characters not yet generated" });
-    }
-    const characters = Object.entries(session.revealedCharacters.characters).map(([roleKey, profile]: [string, any]) => ({
-      roleKey,
-      role: profile.role,
-      presentation: profile.presentation ?? "unspecified",
-      age_range: profile.age_range ?? "",
-      ethnicity: profile.ethnicity ?? "",
-      description_summary: profile.description?.slice(0, 200) ?? "",
-      confirmed_traits: Object.fromEntries(
-        (session.constraintLedger ?? [])
-          .filter((e: any) => e.key.startsWith(roleKey + ".") && e.confidence === "confirmed")
-          .map((e: any) => [e.key.replace(roleKey + ".", ""), e.value]),
-      ),
-      inferred_traits: Object.fromEntries(
-        (session.constraintLedger ?? [])
-          .filter((e: any) => e.key.startsWith(roleKey + ".") && e.confidence === "inferred")
-          .map((e: any) => [e.key.replace(roleKey + ".", ""), e.value]),
-      ),
-    }));
-    return res.json({
-      characters,
-      ready: session.status === "revealed",
-    });
-  } catch (err) {
-    return handleError(res, err);
-  }
-});
-
-characterRoutes.post("/review", async (req, res) => {
-  const { projectId, edits } = req.body ?? {};
-  if (!projectId || !Array.isArray(edits)) {
-    return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "projectId and edits[] are required" });
-  }
-  try {
-    const session = await characterService.getSession(projectId);
-    if (!session?.revealedCharacters) {
-      return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "Characters not yet generated" });
-    }
-    let applied = 0;
-    for (const edit of edits) {
-      const char = session.revealedCharacters.characters[edit.roleKey];
-      if (char && edit.field && edit.value !== undefined) {
-        (char as any)[edit.field] = edit.value;
-        applied++;
-      }
-    }
-    await characterStore.save(session);
-    return res.json({ applied });
   } catch (err) {
     return handleError(res, err);
   }

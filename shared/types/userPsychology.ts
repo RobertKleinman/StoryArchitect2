@@ -56,6 +56,15 @@ export interface EvidenceEvent {
 
 // ─── BehaviorSignal (replaces UserHypothesis) ───
 
+/** How resistant a signal is to decay */
+export type StabilityClass =
+  | "core"      // genre, tone, boundaries, taboos — very slow decay, never fully suppresses
+  | "medium"    // default — standard decay
+  | "volatile"; // micro-tactics (option count pref, etc.) — decays at standard rate
+
+/** Whether the signal came from a direct user statement or was inferred */
+export type SignalSource = "explicit" | "inferred";
+
 export interface BehaviorSignal {
   /** Stable ID for tracking across turns ("s1", "s2", etc.) */
   id: string;
@@ -91,6 +100,12 @@ export interface BehaviorSignal {
   lastUpdated: number;
   /** If suppressed, why */
   suppressionReason?: string;
+  /** Whether this signal came from a direct user statement or was inferred from behavior.
+   *  Explicit signals get slower decay. Defaults to "inferred" for back-compat. */
+  source?: SignalSource;
+  /** How resistant this signal is to decay. Defaults to "medium" for back-compat.
+   *  Core signals (content_preferences, tonal_risk) get automatic core classification. */
+  stabilityClass?: StabilityClass;
 }
 
 // ─── Backward compat alias ───
@@ -118,6 +133,10 @@ export interface RawSignalObservation {
   adaptationConsequence: string;
   /** What would contradict this signal? */
   contradictionCriteria: string;
+  /** Whether this observation comes from a direct user statement ("explicit")
+   *  or was inferred from behavior patterns ("inferred"). Explicit signals
+   *  get slower decay to protect core creative preferences. */
+  source?: SignalSource;
   /** If this REINFORCES an existing signal with new evidence, its ID.
    *  Preferred over creating a duplicate signal — keeps the store clean. */
   reinforcesSignalId?: string;

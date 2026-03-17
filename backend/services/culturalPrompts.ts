@@ -143,7 +143,9 @@ Negative profile (what this story is NOT — avoid these domains):
 Module: {{MODULE}}
 Turn: {{TURN_NUMBER}}
 
-Produce a cultural intelligence brief with evidence items, creative applications, and any proactive proposals.`;
+Produce a cultural intelligence brief with evidence items, creative applications, and any proactive proposals.
+
+IMPORTANT: Keep output concise. Aim for 3-5 evidence items (not more), 2-3 creative applications, and 0-2 proposals. Each field should be 1-3 sentences max. Density over length — every word must earn its place.`;
 
 
 // ═══ FORMAT HELPERS ═══

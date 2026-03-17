@@ -21,6 +21,8 @@ import {
   UserInteractionHeuristics,
   SignalCategory,
   SignalStatus,
+  StabilityClass,
+  SignalSource,
   PsychologyModule,
   createEmptyLedger,
 } from "../../shared/types/userPsychology";
@@ -254,6 +256,28 @@ export function recordHypotheses(
   recordSignals(ledger, turnNumber, module, rawSignals, behaviorSummary, { dominantNeed: "", moves: [] });
 }
 
+// ─── Stability classification ───
+
+/**
+ * Derive stability class from category and source.
+ * Core categories (content_preferences, tonal_risk) are always core.
+ * Explicit signals from direct user statements get promoted to at least medium.
+ * engagement_satisfaction signals are volatile (micro-tactics).
+ */
+function deriveStabilityClass(category: SignalCategory, source: SignalSource): StabilityClass {
+  // Foundational creative preferences — always core
+  if (category === "content_preferences" || category === "tonal_risk") {
+    return "core";
+  }
+  // Engagement micro-tactics — always volatile
+  if (category === "engagement_satisfaction") {
+    return "volatile";
+  }
+  // Explicit user statements about other categories get medium (not volatile)
+  // Inferred signals about other categories get medium too (default)
+  return source === "explicit" ? "medium" : "medium";
+}
+
 // ─── Core signal processing ───
 
 function processRawSignal(
@@ -330,18 +354,25 @@ function processRawSignal(
       ? raw.scope
       : "this_story") as "this_story" | "this_genre" | "global";
 
+    const category = raw.category ?? inferCategory(raw.hypothesis);
+    const source = raw.source ?? "inferred";
+    // Core stability for foundational categories, or if LLM marks as explicit
+    const stabilityClass = deriveStabilityClass(category, source);
+
     const newSignal: BehaviorSignal = {
       id: generateSignalId(ledger),
       hypothesis: raw.hypothesis,
       evidenceEvents: [event],
       confidence: computeConfidence([event], turnNumber),
       scope,
-      category: raw.category ?? inferCategory(raw.hypothesis),
+      category,
       status: "candidate",
       adaptationConsequence: raw.adaptationConsequence ?? "",
       contradictionCriteria: raw.contradictionCriteria ?? "",
       firstSeen: turnNumber,
       lastUpdated: turnNumber,
+      source,
+      stabilityClass,
     };
 
     // Compute initial status
@@ -354,22 +385,34 @@ function processRawSignal(
 // ─── Confidence decay ───
 
 /**
- * Signals not reinforced within 3 turns lose confidence gradually.
- * This prevents stale signals from dominating.
+ * Signals not reinforced within a grace period lose confidence gradually.
+ * Decay rate and grace period depend on stability class:
+ *   - core:     6-turn grace, 0.025/turn decay, floor at 0.10 (never fully suppresses)
+ *   - medium:   3-turn grace, 0.05/turn decay, standard suppression at 0.05
+ *   - volatile: 3-turn grace, 0.05/turn decay, standard suppression at 0.05
+ *
+ * This prevents foundational creative preferences (genre, tone, boundaries)
+ * from vanishing because the user spent a few turns on local details.
  */
 function applyConfidenceDecay(ledger: UserPsychologyLedger, currentTurn: number): void {
   for (const signal of ledger.signalStore) {
     if (signal.status === "suppressed") continue;
 
+    const stability = signal.stabilityClass ?? "medium";
+    const gracePeriod = stability === "core" ? 6 : 3;
+    const decayRate = stability === "core" ? 0.025 : 0.05;
+    const confidenceFloor = stability === "core" ? 0.10 : 0;
+
     const turnsSinceUpdate = currentTurn - signal.lastUpdated;
-    if (turnsSinceUpdate >= 3) {
-      // Decay: -0.05 per turn beyond the 3-turn grace period
-      const decayAmount = (turnsSinceUpdate - 2) * 0.05;
-      signal.confidence = Math.max(0, Math.round((signal.confidence - decayAmount) * 100) / 100);
+    if (turnsSinceUpdate >= gracePeriod) {
+      const decayAmount = (turnsSinceUpdate - (gracePeriod - 1)) * decayRate;
+      signal.confidence = Math.max(confidenceFloor, Math.round((signal.confidence - decayAmount) * 100) / 100);
 
       // Re-evaluate status
       signal.status = computeStatus(signal.confidence, signal.evidenceEvents, currentTurn);
-      if (signal.confidence <= 0.05 && signal.evidenceEvents.length > 1) {
+
+      // Core signals never fully suppress from decay — they can go low but not disappear
+      if (stability !== "core" && signal.confidence <= 0.05 && signal.evidenceEvents.length > 1) {
         signal.status = "suppressed";
         signal.suppressionReason = `Decayed: no reinforcement for ${turnsSinceUpdate} turns`;
       }
@@ -1286,6 +1329,14 @@ export function applyConsolidation(
       });
     }
 
+    // Preserve source and stability from the primary signal, or derive from absorbed signals.
+    // If merging, promote to the most protective source/stability among merged signals.
+    const mergedSignals = [primary, ...cs.absorbedIds.map(id => existingById.get(id))].filter(Boolean) as BehaviorSignal[];
+    const bestSource = mergedSignals.some(s => s.source === "explicit") ? "explicit" as const : (primary?.source ?? "inferred" as const);
+    const bestStability = mergedSignals.some(s => s.stabilityClass === "core") ? "core" as const
+      : mergedSignals.some(s => s.stabilityClass === "medium") ? "medium" as const
+      : deriveStabilityClass(cs.category, bestSource);
+
     const signal: BehaviorSignal = {
       id: cs.id,
       hypothesis: cs.hypothesis,
@@ -1301,6 +1352,8 @@ export function applyConsolidation(
       suppressionReason: cs.status === "suppressed"
         ? `Suppressed by consolidation at turn ${turnNumber}`
         : undefined,
+      source: bestSource,
+      stabilityClass: bestStability,
     };
 
     newStore.push(signal);

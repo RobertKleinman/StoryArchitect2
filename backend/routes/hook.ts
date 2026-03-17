@@ -4,6 +4,7 @@ import nodePath from "path";
 import { featureFlagGuard } from "../middleware/featureFlagGuard";
 import { hookService, projectStore, culturalStore } from "../services/runtime";
 import { handleRouteError, getModelOverride, debugGuard } from "./routeUtils";
+import { buildInflightKey, acquireInflight, releaseInflight } from "../services/inflightGuard";
 
 export const hookRoutes = Router();
 
@@ -37,11 +38,18 @@ hookRoutes.post("/clarify", async (req, res) => {
     return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "projectId is required" });
   }
 
+  const inflightKey = buildInflightKey(projectId, "hook", "clarify");
+  if (!acquireInflight(inflightKey)) {
+    return res.status(409).json({ error: true, code: "IN_FLIGHT", message: "A clarifier turn is already in progress for this project" });
+  }
+
   try {
     const result = await hookService.runClarifierTurn(projectId, seedInput, userSelection, modelOverride, promptOverrides, assumptionResponses);
     return res.json(result);
   } catch (err) {
     return handleError(res, err);
+  } finally {
+    releaseInflight(inflightKey);
   }
 });
 
@@ -53,11 +61,18 @@ hookRoutes.post("/generate", async (req, res) => {
     return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "projectId is required" });
   }
 
+  const inflightKey = buildInflightKey(projectId, "hook", "generate");
+  if (!acquireInflight(inflightKey)) {
+    return res.status(409).json({ error: true, code: "IN_FLIGHT", message: "Hook generation is already in progress for this project" });
+  }
+
   try {
     const result = await hookService.runTournament(projectId, modelOverride, promptOverrides);
     return res.json(result);
   } catch (err) {
     return handleError(res, err);
+  } finally {
+    releaseInflight(inflightKey);
   }
 });
 
@@ -139,7 +154,7 @@ hookRoutes.get("/list-sessions", async (_req, res) => {
     let allFiles: string[] = [];
     try {
       allFiles = await fs.readdir(dataDir);
-    } catch { /* empty dir */ }
+    } catch (err) { console.warn("[HOOK] readdir failed:", err); }
     const sessionFiles = allFiles.filter((f: string) => f.endsWith(".json"));
 
     const sessions: Array<{
@@ -164,7 +179,7 @@ hookRoutes.get("/list-sessions", async (_req, res) => {
         try {
           await fs.readFile(nodePath.join(exportDir, file), "utf-8");
           hasExport = true;
-        } catch {}
+        } catch (err) { console.warn("[HOOK] non-critical error:", err); }
 
         const rh = session.revealedHook;
         sessions.push({
@@ -177,7 +192,7 @@ hookRoutes.get("/list-sessions", async (_req, res) => {
           emotionalPromise: rh?.emotional_promise ?? "",
           hasExport,
         });
-      } catch { /* skip corrupt files */ }
+      } catch (err) { console.warn("[HOOK] skipping corrupt file:", err); }
     }
 
     return res.json({ sessions });
@@ -212,9 +227,8 @@ hookRoutes.get("/debug/insights/:projectId", debugGuard, async (req, res) => {
     const psychologyLedger = session?.psychologyLedger ?? null;
     let culturalBrief = null;
     try {
-      const turnNumber = session?.turns?.length ?? 99;
-      culturalBrief = await culturalStore.getCachedBrief(req.params.projectId, "hook", turnNumber + 10);
-    } catch { /* no brief cached yet */ }
+      culturalBrief = await culturalStore.getCachedBrief(req.params.projectId, "hook", 0);
+    } catch (err) { console.warn("[HOOK] no cached cultural brief:", err); }
     const divergenceMap = psychologyLedger?.lastDirectionMap ?? null;
     const developmentTargets: any[] = [];
     return res.json({ psychologyLedger, culturalBrief, divergenceMap, developmentTargets });

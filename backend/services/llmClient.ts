@@ -43,6 +43,9 @@ export interface CallOptions {
   /** Static prefix of user prompt — cached separately by Anthropic for faster TTFT.
    *  Other providers prepend it to the user prompt string. */
   cacheableUserPrefix?: string;
+  /** If provided, the call will abort when this signal is triggered (e.g. client disconnect).
+   *  Checked before each retry attempt. */
+  abortSignal?: AbortSignal;
 }
 
 // ── LLMClient ───────────────────────────────────────────────────────
@@ -93,6 +96,12 @@ export class LLMClient {
     };
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      // Check abort signal before each attempt (e.g. client disconnected)
+      if (options?.abortSignal?.aborted) {
+        console.warn(`[LLM] ${role} aborted before attempt ${attempt} — client disconnected`);
+        throw new Error(`LLM [${role}] aborted: client disconnected`);
+      }
+
       try {
         const attemptStart = Date.now();
         const response = await provider.call(model, systemPrompt, userPrompt, providerOpts);
@@ -113,6 +122,17 @@ export class LLMClient {
         this.sessionTokens.cacheRead += u.cacheReadTokens ?? 0;
         this.sessionTokens.cacheWrite += u.cacheWriteTokens ?? 0;
         this.sessionTokens.calls++;
+
+        // Detect truncation — structured output JSON will be invalid if cut short
+        if (response.stopReason === "max_tokens") {
+          console.warn(
+            `[LLM] ${role} output truncated at maxTokens=${options?.maxTokens ?? "default"} — attempting JSON repair`,
+          );
+          // Try to repair truncated JSON by closing open structures
+          if (options?.jsonSchema) {
+            return repairTruncatedJson(response.text);
+          }
+        }
 
         // Structured outputs = already valid JSON; otherwise strip fences
         return options?.jsonSchema ? response.text : stripJsonFences(response.text);
@@ -180,6 +200,69 @@ function retryAfterToMs(retryAfter: string | undefined): number | undefined {
   }
 
   return undefined;
+}
+
+/**
+ * Attempt to repair truncated JSON by closing open strings, arrays, and objects.
+ * This is a best-effort repair for when max_tokens cuts off a structured output.
+ * The repaired JSON may have fewer items than intended but should be parseable.
+ */
+function repairTruncatedJson(raw: string): string {
+  let s = raw.trimEnd();
+
+  // If it already parses, return as-is
+  try { JSON.parse(s); return s; } catch { /* continue */ }
+
+  // Step 1: If we're inside a string (unterminated), close it
+  // Count unescaped quotes to determine if we're inside a string
+  let inString = false;
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === '\\' && inString) { i++; continue; } // skip escaped char
+    if (s[i] === '"') inString = !inString;
+  }
+  if (inString) {
+    s += '"';
+  }
+
+  // Step 2: Remove trailing incomplete key-value pairs and commas
+  // Handle cases like: ..."value", "incomplete_ke" or ..."value",
+  // Remove a trailing orphan string (key without value) after the last comma
+  s = s.replace(/,\s*"[^"]*"\s*$/, '');
+  // Remove trailing comma/colon/whitespace
+  s = s.replace(/[,:\s]+$/, '');
+
+  // Step 3: If we ended mid-value after a key (e.g., "key":), add null
+  if (/:\s*$/.test(s)) {
+    s += 'null';
+  }
+
+  // Step 4: Close open brackets/braces by scanning what's still open
+  const stack: string[] = [];
+  inString = false;
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === '\\' && inString) { i++; continue; }
+    if (s[i] === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (s[i] === '{') stack.push('}');
+    else if (s[i] === '[') stack.push(']');
+    else if (s[i] === '}' || s[i] === ']') stack.pop();
+  }
+
+  // Close in reverse order
+  const closedCount = stack.length;
+  while (stack.length > 0) {
+    s += stack.pop();
+  }
+
+  // Validate the repair worked
+  try {
+    JSON.parse(s);
+    console.log(`[LLM] JSON repair succeeded (closed ${closedCount} brackets)`);
+    return s;
+  } catch (err) {
+    // Repair failed — throw so the caller's catch block handles it
+    throw new Error(`JSON repair failed after truncation: ${(err as Error).message}`);
+  }
 }
 
 /** Strip ```json fences — only needed when NOT using structured outputs */

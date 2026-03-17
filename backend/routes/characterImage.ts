@@ -4,6 +4,7 @@ import nodePath from "path";
 import { characterImageFeatureFlagGuard } from "../middleware/characterImageFeatureFlagGuard";
 import { characterImageService, characterImageStore, animeGenClient, culturalStore } from "../services/runtime";
 import { handleRouteError, getModelOverride, debugGuard } from "./routeUtils";
+import { buildInflightKey, acquireInflight, releaseInflight } from "../services/inflightGuard";
 
 export const characterImageRoutes = Router();
 
@@ -53,6 +54,11 @@ characterImageRoutes.post("/clarify", async (req, res) => {
     return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "characterProjectId is required" });
   }
 
+  const inflightKey = buildInflightKey(projectId, "character_image", "clarify");
+  if (!acquireInflight(inflightKey)) {
+    return res.status(409).json({ error: true, code: "IN_FLIGHT", message: "A clarifier turn is already in progress for this project" });
+  }
+
   try {
     const result = await characterImageService.runClarifierTurn(
       projectId, characterProjectId, userSelection, modelOverride, promptOverrides, assumptionResponses, visualSeed
@@ -60,6 +66,8 @@ characterImageRoutes.post("/clarify", async (req, res) => {
     return res.json(result);
   } catch (err) {
     return handleError(res, err);
+  } finally {
+    releaseInflight(inflightKey);
   }
 });
 
@@ -71,11 +79,18 @@ characterImageRoutes.post("/generate", async (req, res) => {
     return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "projectId is required" });
   }
 
+  const inflightKey = buildInflightKey(projectId, "character_image", "generate");
+  if (!acquireInflight(inflightKey)) {
+    return res.status(409).json({ error: true, code: "IN_FLIGHT", message: "Character image generation is already in progress for this project" });
+  }
+
   try {
     const result = await characterImageService.runGenerate(projectId, modelOverride, promptOverrides);
     return res.json(result);
   } catch (err) {
     return handleError(res, err);
+  } finally {
+    releaseInflight(inflightKey);
   }
 });
 
@@ -237,9 +252,8 @@ characterImageRoutes.get("/debug/insights/:projectId", debugGuard, async (req, r
     const psychologyLedger = session?.psychologyLedger ?? null;
     let culturalBrief = null;
     try {
-      const turnNumber = session?.turns?.length ?? 99;
-      culturalBrief = await culturalStore.getCachedBrief(req.params.projectId, "character_image", turnNumber + 10);
-    } catch { /* no brief cached yet */ }
+      culturalBrief = await culturalStore.getCachedBrief(req.params.projectId, "character_image", 0);
+    } catch (err) { console.warn("[CHARACTER_IMAGE] no cached cultural brief:", err); }
     const divergenceMap = psychologyLedger?.lastDirectionMap ?? null;
     const developmentTargets: any[] = [];
     return res.json({ psychologyLedger, culturalBrief, divergenceMap, developmentTargets });
@@ -291,7 +305,7 @@ characterImageRoutes.get("/list-sessions", async (_req, res) => {
     try {
       const allFiles: string[] = await fs.readdir(dataDir);
       sessionFiles = allFiles.filter((f: string) => f.endsWith(".json"));
-    } catch { /* empty dir */ }
+    } catch (err) { console.warn("[CHARACTER_IMAGE] readdir failed:", err); }
 
     const sessions: Array<{
       projectId: string;
@@ -312,7 +326,7 @@ characterImageRoutes.get("/list-sessions", async (_req, res) => {
         try {
           await fs.readFile(nodePath.join(exportDir, file), "utf-8");
           hasExport = true;
-        } catch {}
+        } catch (err) { console.warn("[CHARACTER_IMAGE] non-critical error:", err); }
 
         const charCount = session.revealedSpecs
           ? Object.keys(session.revealedSpecs.characters ?? {}).length
@@ -327,7 +341,7 @@ characterImageRoutes.get("/list-sessions", async (_req, res) => {
           artStyle: session.artStyle ?? "",
           characterCount: charCount,
         });
-      } catch { /* skip corrupt files */ }
+      } catch (err) { console.warn("[CHARACTER_IMAGE] skipping corrupt file:", err); }
     }
 
     return res.json({ sessions });

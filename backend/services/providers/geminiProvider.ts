@@ -5,6 +5,7 @@ const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models
 
 interface GeminiCandidate {
   content?: { parts?: Array<{ text?: string }> };
+  finishReason?: string;
 }
 
 interface GeminiUsageMetadata {
@@ -83,8 +84,11 @@ export class GeminiProvider implements LLMProvider {
 
     const u = data.usageMetadata;
 
+    const geminiStopReason = data.candidates?.[0]?.finishReason ?? "unknown";
+
     return {
       text,
+      stopReason: geminiStopReason === "STOP" ? "end_turn" : geminiStopReason.toLowerCase(),
       usage: {
         inputTokens: u?.promptTokenCount ?? 0,
         outputTokens: u?.candidatesTokenCount ?? 0,

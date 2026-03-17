@@ -60,6 +60,7 @@ import { culturalResearchService } from "./runtime";
 import { detectDirectedReferences, shouldRunCulturalResearch } from "./culturalResearchService";
 import type { CulturalResearchContext } from "./culturalResearchService";
 import { buildMustHonorBlock, normalizeStringifiedFields } from "./mustHonorBlock";
+import { withProjectLock } from "../storage/projectMutex";
 
 // ─── API response types ───
 
@@ -448,21 +449,23 @@ export class CharacterImageService {
     );
 
     if (snapshot) {
-      const freshSession = await this.imageStore.get(projectId);
-      if (!freshSession) return;
+      await withProjectLock(projectId, async () => {
+        const freshSession = await this.imageStore.get(projectId);
+        if (!freshSession) return;
 
-      if (!freshSession.psychologyLedger) freshSession.psychologyLedger = createEmptyLedger();
+        if (!freshSession.psychologyLedger) freshSession.psychologyLedger = createEmptyLedger();
 
-      const staleIds = new Set(sessionForConsolidation.psychologyLedger!.signalStore.map(s => s.id));
-      const newSignals = freshSession.psychologyLedger.signalStore.filter(s => !staleIds.has(s.id));
+        const staleIds = new Set(sessionForConsolidation.psychologyLedger!.signalStore.map(s => s.id));
+        const newSignals = freshSession.psychologyLedger.signalStore.filter(s => !staleIds.has(s.id));
 
-      applyConsolidation(freshSession.psychologyLedger, snapshot.result, turnNumber, module);
-      freshSession.psychologyLedger.signalStore.push(...newSignals);
-      freshSession.psychologyLedger.lastConsolidation = snapshot;
-      freshSession.psychologyLedger.signalCountAtLastConsolidation = freshSession.psychologyLedger.signalStore.length;
+        applyConsolidation(freshSession.psychologyLedger, snapshot.result, turnNumber, module);
+        freshSession.psychologyLedger.signalStore.push(...newSignals);
+        freshSession.psychologyLedger.lastConsolidation = snapshot;
+        freshSession.psychologyLedger.signalCountAtLastConsolidation = freshSession.psychologyLedger.signalStore.length;
 
-      freshSession.lastSavedAt = new Date().toISOString();
-      await this.imageStore.save(freshSession);
+        freshSession.lastSavedAt = new Date().toISOString();
+        await this.imageStore.save(freshSession);
+      });
     }
   }
 
@@ -502,13 +505,15 @@ export class CharacterImageService {
     const snapshot = await runDivergenceExploration(context, this.llm);
 
     if (snapshot) {
-      const freshSession = await this.imageStore.get(session.projectId);
-      if (!freshSession) return;
+      await withProjectLock(session.projectId, async () => {
+        const freshSession = await this.imageStore.get(session.projectId);
+        if (!freshSession) return;
 
-      if (!freshSession.psychologyLedger) freshSession.psychologyLedger = createEmptyLedger();
-      freshSession.psychologyLedger.lastDirectionMap = snapshot;
-      freshSession.lastSavedAt = new Date().toISOString();
-      await this.imageStore.save(freshSession);
+        if (!freshSession.psychologyLedger) freshSession.psychologyLedger = createEmptyLedger();
+        freshSession.psychologyLedger.lastDirectionMap = snapshot;
+        freshSession.lastSavedAt = new Date().toISOString();
+        await this.imageStore.save(freshSession);
+      });
     }
   }
 

@@ -87,6 +87,7 @@ import { culturalResearchService } from "./runtime";
 import { detectDirectedReferences, shouldRunCulturalResearch } from "./culturalResearchService";
 import type { CulturalResearchContext } from "./culturalResearchService";
 import { buildMustHonorBlock, normalizeStringifiedFields } from "./mustHonorBlock";
+import { logPromptBlocks } from "./contextObservability";
 
 // ─── Error class ───
 
@@ -964,6 +965,23 @@ export class SceneService {
       throw new SceneServiceError("LLM_PARSE_ERROR", "Failed to parse final judge response");
     }
 
+    // Override LLM's pass decision with severity-based gate:
+    // Fail if any must_fix, or 2+ should_fix in structural/emotional categories
+    const allIssues = [
+      ...(judge.flagged_scenes ?? []),
+      ...(judge.arc_issues ?? []),
+    ];
+    const mustFixCount = allIssues.filter(i => i.severity === "must_fix").length;
+    const shouldFixCount = allIssues.filter(i => i.severity === "should_fix").length;
+    if (mustFixCount > 0 || shouldFixCount >= 2) {
+      if (judge.pass) {
+        console.log(
+          `[SCENE] Judge gate override: LLM said pass=true but found ${mustFixCount} must_fix, ${shouldFixCount} should_fix — forcing fail`,
+        );
+      }
+      judge.pass = false;
+    }
+
     session.finalJudge = judge;
     session.status = "reviewing";
     this.recordPromptHistory(session, "final_judge", system, user, promptOverrides, judge.pass ? "PASS" : "FAIL");
@@ -1195,7 +1213,7 @@ export class SceneService {
   async resetSession(projectId: string): Promise<void> {
     await this.sceneStore.delete(projectId);
     // Also clean up any export file
-    try { await this.sceneStore.deleteExport(projectId); } catch {}
+    try { await this.sceneStore.deleteExport(projectId); } catch (err) { console.warn("[SCENE] non-critical error:", err); }
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -1331,6 +1349,24 @@ export class SceneService {
 
     const system = promptOverrides?.system ?? SCENE_BUILDER_SYSTEM;
     const user = promptOverrides?.user ?? (cacheablePrefix + dynamicSuffix);
+
+    // Context observability: log token estimates per block
+    logPromptBlocks("builder", "SCENE", [
+      { name: "system", content: system, injected: true },
+      { name: "scene_plan", content: JSON.stringify(scenePlan), injected: true },
+      { name: "characters", content: JSON.stringify(relevantCharacters), injected: true },
+      { name: "char_visuals", content: charVisuals, injected: charVisuals !== "(no character visuals available)" },
+      { name: "world", content: worldContext, injected: true },
+      { name: "hook", content: hookContext, injected: true },
+      { name: "relationships", content: relationshipTensions, injected: relationshipTensions !== "(none)" },
+      { name: "dev_targets", content: devTargets, injected: devTargets !== "(none)" },
+      { name: "theme", content: JSON.stringify(plotPack.locked.theme_cluster), injected: true },
+      { name: "tone_chips", content: JSON.stringify(plotPack.preferences?.tone_chips ?? []), injected: true },
+      { name: "prev_scene", content: previousText, injected: !!previousText },
+      { name: "psychology", content: psychSignals, injected: !!psychSignals },
+      { name: "cultural", content: builderCulturalText, injected: !!builderCulturalText },
+      { name: "must_honor", content: builderMustHonor, injected: !!builderMustHonor },
+    ]);
 
     let builderRaw: string;
     try {

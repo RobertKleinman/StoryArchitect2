@@ -77,7 +77,9 @@ If you generated families before, push into NEW territory this time. The clarifi
 Turn: {{TURN_NUMBER}}
 Module: {{MODULE}}
 
-Generate 15-20 radically different story futures, cluster them into 4-6 direction families, and identify the biggest blind spot. Remember: the goal is to EXPAND the possibility space, not to pick the best direction. Every family should feel like a genuinely different story the user might love.`;
+Generate 8-10 radically different story futures, cluster them into 3-5 direction families, and identify the biggest blind spot. Remember: the goal is to EXPAND the possibility space, not to pick the best direction. Every family should feel like a genuinely different story the user might love.
+
+IMPORTANT: Keep each future's sketch and hook to 1-2 sentences max. Be vivid but concise — density over length.`;
 
 /**
  * Plain JSON Schema for divergence explorer structured output.

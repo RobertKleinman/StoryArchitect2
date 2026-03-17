@@ -4,6 +4,7 @@ import nodePath from "path";
 import { worldFeatureFlagGuard } from "../middleware/worldFeatureFlagGuard";
 import { worldService, culturalStore } from "../services/runtime";
 import { handleRouteError, getModelOverride, debugGuard } from "./routeUtils";
+import { buildInflightKey, acquireInflight, releaseInflight } from "../services/inflightGuard";
 
 export const worldRoutes = Router();
 
@@ -59,6 +60,11 @@ worldRoutes.post("/clarify", async (req, res) => {
     return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "hookProjectId is required" });
   }
 
+  const inflightKey = buildInflightKey(projectId, "world", "clarify");
+  if (!acquireInflight(inflightKey)) {
+    return res.status(409).json({ error: true, code: "IN_FLIGHT", message: "A clarifier turn is already in progress for this project" });
+  }
+
   try {
     const result = await worldService.runClarifierTurn(
       projectId,
@@ -74,6 +80,8 @@ worldRoutes.post("/clarify", async (req, res) => {
     return res.json(result);
   } catch (err) {
     return handleError(res, err);
+  } finally {
+    releaseInflight(inflightKey);
   }
 });
 
@@ -87,11 +95,18 @@ worldRoutes.post("/generate", async (req, res) => {
     return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "projectId is required" });
   }
 
+  const inflightKey = buildInflightKey(projectId, "world", "generate");
+  if (!acquireInflight(inflightKey)) {
+    return res.status(409).json({ error: true, code: "IN_FLIGHT", message: "World generation is already in progress for this project" });
+  }
+
   try {
     const result = await worldService.runGenerate(projectId, modelOverride, promptOverrides);
     return res.json(result);
   } catch (err) {
     return handleError(res, err);
+  } finally {
+    releaseInflight(inflightKey);
   }
 });
 
@@ -153,9 +168,8 @@ worldRoutes.get("/debug/insights/:projectId", debugGuard, async (req, res) => {
     const psychologyLedger = session?.psychologyLedger ?? null;
     let culturalBrief = null;
     try {
-      const turnNumber = session?.turns?.length ?? 99;
-      culturalBrief = await culturalStore.getCachedBrief(req.params.projectId, "world", turnNumber + 10);
-    } catch { /* no brief cached yet */ }
+      culturalBrief = await culturalStore.getCachedBrief(req.params.projectId, "world", 0);
+    } catch (err) { console.warn("[WORLD] no cached cultural brief:", err); }
     const divergenceMap = psychologyLedger?.lastDirectionMap ?? null;
     const developmentTargets = session?.developmentTargets ?? [];
     return res.json({ psychologyLedger, culturalBrief, divergenceMap, developmentTargets });
@@ -186,7 +200,7 @@ worldRoutes.get("/list-sessions", async (_req, res) => {
     try {
       const allFiles: string[] = await fs.readdir(dataDir);
       sessionFiles = allFiles.filter((f: string) => f.endsWith(".json"));
-    } catch { /* empty dir */ }
+    } catch (err) { console.warn("[WORLD] readdir failed:", err); }
 
     const sessions: Array<{
       projectId: string;
@@ -208,7 +222,7 @@ worldRoutes.get("/list-sessions", async (_req, res) => {
         try {
           await fs.readFile(nodePath.join(exportDir, file), "utf-8");
           hasExport = true;
-        } catch {}
+        } catch (err) { console.warn("[WORLD] non-critical error:", err); }
 
         sessions.push({
           projectId: session.projectId,
@@ -219,7 +233,7 @@ worldRoutes.get("/list-sessions", async (_req, res) => {
           turnCount: session.turns?.length ?? 0,
           hasExport,
         });
-      } catch { /* skip corrupt files */ }
+      } catch (err) { console.warn("[WORLD] skipping corrupt file:", err); }
     }
 
     return res.json({ sessions });

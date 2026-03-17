@@ -4,6 +4,7 @@ import nodePath from "path";
 import { sceneFeatureFlagGuard } from "../middleware/sceneFeatureFlagGuard";
 import { sceneService, sceneStore, culturalStore } from "../services/runtime";
 import { handleRouteError, getModelOverride, debugGuard } from "./routeUtils";
+import { buildInflightKey, acquireInflight, releaseInflight } from "../services/inflightGuard";
 
 export const sceneRoutes = Router();
 
@@ -79,6 +80,11 @@ sceneRoutes.post("/clarify", async (req, res) => {
     return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "projectId is required" });
   }
 
+  const inflightKey = buildInflightKey(projectId, "scene", "clarify");
+  if (!acquireInflight(inflightKey)) {
+    return res.status(409).json({ error: true, code: "IN_FLIGHT", message: "A scene clarifier turn is already in progress for this project" });
+  }
+
   try {
     const result = await sceneService.clarifyScene(
       projectId, userSelection, assumptionResponses, modelOverride, promptOverrides
@@ -98,6 +104,8 @@ sceneRoutes.post("/clarify", async (req, res) => {
     return res.json(result);
   } catch (err) {
     return handleError(res, err);
+  } finally {
+    releaseInflight(inflightKey);
   }
 });
 
@@ -110,6 +118,11 @@ sceneRoutes.post("/build", async (req, res) => {
 
   if (!projectId || typeof projectId !== "string") {
     return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "projectId is required" });
+  }
+
+  const inflightKey = buildInflightKey(projectId, "scene", "build");
+  if (!acquireInflight(inflightKey)) {
+    return res.status(409).json({ error: true, code: "IN_FLIGHT", message: "Scene building is already in progress for this project" });
   }
 
   try {
@@ -126,6 +139,8 @@ sceneRoutes.post("/build", async (req, res) => {
     });
   } catch (err) {
     return handleError(res, err);
+  } finally {
+    releaseInflight(inflightKey);
   }
 });
 
@@ -159,11 +174,18 @@ sceneRoutes.post("/final-judge", async (req, res) => {
     return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "projectId is required" });
   }
 
+  const inflightKey = buildInflightKey(projectId, "scene", "judge");
+  if (!acquireInflight(inflightKey)) {
+    return res.status(409).json({ error: true, code: "IN_FLIGHT", message: "Scene judging is already in progress for this project" });
+  }
+
   try {
     const judge = await sceneService.runFinalJudge(projectId, modelOverride, promptOverrides);
     return res.json({ judge });
   } catch (err) {
     return handleError(res, err);
+  } finally {
+    releaseInflight(inflightKey);
   }
 });
 
@@ -193,9 +215,8 @@ sceneRoutes.get("/debug/insights/:projectId", debugGuard, async (req, res) => {
     const psychologyLedger = session?.psychologyLedger ?? null;
     let culturalBrief = null;
     try {
-      const turnNumber = (session?.planningTurns?.length ?? 0) + (session?.writingTurns?.length ?? 0);
-      culturalBrief = await culturalStore.getCachedBrief(req.params.projectId, "scene", turnNumber + 10);
-    } catch { /* no brief cached yet */ }
+      culturalBrief = await culturalStore.getCachedBrief(req.params.projectId, "scene", 0);
+    } catch (err) { console.warn("[SCENE] no cached cultural brief:", err); }
     const divergenceMap = psychologyLedger?.lastDirectionMap ?? null;
     const developmentTargets = session?.developmentTargets ?? [];
     return res.json({ psychologyLedger, culturalBrief, divergenceMap, developmentTargets });
@@ -270,7 +291,7 @@ sceneRoutes.get("/list-sessions", async (_req, res) => {
     try {
       const allFiles: string[] = await fs.readdir(dataDir);
       sessionFiles = allFiles.filter((f: string) => f.endsWith(".json"));
-    } catch { /* empty dir */ }
+    } catch (err) { console.warn("[SCENE] readdir failed:", err); }
 
     const sessions: Array<{
       projectId: string;
@@ -292,7 +313,7 @@ sceneRoutes.get("/list-sessions", async (_req, res) => {
         try {
           await fs.readFile(nodePath.join(exportDir, file), "utf-8");
           hasExport = true;
-        } catch {}
+        } catch (err) { console.warn("[SCENE] non-critical error:", err); }
 
         sessions.push({
           projectId: session.projectId,
@@ -304,7 +325,7 @@ sceneRoutes.get("/list-sessions", async (_req, res) => {
           totalScenes: session.scenePlan?.length ?? 0,
           hasExport,
         });
-      } catch { /* skip corrupt files */ }
+      } catch (err) { console.warn("[SCENE] skipping corrupt file:", err); }
     }
 
     return res.json({ sessions });

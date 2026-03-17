@@ -63,6 +63,7 @@ import { culturalResearchService, storyBibleService, projectStore as runtimeProj
 import { detectDirectedReferences, shouldRunCulturalResearch } from "./culturalResearchService";
 import type { CulturalResearchContext } from "./culturalResearchService";
 import { buildMustHonorBlock, normalizeStringifiedFields } from "./mustHonorBlock";
+import { withProjectLock } from "../storage/projectMutex";
 
 export class HookServiceError extends Error {
   code: "NOT_FOUND" | "INVALID_INPUT" | "LLM_PARSE_ERROR" | "LLM_CALL_FAILED";
@@ -432,14 +433,15 @@ export class HookService {
     const snapshot = await runDivergenceExploration(context, this.llm);
 
     if (snapshot) {
-      // Re-read the LATEST session to avoid overwriting concurrent changes.
-      const freshSession = await this.store.get(projectId);
-      if (!freshSession) return;
+      await withProjectLock(projectId, async () => {
+        const freshSession = await this.store.get(projectId);
+        if (!freshSession) return;
 
-      if (!freshSession.psychologyLedger) freshSession.psychologyLedger = createEmptyLedger();
-      freshSession.psychologyLedger.lastDirectionMap = snapshot;
-      freshSession.lastSavedAt = new Date().toISOString();
-      await this.store.save(freshSession);
+        if (!freshSession.psychologyLedger) freshSession.psychologyLedger = createEmptyLedger();
+        freshSession.psychologyLedger.lastDirectionMap = snapshot;
+        freshSession.lastSavedAt = new Date().toISOString();
+        await this.store.save(freshSession);
+      });
     }
   }
 
@@ -465,24 +467,25 @@ export class HookService {
     );
 
     if (snapshot) {
-      // Re-read the LATEST session to avoid overwriting signals added by concurrent foreground turns.
-      const freshSession = await this.store.get(projectId);
-      if (!freshSession) return;
+      await withProjectLock(projectId, async () => {
+        const freshSession = await this.store.get(projectId);
+        if (!freshSession) return;
 
-      if (!freshSession.psychologyLedger) freshSession.psychologyLedger = createEmptyLedger();
+        if (!freshSession.psychologyLedger) freshSession.psychologyLedger = createEmptyLedger();
 
-      // Find signals added by concurrent foreground turns (not in the stale snapshot)
-      const staleIds = new Set(sessionForConsolidation.psychologyLedger!.signalStore.map(s => s.id));
-      const newSignals = freshSession.psychologyLedger.signalStore.filter(s => !staleIds.has(s.id));
+        // Find signals added by concurrent foreground turns (not in the stale snapshot)
+        const staleIds = new Set(sessionForConsolidation.psychologyLedger!.signalStore.map(s => s.id));
+        const newSignals = freshSession.psychologyLedger.signalStore.filter(s => !staleIds.has(s.id));
 
-      // Apply consolidation result to the fresh ledger, then re-append concurrent signals
-      applyConsolidation(freshSession.psychologyLedger, snapshot.result, turnNumber, module);
-      freshSession.psychologyLedger.signalStore.push(...newSignals);
-      freshSession.psychologyLedger.lastConsolidation = snapshot;
-      freshSession.psychologyLedger.signalCountAtLastConsolidation = freshSession.psychologyLedger.signalStore.length;
+        // Apply consolidation result to the fresh ledger, then re-append concurrent signals
+        applyConsolidation(freshSession.psychologyLedger, snapshot.result, turnNumber, module);
+        freshSession.psychologyLedger.signalStore.push(...newSignals);
+        freshSession.psychologyLedger.lastConsolidation = snapshot;
+        freshSession.psychologyLedger.signalCountAtLastConsolidation = freshSession.psychologyLedger.signalStore.length;
 
-      freshSession.lastSavedAt = new Date().toISOString();
-      await this.store.save(freshSession);
+        freshSession.lastSavedAt = new Date().toISOString();
+        await this.store.save(freshSession);
+      });
     }
   }
 

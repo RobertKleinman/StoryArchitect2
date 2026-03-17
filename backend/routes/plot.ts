@@ -2,6 +2,7 @@ import { Router } from "express";
 import { plotFeatureFlagGuard } from "../middleware/plotFeatureFlagGuard";
 import { plotService, culturalStore } from "../services/runtime";
 import { handleRouteError, getModelOverride, debugGuard } from "./routeUtils";
+import { buildInflightKey, acquireInflight, releaseInflight } from "../services/inflightGuard";
 
 export const plotRoutes = Router();
 
@@ -61,6 +62,11 @@ plotRoutes.post("/clarify", async (req, res) => {
     return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "hookProjectId is required" });
   }
 
+  const inflightKey = buildInflightKey(projectId, "plot", "clarify");
+  if (!acquireInflight(inflightKey)) {
+    return res.status(409).json({ error: true, code: "IN_FLIGHT", message: "A clarifier turn is already in progress for this project" });
+  }
+
   try {
     const result = await plotService.runClarifierTurn(
       projectId,
@@ -77,6 +83,8 @@ plotRoutes.post("/clarify", async (req, res) => {
     return res.json(result);
   } catch (err) {
     return handleError(res, err);
+  } finally {
+    releaseInflight(inflightKey);
   }
 });
 
@@ -90,11 +98,18 @@ plotRoutes.post("/generate", async (req, res) => {
     return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "projectId is required" });
   }
 
+  const inflightKey = buildInflightKey(projectId, "plot", "generate");
+  if (!acquireInflight(inflightKey)) {
+    return res.status(409).json({ error: true, code: "IN_FLIGHT", message: "Plot generation is already in progress for this project" });
+  }
+
   try {
     const result = await plotService.runGenerate(projectId, modelOverride, promptOverrides);
     return res.json(result);
   } catch (err) {
     return handleError(res, err);
+  } finally {
+    releaseInflight(inflightKey);
   }
 });
 
@@ -156,9 +171,8 @@ plotRoutes.get("/debug/insights/:projectId", debugGuard, async (req, res) => {
     const psychologyLedger = session?.psychologyLedger ?? null;
     let culturalBrief = null;
     try {
-      const turnNumber = session?.turns?.length ?? 99;
-      culturalBrief = await culturalStore.getCachedBrief(req.params.projectId, "plot", turnNumber + 10);
-    } catch { /* no brief cached yet */ }
+      culturalBrief = await culturalStore.getCachedBrief(req.params.projectId, "plot", 0);
+    } catch (err) { console.warn("[PLOT] no cached cultural brief:", err); }
     const divergenceMap = psychologyLedger?.lastDirectionMap ?? null;
     const developmentTargets = session?.developmentTargets ?? [];
     return res.json({ psychologyLedger, culturalBrief, divergenceMap, developmentTargets });

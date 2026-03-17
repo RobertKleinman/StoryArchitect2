@@ -102,6 +102,7 @@ export class AnthropicProvider implements LLMProvider {
       const u = finalMessage.usage;
       return {
         text,
+        stopReason: finalMessage.stop_reason ?? "unknown",
         usage: {
           inputTokens: u?.input_tokens ?? 0,
           outputTokens: u?.output_tokens ?? 0,

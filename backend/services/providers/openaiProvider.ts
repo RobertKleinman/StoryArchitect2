@@ -3,6 +3,7 @@ import { ProviderHttpError } from "./types";
 
 interface OpenAIChoice {
   message?: { content?: string };
+  finish_reason?: string;
 }
 
 interface OpenAIUsage {
@@ -97,8 +98,11 @@ export class OpenAICompatibleProvider implements LLMProvider {
     const text = data.choices?.[0]?.message?.content ?? "";
     const u = data.usage;
 
+    const finishReason = data.choices?.[0]?.finish_reason ?? "unknown";
+
     return {
       text,
+      stopReason: finishReason === "stop" ? "end_turn" : finishReason,
       usage: {
         inputTokens: u?.prompt_tokens ?? 0,
         outputTokens: u?.completion_tokens ?? 0,

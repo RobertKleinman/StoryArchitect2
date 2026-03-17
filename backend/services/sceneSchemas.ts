@@ -185,6 +185,7 @@ const signalSchema = {
     contradictionCriteria: { type: "string" },
     contradictsSignalId: { type: "string" },
     reinforcesSignalId: { type: "string" },
+    source: { type: "string" },
   },
   required: ["hypothesis", "action", "valence", "scope", "category", "adaptationConsequence", "contradictionCriteria"],
   additionalProperties: false,
