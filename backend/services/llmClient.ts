@@ -66,8 +66,6 @@ export class LLMClient {
   private config: ModelConfig;
   private sessionTokens: TokenUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, calls: 0 };
   private _lastCallProvenance: CallProvenance | null = null;
-  private _defaultAbortSignal: AbortSignal | undefined;
-
   constructor(config: ModelConfig) {
     this.config = config;
   }
@@ -75,16 +73,6 @@ export class LLMClient {
   /** Returns provenance metadata from the most recent successful call */
   get lastCallProvenance(): CallProvenance | null {
     return this._lastCallProvenance;
-  }
-
-  /**
-   * Set a default abort signal for all calls made by this client.
-   * Used by route handlers to propagate req.on('close') cancellation
-   * without threading the signal through every service method signature.
-   * Call setDefaultAbortSignal(undefined) to clear after the request.
-   */
-  setDefaultAbortSignal(signal: AbortSignal | undefined): void {
-    this._defaultAbortSignal = signal;
   }
 
   updateConfig(partial: Partial<ModelConfig>): void {
@@ -126,11 +114,9 @@ export class LLMClient {
 
     let truncationRetried = false;
 
-    const abortSignal = options?.abortSignal ?? this._defaultAbortSignal;
-
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       // Check abort signal before each attempt (e.g. client disconnected)
-      if (abortSignal?.aborted) {
+      if (options?.abortSignal?.aborted) {
         console.warn(`[LLM] ${role} aborted before attempt ${attempt} — client disconnected`);
         throw new Error(`LLM [${role}] aborted: client disconnected`);
       }

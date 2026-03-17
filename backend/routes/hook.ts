@@ -2,8 +2,8 @@ import { Router } from "express";
 import fs from "fs/promises";
 import nodePath from "path";
 import { featureFlagGuard } from "../middleware/featureFlagGuard";
-import { hookService, projectStore, culturalStore, llmClient } from "../services/runtime";
-import { handleRouteError, getModelOverride, debugGuard, createRequestAbort } from "./routeUtils";
+import { hookService, projectStore, culturalStore } from "../services/runtime";
+import { handleRouteError, getModelOverride, debugGuard } from "./routeUtils";
 import { buildInflightKey, acquireInflight, releaseInflight } from "../services/inflightGuard";
 
 export const hookRoutes = Router();
@@ -43,16 +43,12 @@ hookRoutes.post("/clarify", async (req, res) => {
     return res.status(409).json({ error: true, code: "IN_FLIGHT", message: "A clarifier turn is already in progress for this project" });
   }
 
-  const { signal, cleanup } = createRequestAbort(req);
-  llmClient.setDefaultAbortSignal(signal);
   try {
     const result = await hookService.runClarifierTurn(projectId, seedInput, userSelection, modelOverride, promptOverrides, assumptionResponses);
     return res.json(result);
   } catch (err) {
     return handleError(res, err);
   } finally {
-    llmClient.setDefaultAbortSignal(undefined);
-    cleanup();
     releaseInflight(inflightKey);
   }
 });
@@ -70,16 +66,12 @@ hookRoutes.post("/generate", async (req, res) => {
     return res.status(409).json({ error: true, code: "IN_FLIGHT", message: "Hook generation is already in progress for this project" });
   }
 
-  const { signal, cleanup } = createRequestAbort(req);
-  llmClient.setDefaultAbortSignal(signal);
   try {
     const result = await hookService.runTournament(projectId, modelOverride, promptOverrides);
     return res.json(result);
   } catch (err) {
     return handleError(res, err);
   } finally {
-    llmClient.setDefaultAbortSignal(undefined);
-    cleanup();
     releaseInflight(inflightKey);
   }
 });

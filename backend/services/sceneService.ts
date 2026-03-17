@@ -739,32 +739,10 @@ export class SceneService {
       console.log(`[DIVERGENCE CACHE] Invalidated for scene ${sceneIndex} due to staging change`);
     }
 
-    // Bootstrap echo ledger from distinctive free-text input
-    if (process.env.ENABLE_ECHO_LEDGER && userSelection?.type === "free_text" && userSelection.label.length > 30) {
-      if (!session.echoLedger) session.echoLedger = [];
-      // Heuristic: if user provides substantial creative text, treat it as a potential echo motif
-      // The builder can reference it 2-4 scenes later
-      session.echoLedger.push({
-        motif: userSelection.label.slice(0, 200),
-        priority: "distinctive",
-        originScene: sceneIndex,
-        timesEchoed: 0,
-        echoCooldown: 2, // minimum 2 scenes before echoing
-      });
-    }
-
-    // Bootstrap consequence ledger from user choices
-    if (process.env.ENABLE_CONSEQUENCE_LEDGER && userSelection?.type !== "surprise_me" && userSelection?.label) {
-      if (!session.consequenceLedger) session.consequenceLedger = [];
-      session.consequenceLedger.push({
-        choiceId: `choice_${sceneIndex}_${Date.now()}`,
-        sourceTurn: session.writingTurns.length,
-        decision: userSelection.label,
-        stakes: scenePlan.objective?.stakes ?? "unspecified",
-        owedSceneWindowEnd: Math.min(sceneIndex + 3, (session.scenePlan?.length ?? 999) - 1),
-        status: "pending",
-      });
-    }
+    // NOTE: Echo and consequence ledger bootstrapping deferred.
+    // Initial entries should be created by LLM (detecting motifs / identifying
+    // consequential choices) not by heuristic. The update/tracking infrastructure
+    // in processLedgerUpdates() is ready for when the LLM-based population is added.
 
     session.rhythmSnapshot = rhythmSnapshot;
     this.recordPromptHistory(session, "scene_clarifier", system, user, promptOverrides, `scene ${scenePlan.scene_id} ${autoPassApplied ? "(auto-pass)" : ""}`);

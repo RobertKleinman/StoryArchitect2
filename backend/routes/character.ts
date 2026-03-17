@@ -2,8 +2,8 @@ import { Router } from "express";
 import fs from "fs/promises";
 import nodePath from "path";
 import { characterFeatureFlagGuard } from "../middleware/characterFeatureFlagGuard";
-import { characterService, characterStore, culturalStore, llmClient } from "../services/runtime";
-import { handleRouteError, getModelOverride, debugGuard, createRequestAbort } from "./routeUtils";
+import { characterService, characterStore, culturalStore } from "../services/runtime";
+import { handleRouteError, getModelOverride, debugGuard } from "./routeUtils";
 import { buildInflightKey, acquireInflight, releaseInflight } from "../services/inflightGuard";
 
 export const characterRoutes = Router();
@@ -46,8 +46,6 @@ characterRoutes.post("/clarify", async (req, res) => {
     return res.status(409).json({ error: true, code: "IN_FLIGHT", message: "A clarifier turn is already in progress for this project" });
   }
 
-  const { signal, cleanup } = createRequestAbort(req);
-  llmClient.setDefaultAbortSignal(signal);
   try {
     const result = await characterService.runClarifierTurn(
       projectId, hookProjectId, userSelection, modelOverride, promptOverrides, assumptionResponses, characterSeed
@@ -56,8 +54,6 @@ characterRoutes.post("/clarify", async (req, res) => {
   } catch (err) {
     return handleError(res, err);
   } finally {
-    llmClient.setDefaultAbortSignal(undefined);
-    cleanup();
     releaseInflight(inflightKey);
   }
 });
@@ -75,16 +71,12 @@ characterRoutes.post("/generate", async (req, res) => {
     return res.status(409).json({ error: true, code: "IN_FLIGHT", message: "Character generation is already in progress for this project" });
   }
 
-  const { signal, cleanup } = createRequestAbort(req);
-  llmClient.setDefaultAbortSignal(signal);
   try {
     const result = await characterService.runGenerate(projectId, modelOverride, promptOverrides);
     return res.json(result);
   } catch (err) {
     return handleError(res, err);
   } finally {
-    llmClient.setDefaultAbortSignal(undefined);
-    cleanup();
     releaseInflight(inflightKey);
   }
 });
@@ -102,16 +94,12 @@ characterRoutes.post("/reroll", async (req, res) => {
     return res.status(409).json({ error: true, code: "IN_FLIGHT", message: "Character reroll is already in progress for this project" });
   }
 
-  const { signal, cleanup } = createRequestAbort(req);
-  llmClient.setDefaultAbortSignal(signal);
   try {
     const result = await characterService.reroll(projectId, modelOverride, promptOverrides, constraintOverrides);
     return res.json(result);
   } catch (err) {
     return handleError(res, err);
   } finally {
-    llmClient.setDefaultAbortSignal(undefined);
-    cleanup();
     releaseInflight(inflightKey);
   }
 });
