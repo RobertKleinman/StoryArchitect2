@@ -75,16 +75,15 @@ export class CharacterImageStore {
     try {
       const raw = await fs.readFile(fp, "utf-8");
       const session: CharacterImageSessionState = JSON.parse(raw);
-      // Schema migration
+      // Run both migrations, then save once if either changed anything
       const schemaMigrated = migrateSession(session, "character_image");
-      // Migration: extract any inline base64 that wasn't extracted yet
-      await this.migrateInlineBase64(session);
-      if (schemaMigrated) {
-        // migrateInlineBase64 already re-saves if it extracts, but schema-only migration needs a save too
-        const fp2 = this.filePath(session.projectId);
-        const tmp2 = fp2 + ".tmp";
-        await fs.writeFile(tmp2, JSON.stringify(session, null, 2));
-        await fs.rename(tmp2, fp2);
+      const base64Migrated = await this.extractInlineBase64(session);
+      if (schemaMigrated || base64Migrated) {
+        const saveFp = this.filePath(session.projectId);
+        const tmp = saveFp + ".tmp";
+        await fs.writeFile(tmp, JSON.stringify(session, null, 2));
+        await fs.rename(tmp, saveFp);
+        console.log(`[CharacterImageStore] Migration re-saved session ${session.projectId} (schema=${schemaMigrated}, base64=${base64Migrated})`);
       }
       return session;
     } catch (e: any) {
@@ -193,9 +192,10 @@ export class CharacterImageStore {
   }
 
   /**
-   * Migration-on-load: if a session still has inline image_base64, extract and re-save.
+   * Migration-on-load: extract inline base64 to asset files.
+   * Returns true if any images were extracted (caller should save).
    */
-  private async migrateInlineBase64(session: CharacterImageSessionState): Promise<void> {
+  private async extractInlineBase64(session: CharacterImageSessionState): Promise<boolean> {
     let migrated = false;
     for (const [role, img] of Object.entries(session.generatedImages)) {
       if (img.image_base64 && !img.image_ref) {
@@ -205,16 +205,9 @@ export class CharacterImageStore {
         img.image_ref = ref;
         delete img.image_base64;
         migrated = true;
-        console.log(`[CharacterImageStore] Migrated inline base64 for ${role} → ${ref}`);
+        console.log(`[CharacterImageStore] Extracted inline base64 for ${role} → ${ref}`);
       }
     }
-    if (migrated) {
-      // Re-save session without inline base64
-      const sessionFp = this.filePath(session.projectId);
-      const tmp = sessionFp + ".tmp";
-      await fs.writeFile(tmp, JSON.stringify(session, null, 2));
-      await fs.rename(tmp, sessionFp);
-      console.log(`[CharacterImageStore] Migration re-saved session ${session.projectId}`);
-    }
+    return migrated;
   }
 }

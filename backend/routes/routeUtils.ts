@@ -37,6 +37,21 @@ export function getModelOverride(header: string | string[] | undefined): string 
   return header;
 }
 
+/**
+ * Create an AbortController tied to the request lifecycle.
+ * Aborts when the client disconnects (req 'close' event).
+ * Call cleanup() in a finally block to remove the listener.
+ */
+export function createRequestAbort(req: any): { signal: AbortSignal; cleanup: () => void } {
+  const controller = new AbortController();
+  const onClose = () => controller.abort();
+  req.on("close", onClose);
+  return {
+    signal: controller.signal,
+    cleanup: () => req.removeListener("close", onClose),
+  };
+}
+
 /** Guard debug endpoints in production unless ENABLE_DEBUG_ROUTES is set */
 export function debugGuard(req: any, res: any, next: any): void {
   if (process.env.NODE_ENV === "production" && !process.env.ENABLE_DEBUG_ROUTES) {

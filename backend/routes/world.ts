@@ -2,8 +2,8 @@ import { Router } from "express";
 import fs from "fs/promises";
 import nodePath from "path";
 import { worldFeatureFlagGuard } from "../middleware/worldFeatureFlagGuard";
-import { worldService, culturalStore } from "../services/runtime";
-import { handleRouteError, getModelOverride, debugGuard } from "./routeUtils";
+import { worldService, culturalStore, llmClient } from "../services/runtime";
+import { handleRouteError, getModelOverride, debugGuard, createRequestAbort } from "./routeUtils";
 import { buildInflightKey, acquireInflight, releaseInflight } from "../services/inflightGuard";
 
 export const worldRoutes = Router();
@@ -65,6 +65,8 @@ worldRoutes.post("/clarify", async (req, res) => {
     return res.status(409).json({ error: true, code: "IN_FLIGHT", message: "A clarifier turn is already in progress for this project" });
   }
 
+  const { signal, cleanup } = createRequestAbort(req);
+  llmClient.setDefaultAbortSignal(signal);
   try {
     const result = await worldService.runClarifierTurn(
       projectId,
@@ -81,6 +83,8 @@ worldRoutes.post("/clarify", async (req, res) => {
   } catch (err) {
     return handleError(res, err);
   } finally {
+    llmClient.setDefaultAbortSignal(undefined);
+    cleanup();
     releaseInflight(inflightKey);
   }
 });
@@ -100,12 +104,16 @@ worldRoutes.post("/generate", async (req, res) => {
     return res.status(409).json({ error: true, code: "IN_FLIGHT", message: "World generation is already in progress for this project" });
   }
 
+  const { signal, cleanup } = createRequestAbort(req);
+  llmClient.setDefaultAbortSignal(signal);
   try {
     const result = await worldService.runGenerate(projectId, modelOverride, promptOverrides);
     return res.json(result);
   } catch (err) {
     return handleError(res, err);
   } finally {
+    llmClient.setDefaultAbortSignal(undefined);
+    cleanup();
     releaseInflight(inflightKey);
   }
 });

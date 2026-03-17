@@ -23,7 +23,7 @@ export class SchemaViolationError extends Error {
 }
 
 const PRESENTATION_VALUES = [
-  "male", "female", "androgynous", "non-binary", "unspecified",
+  "masculine", "feminine", "androgynous", "unspecified",
 ] as const;
 
 const PACING_TYPE_VALUES = [

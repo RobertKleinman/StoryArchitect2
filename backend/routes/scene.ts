@@ -2,8 +2,8 @@ import { Router } from "express";
 import fs from "fs/promises";
 import nodePath from "path";
 import { sceneFeatureFlagGuard } from "../middleware/sceneFeatureFlagGuard";
-import { sceneService, sceneStore, culturalStore } from "../services/runtime";
-import { handleRouteError, getModelOverride, debugGuard } from "./routeUtils";
+import { sceneService, sceneStore, culturalStore, llmClient } from "../services/runtime";
+import { handleRouteError, getModelOverride, debugGuard, createRequestAbort } from "./routeUtils";
 import { buildInflightKey, acquireInflight, releaseInflight } from "../services/inflightGuard";
 
 export const sceneRoutes = Router();
@@ -85,6 +85,8 @@ sceneRoutes.post("/clarify", async (req, res) => {
     return res.status(409).json({ error: true, code: "IN_FLIGHT", message: "A scene clarifier turn is already in progress for this project" });
   }
 
+  const { signal, cleanup } = createRequestAbort(req);
+  llmClient.setDefaultAbortSignal(signal);
   try {
     const result = await sceneService.clarifyScene(
       projectId, userSelection, assumptionResponses, modelOverride, promptOverrides
@@ -105,6 +107,8 @@ sceneRoutes.post("/clarify", async (req, res) => {
   } catch (err) {
     return handleError(res, err);
   } finally {
+    llmClient.setDefaultAbortSignal(undefined);
+    cleanup();
     releaseInflight(inflightKey);
   }
 });
@@ -125,6 +129,8 @@ sceneRoutes.post("/build", async (req, res) => {
     return res.status(409).json({ error: true, code: "IN_FLIGHT", message: "Scene building is already in progress for this project" });
   }
 
+  const { signal, cleanup } = createRequestAbort(req);
+  llmClient.setDefaultAbortSignal(signal);
   try {
     // Get session state before build to capture index info
     const sessionBefore = await sceneService.getSession(projectId);
@@ -140,6 +146,8 @@ sceneRoutes.post("/build", async (req, res) => {
   } catch (err) {
     return handleError(res, err);
   } finally {
+    llmClient.setDefaultAbortSignal(undefined);
+    cleanup();
     releaseInflight(inflightKey);
   }
 });
@@ -179,12 +187,16 @@ sceneRoutes.post("/final-judge", async (req, res) => {
     return res.status(409).json({ error: true, code: "IN_FLIGHT", message: "Scene judging is already in progress for this project" });
   }
 
+  const { signal, cleanup } = createRequestAbort(req);
+  llmClient.setDefaultAbortSignal(signal);
   try {
     const judge = await sceneService.runFinalJudge(projectId, modelOverride, promptOverrides);
     return res.json({ judge });
   } catch (err) {
     return handleError(res, err);
   } finally {
+    llmClient.setDefaultAbortSignal(undefined);
+    cleanup();
     releaseInflight(inflightKey);
   }
 });

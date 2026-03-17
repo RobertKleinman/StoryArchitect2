@@ -107,7 +107,7 @@ export interface CharacterProfile {
   /** Character's visual presentation for image generation */
   presentation: "masculine" | "feminine" | "androgynous" | "unspecified";
   /** Approximate age range */
-  age_range?: "child" | "teen" | "young_adult" | "adult" | "middle_aged" | "elderly";
+  age_range?: "child" | "teen" | "young_adult" | "adult" | "middle_aged" | "elderly" | "unspecified";
   /** Ethnicity/race if relevant to the story */
   ethnicity?: string;
   core_dials: {

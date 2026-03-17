@@ -1476,8 +1476,8 @@ export class HookService {
     // Check last 3 turns for free-text input
     const recentTurns = session.turns.slice(-3);
     for (const t of recentTurns) {
-      if (t.userSelection?.type === "free_text" && (t.userSelection as any).text) {
-        refs.push(...detectDirectedReferences((t.userSelection as any).text));
+      if (t.userSelection?.type === "free_text" && t.userSelection.label) {
+        refs.push(...detectDirectedReferences(t.userSelection.label));
       }
     }
     return [...new Set(refs)];
@@ -1634,26 +1634,30 @@ export class HookService {
 
   private shouldEscalate(ledger?: import("../../shared/types/userPsychology").UserPsychologyLedger): boolean {
     if (!ledger) return false;
-    // Check control orientation — directors get less escalation, explorers get more
+    // Check control_orientation signals — directors get less escalation, explorers get more
     const signals = ledger.signalStore ?? [];
     const controlSignals = signals.filter((s: any) =>
-      s.category === "control_orientation" || s.category === "engagement_style"
+      s.category === "control_orientation" && s.status === "active"
     );
-    // Look for explorer-like signals
-    const explorerScore = controlSignals.reduce((sum: number, s: any) => {
-      if (s.hypothesis.toLowerCase().includes("explorer") || s.hypothesis.toLowerCase().includes("curious")) {
-        return sum + s.weight;
+    if (controlSignals.length === 0) return Math.random() > 0.5; // no data → coin flip
+
+    // Score: positive = explorer-like, negative = director-like
+    // Use adaptationConsequence (machine-readable intent) instead of fragile hypothesis keyword matching
+    let explorerScore = 0;
+    for (const s of controlSignals) {
+      const text = (s.adaptationConsequence + " " + s.hypothesis).toLowerCase();
+      const conf = s.confidence ?? 0.5;
+      if (/surprise|explore|discover|unexpected|wildcard|open.ended/i.test(text)) {
+        explorerScore += conf;
+      } else if (/control|direct|specific|precise|steer|predictab/i.test(text)) {
+        explorerScore -= conf;
       }
-      if (s.hypothesis.toLowerCase().includes("director") || s.hypothesis.toLowerCase().includes("control")) {
-        return sum - s.weight;
-      }
-      return sum;
-    }, 0);
+    }
     // Escalate for explorers (positive score), skip for directors (negative)
-    // Neutral: escalate ~50% of the time
+    // Neutral: escalate ~40% of the time (slight bias toward not annoying)
     if (explorerScore > 0.3) return true;
     if (explorerScore < -0.3) return false;
-    return Math.random() > 0.5;
+    return Math.random() > 0.6;
   }
 
   private async runEscalationMicroCall(

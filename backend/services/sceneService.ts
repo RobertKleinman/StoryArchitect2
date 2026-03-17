@@ -739,6 +739,33 @@ export class SceneService {
       console.log(`[DIVERGENCE CACHE] Invalidated for scene ${sceneIndex} due to staging change`);
     }
 
+    // Bootstrap echo ledger from distinctive free-text input
+    if (process.env.ENABLE_ECHO_LEDGER && userSelection?.type === "free_text" && userSelection.label.length > 30) {
+      if (!session.echoLedger) session.echoLedger = [];
+      // Heuristic: if user provides substantial creative text, treat it as a potential echo motif
+      // The builder can reference it 2-4 scenes later
+      session.echoLedger.push({
+        motif: userSelection.label.slice(0, 200),
+        priority: "distinctive",
+        originScene: sceneIndex,
+        timesEchoed: 0,
+        echoCooldown: 2, // minimum 2 scenes before echoing
+      });
+    }
+
+    // Bootstrap consequence ledger from user choices
+    if (process.env.ENABLE_CONSEQUENCE_LEDGER && userSelection?.type !== "surprise_me" && userSelection?.label) {
+      if (!session.consequenceLedger) session.consequenceLedger = [];
+      session.consequenceLedger.push({
+        choiceId: `choice_${sceneIndex}_${Date.now()}`,
+        sourceTurn: session.writingTurns.length,
+        decision: userSelection.label,
+        stakes: scenePlan.objective?.stakes ?? "unspecified",
+        owedSceneWindowEnd: Math.min(sceneIndex + 3, (session.scenePlan?.length ?? 999) - 1),
+        status: "pending",
+      });
+    }
+
     session.rhythmSnapshot = rhythmSnapshot;
     this.recordPromptHistory(session, "scene_clarifier", system, user, promptOverrides, `scene ${scenePlan.scene_id} ${autoPassApplied ? "(auto-pass)" : ""}`);
 
@@ -1424,17 +1451,20 @@ export class SceneService {
       }
     }
 
-    // ─── UDQ ledger: inject open dramatic questions ───
-    if (process.env.ENABLE_UDQ_LEDGER && session.udqLedger?.length) {
-      const open = session.udqLedger.filter(q => q.status === "opened" || q.status === "escalated");
+    // ─── UDQ ledger: inject open dramatic questions + bootstrap directive ───
+    if (process.env.ENABLE_UDQ_LEDGER) {
+      const open = (session.udqLedger ?? []).filter(q => q.status === "opened" || q.status === "escalated");
+      let block = "\n\n═══ DRAMATIC QUESTIONS ═══";
       if (open.length > 0) {
-        let block = "\n\n═══ OPEN DRAMATIC QUESTIONS (reader is waiting for answers) ═══";
-        block += "\nNot every scene must address these. But awareness of what the reader is waiting for improves payoff timing.";
+        block += "\nOpen questions the reader is waiting on:";
         for (const q of open) {
           block += `\n- "${q.question}" [${q.status}] (opened scene ${q.openedInScene})`;
         }
-        dynamicSuffix += block;
+        block += "\nNot every scene must address these. Update status in udq_updates if this scene opens, escalates, or answers a question.";
+      } else {
+        block += "\nNo dramatic questions tracked yet. In your udq_updates output, identify any dramatic questions this scene OPENS for the reader (what they lean forward wondering about).";
       }
+      dynamicSuffix += block;
     }
 
     let builderSystemBase = SCENE_BUILDER_SYSTEM;
@@ -2026,14 +2056,14 @@ export class SceneService {
     // Check both planning and writing turns for directed references
     const recentPlanTurns = session.planningTurns.slice(-3);
     for (const t of recentPlanTurns) {
-      if (t.userSelection?.type === "free_text" && (t.userSelection as any).label) {
-        refs.push(...detectDirectedReferences((t.userSelection as any).label));
+      if (t.userSelection?.type === "free_text" && t.userSelection.label) {
+        refs.push(...detectDirectedReferences(t.userSelection.label));
       }
     }
     const recentWriteTurns = session.writingTurns.slice(-3);
     for (const t of recentWriteTurns) {
-      if (t.userSelection?.type === "free_text" && (t.userSelection as any).label) {
-        refs.push(...detectDirectedReferences((t.userSelection as any).label));
+      if (t.userSelection?.type === "free_text" && t.userSelection.label) {
+        refs.push(...detectDirectedReferences(t.userSelection.label));
       }
     }
     return [...new Set(refs)];

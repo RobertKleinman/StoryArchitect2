@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { plotFeatureFlagGuard } from "../middleware/plotFeatureFlagGuard";
-import { plotService, culturalStore } from "../services/runtime";
-import { handleRouteError, getModelOverride, debugGuard } from "./routeUtils";
+import { plotService, plotStore, culturalStore, llmClient } from "../services/runtime";
+import { handleRouteError, getModelOverride, debugGuard, createRequestAbort } from "./routeUtils";
 import { buildInflightKey, acquireInflight, releaseInflight } from "../services/inflightGuard";
 
 export const plotRoutes = Router();
@@ -67,6 +67,8 @@ plotRoutes.post("/clarify", async (req, res) => {
     return res.status(409).json({ error: true, code: "IN_FLIGHT", message: "A clarifier turn is already in progress for this project" });
   }
 
+  const { signal, cleanup } = createRequestAbort(req);
+  llmClient.setDefaultAbortSignal(signal);
   try {
     const result = await plotService.runClarifierTurn(
       projectId,
@@ -84,6 +86,8 @@ plotRoutes.post("/clarify", async (req, res) => {
   } catch (err) {
     return handleError(res, err);
   } finally {
+    llmClient.setDefaultAbortSignal(undefined);
+    cleanup();
     releaseInflight(inflightKey);
   }
 });
@@ -103,12 +107,16 @@ plotRoutes.post("/generate", async (req, res) => {
     return res.status(409).json({ error: true, code: "IN_FLIGHT", message: "Plot generation is already in progress for this project" });
   }
 
+  const { signal, cleanup } = createRequestAbort(req);
+  llmClient.setDefaultAbortSignal(signal);
   try {
     const result = await plotService.runGenerate(projectId, modelOverride, promptOverrides);
     return res.json(result);
   } catch (err) {
     return handleError(res, err);
   } finally {
+    llmClient.setDefaultAbortSignal(undefined);
+    cleanup();
     releaseInflight(inflightKey);
   }
 });
@@ -153,11 +161,11 @@ plotRoutes.post("/lock", async (req, res) => {
 
 plotRoutes.get("/export-session/:projectId", async (req, res) => {
   try {
-    const session = await plotService.getSession(req.params.projectId);
-    if (!session) {
-      return res.status(404).json({ error: true, code: "NOT_FOUND", message: "Plot session not found" });
+    const exportData = await plotStore.getExport(req.params.projectId);
+    if (!exportData) {
+      return res.status(404).json({ error: true, code: "NOT_FOUND", message: "Plot export not found (run lock first)" });
     }
-    return res.json(session);
+    return res.json(exportData);
   } catch (err) {
     return handleError(res, err);
   }

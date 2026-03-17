@@ -2,8 +2,8 @@ import { Router } from "express";
 import fs from "fs/promises";
 import nodePath from "path";
 import { characterImageFeatureFlagGuard } from "../middleware/characterImageFeatureFlagGuard";
-import { characterImageService, characterImageStore, animeGenClient, culturalStore } from "../services/runtime";
-import { handleRouteError, getModelOverride, debugGuard } from "./routeUtils";
+import { characterImageService, characterImageStore, animeGenClient, culturalStore, llmClient } from "../services/runtime";
+import { handleRouteError, getModelOverride, debugGuard, createRequestAbort } from "./routeUtils";
 import { buildInflightKey, acquireInflight, releaseInflight } from "../services/inflightGuard";
 
 export const characterImageRoutes = Router();
@@ -18,8 +18,8 @@ characterImageRoutes.post("/preview-prompt", async (req, res) => {
   if (!projectId || typeof projectId !== "string") {
     return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "projectId is required" });
   }
-  if (!stage || !["clarifier", "builder", "judge", "polish", "summary"].includes(stage)) {
-    return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "stage must be clarifier|builder|judge|polish|summary" });
+  if (!stage || !["clarifier", "builder", "judge", "summary"].includes(stage)) {
+    return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "stage must be clarifier|builder|judge|summary" });
   }
 
   try {
@@ -59,6 +59,8 @@ characterImageRoutes.post("/clarify", async (req, res) => {
     return res.status(409).json({ error: true, code: "IN_FLIGHT", message: "A clarifier turn is already in progress for this project" });
   }
 
+  const { signal, cleanup } = createRequestAbort(req);
+  llmClient.setDefaultAbortSignal(signal);
   try {
     const result = await characterImageService.runClarifierTurn(
       projectId, characterProjectId, userSelection, modelOverride, promptOverrides, assumptionResponses, visualSeed
@@ -67,6 +69,8 @@ characterImageRoutes.post("/clarify", async (req, res) => {
   } catch (err) {
     return handleError(res, err);
   } finally {
+    llmClient.setDefaultAbortSignal(undefined);
+    cleanup();
     releaseInflight(inflightKey);
   }
 });
@@ -84,12 +88,16 @@ characterImageRoutes.post("/generate", async (req, res) => {
     return res.status(409).json({ error: true, code: "IN_FLIGHT", message: "Character image generation is already in progress for this project" });
   }
 
+  const { signal, cleanup } = createRequestAbort(req);
+  llmClient.setDefaultAbortSignal(signal);
   try {
     const result = await characterImageService.runGenerate(projectId, modelOverride, promptOverrides);
     return res.json(result);
   } catch (err) {
     return handleError(res, err);
   } finally {
+    llmClient.setDefaultAbortSignal(undefined);
+    cleanup();
     releaseInflight(inflightKey);
   }
 });
@@ -338,7 +346,7 @@ characterImageRoutes.get("/list-sessions", async (_req, res) => {
           status: session.status,
           turnCount: session.turns?.length ?? 0,
           hasExport,
-          artStyle: session.artStyle ?? "",
+          artStyle: (session as any).artStylePreference?.style ?? "",
           characterCount: charCount,
         });
       } catch (err) { console.warn("[CHARACTER_IMAGE] skipping corrupt file:", err); }

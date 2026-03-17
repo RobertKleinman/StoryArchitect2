@@ -1387,8 +1387,8 @@ export class CharacterService {
     const refs: string[] = [];
     const recentTurns = session.turns.slice(-3);
     for (const t of recentTurns) {
-      if (t.userSelection?.type === "free_text" && (t.userSelection as any).text) {
-        refs.push(...detectDirectedReferences((t.userSelection as any).text));
+      if (t.userSelection?.type === "free_text" && t.userSelection.label) {
+        refs.push(...detectDirectedReferences(t.userSelection.label));
       }
     }
     return [...new Set(refs)];
