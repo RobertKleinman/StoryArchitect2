@@ -442,12 +442,19 @@ SCORE THESE (0-10 each):
 
 8. ENDING SATISFACTION: Does the resolution create the intended emotional landing? Does it feel earned by everything that came before? Does it leave the right amount of openness vs. closure per the plot's ending energy?
 
-FLAG SPECIFIC SCENES: For any scene with problems, say which scene and what's wrong. Categorize as:
-- "suggestion" — could be better but doesn't break anything
-- "should_fix" — noticeably weakens the work
-- "must_fix" — breaks arc/continuity/character and MUST be addressed
+FLAG SPECIFIC SCENES: For any scene with problems, say which scene and what's wrong. Provide both severity and issue_class:
+- severity: "suggestion" | "should_fix" | "must_fix"
+  - "suggestion" — could be better but doesn't break anything
+  - "should_fix" — noticeably weakens the work
+  - "must_fix" — breaks arc/continuity/character and MUST be addressed
+- issue_class: "prose" | "continuity" | "structural" | "emotional" | "logic"
+  - "prose" — word-level or stylistic quality
+  - "continuity" — contradicts established facts, timeline, or character knowledge
+  - "structural" — pacing, scene ordering, arc shape, beat delivery
+  - "emotional" — character interiority, emotional arc, voice consistency
+  - "logic" — plot logic, causal chain, motivation consistency
 
-FLAG ARC ISSUES: Problems that span multiple scenes. e.g., "scenes 5-7 are all pressure_cooker pacing with no relief" or "the antagonist disappears between scenes 3 and 9."
+FLAG ARC ISSUES: Problems that span multiple scenes. Same severity + issue_class fields. e.g., "scenes 5-7 are all pressure_cooker pacing with no relief" or "the antagonist disappears between scenes 3 and 9."
 
 IDENTIFY MISSING ELEMENTS: Things the user should address. e.g., "the motif of broken mirrors is planted in scene 2 but never recurs" or "the mystery about the letter is never paid off."
 

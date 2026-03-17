@@ -964,6 +964,8 @@ export class CharacterImageService {
       lockedCharacters[role] = {
         role: spec.role,
         visual_description: spec,
+        // After extraction, image lives in image_ref; fall back to inline for compat
+        image_ref: image.image_ref,
         image_base64: image.image_base64,
         enhanced_prompt: image.enhanced_prompt,
       };
@@ -1083,12 +1085,7 @@ export class CharacterImageService {
     }
 
     // Build the locked characters from builder output (or empty fallback)
-    const characters: Record<string, {
-      role: string;
-      visual_description: VisualDescription;
-      image_base64: string;
-      enhanced_prompt: string;
-    }> = {};
+    const characters: CharacterImagePack["locked"]["characters"] = {};
 
     const castRoles = Object.keys(sourceCharacterPack.locked.characters);
     for (const role of castRoles) {
@@ -1111,8 +1108,8 @@ export class CharacterImageService {
           },
           image_generation_prompt: "",
         },
-        image_base64: "",    // no actual image generated
-        enhanced_prompt: "",  // no anime-gen tag expansion
+        image_ref: undefined,   // no actual image generated
+        enhanced_prompt: "",    // no anime-gen tag expansion
       };
     }
 
@@ -1159,7 +1156,16 @@ export class CharacterImageService {
   // ─── Session Management ───
 
   async getSession(projectId: string): Promise<CharacterImageSessionState | null> {
-    return this.imageStore.get(projectId);
+    const session = await this.imageStore.get(projectId);
+    if (!session) return null;
+    // Hydrate: load base64 from refs so the frontend receives inline data
+    for (const img of Object.values(session.generatedImages)) {
+      if (!img.image_base64 && img.image_ref) {
+        const data = await this.imageStore.readImageBase64(img.image_ref);
+        if (data) img.image_base64 = data;
+      }
+    }
+    return session;
   }
 
   async setArtStyle(
@@ -1234,26 +1240,7 @@ export class CharacterImageService {
         identity.push(`Ethnicity: ${char.ethnicity}`);
       }
 
-      // Fallback: extract gender from constraint ledger (for older sessions without presentation field)
-      if (!presentation || presentation === "unspecified") {
-        const genderEntry = ledger.find((e) =>
-          (e.key.includes(roleKey) && e.key.includes("gender")) ||
-          (e.key.includes(char.role) && e.key.includes("gender"))
-        );
-        if (genderEntry) {
-          identity.push(`Gender: ${genderEntry.value}`);
-        } else {
-          // Last resort: try to extract from description (look for pronouns)
-          const desc = char.description?.toLowerCase() ?? "";
-          if (desc.includes(" he ") || desc.includes(" his ") || desc.includes(" him ")) {
-            identity.push(`Gender: male (inferred from description)`);
-          } else if (desc.includes(" she ") || desc.includes(" her ") || desc.includes(" hers ")) {
-            identity.push(`Gender: female (inferred from description)`);
-          } else if (desc.includes(" they ") || desc.includes(" their ") || desc.includes(" them ")) {
-            identity.push(`Gender: non-binary/unspecified (inferred from description)`);
-          }
-        }
-      }
+      // Note: fallback gender inference removed — v1→v2 migration populates presentation field
 
       // Extract age/appearance hints from ledger
       const ageEntry = ledger.find((e) =>
@@ -1686,6 +1673,8 @@ export class CharacterImageService {
       editedUser: overrides?.user,
       wasEdited: !!(overrides?.system || overrides?.user),
       responseSummary,
+      provider: this.llm.lastCallProvenance?.provider,
+      model: this.llm.lastCallProvenance?.model,
     });
   }
 

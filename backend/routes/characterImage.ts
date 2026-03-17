@@ -363,6 +363,33 @@ characterImageRoutes.get("/:projectId", async (req, res) => {
   }
 });
 
+/** Serve extracted base64 image by ref path */
+characterImageRoutes.get("/image/:projectId/:role", async (req, res) => {
+  try {
+    const session = await characterImageStore.get(req.params.projectId);
+    if (!session) {
+      return res.status(404).json({ error: true, code: "NOT_FOUND", message: "Session not found" });
+    }
+    const img = session.generatedImages[req.params.role];
+    if (!img) {
+      return res.status(404).json({ error: true, code: "NOT_FOUND", message: "Image not found for role" });
+    }
+    // Return inline base64 if still present, otherwise read from ref
+    if (img.image_base64) {
+      return res.json({ image_base64: img.image_base64 });
+    }
+    if (img.image_ref) {
+      const data = await characterImageStore.readImageBase64(img.image_ref);
+      if (data) {
+        return res.json({ image_base64: data });
+      }
+    }
+    return res.status(404).json({ error: true, code: "NOT_FOUND", message: "Image data not found" });
+  } catch (err) {
+    return handleError(res, err);
+  }
+});
+
 characterImageRoutes.delete("/:projectId", async (req, res) => {
   try {
     await characterImageService.resetSession(req.params.projectId);

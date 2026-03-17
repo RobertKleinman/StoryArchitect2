@@ -2,6 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import { CharacterPack, CharacterSessionState } from "../../shared/types/character";
 import { UserPsychologyLedger } from "../../shared/types/userPsychology";
+import { migrateSession, CURRENT_SCHEMA_VERSION } from "./migrations";
 
 /**
  * Character module export — the clean handoff payload saved separately from the session.
@@ -58,7 +59,11 @@ export class CharacterStore {
     const fp = this.filePath(projectId);
     try {
       const raw = await fs.readFile(fp, "utf-8");
-      return JSON.parse(raw);
+      const session: CharacterSessionState = JSON.parse(raw);
+      if (migrateSession(session, "character")) {
+        await this.save(session);
+      }
+      return session;
     } catch (e: any) {
       if (e.code !== "ENOENT") {
         console.error(`[CharacterStore] get failed: ${fp}`, e.code === undefined ? "parse error" : e.code, e.message);
@@ -68,6 +73,7 @@ export class CharacterStore {
   }
 
   async save(session: CharacterSessionState): Promise<void> {
+    session.schemaVersion = CURRENT_SCHEMA_VERSION;
     const fp = this.filePath(session.projectId);
     const tmp = fp + ".tmp";
     await fs.writeFile(tmp, JSON.stringify(session, null, 2));

@@ -872,6 +872,7 @@ export class SceneService {
       consistency_check: minorJudge?.consistency ?? null,
       retroactive_flags: retroactiveFlags,
       built_at: new Date().toISOString(),
+      provenance: this.llm.lastCallProvenance ? { ...this.llm.lastCallProvenance, sourceTurn: session.writingTurns.length } : undefined,
     };
 
     session.builtScenes.push(builtScene);
@@ -950,6 +951,7 @@ export class SceneService {
         maxTokens: 8000,
         modelOverride,
         jsonSchema: SCENE_FINAL_JUDGE_SCHEMA,
+        truncationMode: "critical",
       });
     } catch (err) {
       console.error("SCENE FINAL JUDGE LLM ERROR:", err);
@@ -965,18 +967,21 @@ export class SceneService {
       throw new SceneServiceError("LLM_PARSE_ERROR", "Failed to parse final judge response");
     }
 
-    // Override LLM's pass decision with severity-based gate:
-    // Fail if any must_fix, or 2+ should_fix in structural/emotional categories
+    // Override LLM's pass decision with severity-based + class-aware gate:
+    // Fail if: any must_fix, OR 2+ should_fix in structural classes (continuity/structural/emotional/logic)
     const allIssues = [
       ...(judge.flagged_scenes ?? []),
       ...(judge.arc_issues ?? []),
     ];
     const mustFixCount = allIssues.filter(i => i.severity === "must_fix").length;
-    const shouldFixCount = allIssues.filter(i => i.severity === "should_fix").length;
-    if (mustFixCount > 0 || shouldFixCount >= 2) {
+    const structuralClasses = new Set(["continuity", "structural", "emotional", "logic"]);
+    const structuralShouldFixCount = allIssues.filter(
+      i => i.severity === "should_fix" && structuralClasses.has(i.issue_class ?? ""),
+    ).length;
+    if (mustFixCount > 0 || structuralShouldFixCount >= 2) {
       if (judge.pass) {
         console.log(
-          `[SCENE] Judge gate override: LLM said pass=true but found ${mustFixCount} must_fix, ${shouldFixCount} should_fix — forcing fail`,
+          `[SCENE] Judge gate override: LLM said pass=true but found ${mustFixCount} must_fix, ${structuralShouldFixCount} structural should_fix — forcing fail`,
         );
       }
       judge.pass = false;
@@ -1176,6 +1181,7 @@ export class SceneService {
         consistency_check: minorJudge?.consistency ?? null,
         retroactive_flags: retroactiveFlags,
         built_at: new Date().toISOString(),
+        provenance: this.llm.lastCallProvenance ? { ...this.llm.lastCallProvenance, sourceTurn: session.writingTurns.length } : undefined,
       };
 
       session.builtScenes.push(builtScene);
@@ -1375,6 +1381,7 @@ export class SceneService {
         maxTokens: 8000,
         modelOverride,
         jsonSchema: SCENE_BUILDER_SCHEMA,
+        truncationMode: "critical",
         // Only use cached prefix when not using prompt overrides
         cacheableUserPrefix: promptOverrides?.user ? undefined : cacheablePrefix,
       });
@@ -1439,6 +1446,7 @@ export class SceneService {
         maxTokens: 3000,
         modelOverride,
         jsonSchema: SCENE_MINOR_JUDGE_SCHEMA,
+        truncationMode: "critical",
       });
     } catch (err) {
       console.error("SCENE MINOR JUDGE ERROR:", err);
@@ -1846,6 +1854,7 @@ export class SceneService {
     summary?: string,
   ): void {
     if (!session.promptHistory) session.promptHistory = [];
+    const provenance = this.llm.lastCallProvenance;
     session.promptHistory.push({
       timestamp: new Date().toISOString(),
       stage: stage as any,
@@ -1856,6 +1865,8 @@ export class SceneService {
       editedUser: overrides?.user,
       wasEdited: !!(overrides?.system || overrides?.user),
       responseSummary: summary,
+      provider: provenance?.provider,
+      model: provenance?.model,
     });
   }
 

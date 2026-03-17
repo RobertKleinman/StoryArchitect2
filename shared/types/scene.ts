@@ -264,7 +264,11 @@ export interface FinalJudgeScores {
   ending_satisfaction: number;
 }
 
+export type JudgeIssueClass = "prose" | "continuity" | "structural" | "emotional" | "logic";
+
 export interface FinalJudgeOutput {
+  /** Chain-of-thought reasoning (populated before scoring) */
+  analysis?: string;
   pass: boolean;
   scores: FinalJudgeScores;
   /** Scenes that need revision */
@@ -272,12 +276,14 @@ export interface FinalJudgeOutput {
     scene_id: string;
     issue: string;
     severity: "suggestion" | "should_fix" | "must_fix";
+    issue_class?: JudgeIssueClass;
   }>;
   /** Arc-level problems */
   arc_issues: Array<{
     issue: string;
     affected_scenes: string[];
     severity: "suggestion" | "should_fix" | "must_fix";
+    issue_class?: JudgeIssueClass;
   }>;
   /** Missing elements the user should address */
   missing_elements: string[];
@@ -480,6 +486,15 @@ export interface SceneWritingTurn {
 
 export type SceneTurn = ScenePlanningTurn | SceneWritingTurn;
 
+// ─── Artifact Provenance ───
+
+export interface ArtifactProvenance {
+  provider: string;
+  model: string;
+  generatedAt: string;
+  sourceTurn?: number;
+}
+
 // ─── Built Scene (scene + judge result, stored after background build) ───
 
 export interface BuiltScene {
@@ -495,6 +510,8 @@ export interface BuiltScene {
     severity: "minor" | "major";
   }>;
   built_at: string;
+  /** Provenance: which provider/model generated this scene */
+  provenance?: ArtifactProvenance;
   /** Has the user flagged this scene for revision? */
   user_flagged?: boolean;
   user_notes?: string;
@@ -524,11 +541,14 @@ export interface ScenePromptHistoryEntry {
   editedUser?: string;
   wasEdited: boolean;
   responseSummary?: string;
+  provider?: string;
+  model?: string;
 }
 
 // ─── Session State ───
 
 export interface SceneSessionState {
+  schemaVersion?: number;
   projectId: string;
 
   // ─── Upstream references ───

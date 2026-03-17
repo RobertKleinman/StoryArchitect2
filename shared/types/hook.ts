@@ -178,6 +178,10 @@ export interface PromptHistoryEntry {
   wasEdited: boolean;
   /** LLM response summary (first 500 chars) for context */
   responseSummary?: string;
+  /** Provenance: which provider generated this */
+  provider?: string;
+  /** Provenance: which model generated this */
+  model?: string;
 }
 
 // ─── Tournament Progress (crash recovery) ───
@@ -192,6 +196,7 @@ export interface TournamentProgress {
 // ─── Session state ───
 
 export interface HookSessionState {
+  schemaVersion?: number;
   projectId: string;
   seedInput: string;
   turns: HookTurn[];

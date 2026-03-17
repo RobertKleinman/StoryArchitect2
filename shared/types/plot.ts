@@ -349,6 +349,8 @@ export interface PlotPromptHistoryEntry {
   editedUser?: string;
   wasEdited: boolean;
   responseSummary?: string;
+  provider?: string;
+  model?: string;
 }
 
 /** Tournament progress for crash recovery */
@@ -360,6 +362,7 @@ export interface PlotTournamentProgress {
 }
 
 export interface PlotSessionState {
+  schemaVersion?: number;
   projectId: string;
 
   // ─── Upstream references ───

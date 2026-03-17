@@ -46,6 +46,18 @@ export interface CallOptions {
   /** If provided, the call will abort when this signal is triggered (e.g. client disconnect).
    *  Checked before each retry attempt. */
   abortSignal?: AbortSignal;
+  /** Controls truncation handling:
+   *  - "critical": fail on truncation, no repair (builder, judge)
+   *  - "best-effort": retry with 1.5x tokens, then repair (divergence, cultural, consolidation)
+   *  Defaults to "best-effort" for backward compat. */
+  truncationMode?: "critical" | "best-effort";
+}
+
+/** Provenance metadata from the most recent LLM call */
+export interface CallProvenance {
+  provider: string;
+  model: string;
+  generatedAt: string;  // ISO timestamp
 }
 
 // ── LLMClient ───────────────────────────────────────────────────────
@@ -53,9 +65,15 @@ export interface CallOptions {
 export class LLMClient {
   private config: ModelConfig;
   private sessionTokens: TokenUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, calls: 0 };
+  private _lastCallProvenance: CallProvenance | null = null;
 
   constructor(config: ModelConfig) {
     this.config = config;
+  }
+
+  /** Returns provenance metadata from the most recent successful call */
+  get lastCallProvenance(): CallProvenance | null {
+    return this._lastCallProvenance;
   }
 
   updateConfig(partial: Partial<ModelConfig>): void {
@@ -95,6 +113,8 @@ export class LLMClient {
       cacheableUserPrefix: options?.cacheableUserPrefix,
     };
 
+    let truncationRetried = false;
+
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       // Check abort signal before each attempt (e.g. client disconnected)
       if (options?.abortSignal?.aborted) {
@@ -123,15 +143,39 @@ export class LLMClient {
         this.sessionTokens.cacheWrite += u.cacheWriteTokens ?? 0;
         this.sessionTokens.calls++;
 
+        // Record provenance for callers that need it
+        this._lastCallProvenance = {
+          provider: providerName,
+          model,
+          generatedAt: new Date().toISOString(),
+        };
+
         // Detect truncation — structured output JSON will be invalid if cut short
-        if (response.stopReason === "max_tokens") {
-          console.warn(
-            `[LLM] ${role} output truncated at maxTokens=${options?.maxTokens ?? "default"} — attempting JSON repair`,
-          );
-          // Try to repair truncated JSON by closing open structures
-          if (options?.jsonSchema) {
-            return repairTruncatedJson(response.text);
+        if (response.stopReason === "max_tokens" && options?.jsonSchema) {
+          const mode = options?.truncationMode ?? "best-effort";
+          const currentMax = providerOpts.maxTokens ?? 4096;
+
+          if (mode === "critical") {
+            throw new Error(
+              `LLM [${role}] output truncated at maxTokens=${currentMax} — critical-path call, refusing to repair`,
+            );
           }
+
+          // best-effort: retry once with 1.5x tokens before repairing
+          if (!truncationRetried) {
+            truncationRetried = true;
+            const expandedMax = Math.ceil(currentMax * 1.5);
+            console.warn(
+              `[LLM] ${role} output truncated at maxTokens=${currentMax} — retrying with ${expandedMax}`,
+            );
+            providerOpts.maxTokens = expandedMax;
+            continue; // re-enter the retry loop
+          }
+
+          console.warn(
+            `[LLM] ${role} still truncated after token expansion — falling back to JSON repair`,
+          );
+          return repairTruncatedJson(response.text);
         }
 
         // Structured outputs = already valid JSON; otherwise strip fences

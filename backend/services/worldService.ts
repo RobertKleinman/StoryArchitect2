@@ -290,7 +290,7 @@ export class WorldService {
                     ([role, char]) => [role, {
                       role: char.role,
                       visual_description: char.visual_description,
-                      image_base64: "", // stripped — not needed for world module
+                      // image stripped — not needed for world module
                       enhanced_prompt: char.enhanced_prompt,
                     }]
                   )
@@ -1600,6 +1600,8 @@ This is a suggestion, not a rule. If ${stuckFocus} still needs work, keep going.
       editedUser: overrides?.user,
       wasEdited: !!(overrides?.system || overrides?.user),
       responseSummary,
+      provider: this.llm.lastCallProvenance?.provider,
+      model: this.llm.lastCallProvenance?.model,
     });
   }
 

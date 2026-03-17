@@ -347,7 +347,7 @@ export class PlotService {
                     ([role, char]) => [role, {
                       role: char.role,
                       visual_description: char.visual_description,
-                      image_base64: "", // stripped — not needed for plot module
+                      // image stripped — not needed for plot module
                       enhanced_prompt: char.enhanced_prompt,
                     }]
                   )
@@ -1646,6 +1646,8 @@ export class PlotService {
       editedUser: overrides?.user,
       wasEdited: !!(overrides?.system || overrides?.user),
       responseSummary,
+      provider: this.llm.lastCallProvenance?.provider,
+      model: this.llm.lastCallProvenance?.model,
     });
   }
 

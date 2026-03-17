@@ -298,11 +298,14 @@ export interface WorldPromptHistoryEntry {
   editedUser?: string;
   wasEdited: boolean;
   responseSummary?: string;
+  provider?: string;
+  model?: string;
 }
 
 // ─── Session State ───
 
 export interface WorldSessionState {
+  schemaVersion?: number;
   projectId: string;
   characterImageProjectId?: string;
   characterProjectId: string;

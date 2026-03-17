@@ -1,6 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
-import { CharacterImagePack, CharacterImageSessionState } from "../../shared/types/characterImage";
+import { CharacterImagePack, CharacterImageSessionState, GeneratedCharacterImage } from "../../shared/types/characterImage";
+import { migrateSession, CURRENT_SCHEMA_VERSION } from "./migrations";
 
 /**
  * Character Image module export — the clean handoff payload saved separately from the session.
@@ -32,14 +33,18 @@ export interface CharacterImageModuleExport {
 export class CharacterImageStore {
   private dataDir: string;
   private exportDir: string;
+  private assetsDir: string;
 
   constructor(dataDir = "./data/characterImages") {
     this.dataDir = dataDir;
     this.exportDir = path.join(dataDir, "exports");
+    this.assetsDir = path.join(dataDir, "assets");
     fs.mkdir(dataDir, { recursive: true }).catch((e) =>
       console.error(`[CharacterImageStore] mkdir failed: ${dataDir}`, e.message));
     fs.mkdir(this.exportDir, { recursive: true }).catch((e) =>
       console.error(`[CharacterImageStore] mkdir failed: ${this.exportDir}`, e.message));
+    fs.mkdir(this.assetsDir, { recursive: true }).catch((e) =>
+      console.error(`[CharacterImageStore] mkdir failed: ${this.assetsDir}`, e.message));
   }
 
   private filePath(projectId: string): string {
@@ -52,11 +57,36 @@ export class CharacterImageStore {
     return path.join(this.exportDir, `${safe}.json`);
   }
 
+  private assetPath(projectId: string, imageId: string): string {
+    const safeProject = projectId.replace(/[^a-zA-Z0-9_-]/g, "");
+    const safeImage = imageId.replace(/[^a-zA-Z0-9_-]/g, "");
+    return path.join(this.assetsDir, `${safeProject}_${safeImage}.b64`);
+  }
+
+  /** Relative ref stored in session JSON (portable across moves) */
+  private assetRef(projectId: string, imageId: string): string {
+    const safeProject = projectId.replace(/[^a-zA-Z0-9_-]/g, "");
+    const safeImage = imageId.replace(/[^a-zA-Z0-9_-]/g, "");
+    return `assets/${safeProject}_${safeImage}.b64`;
+  }
+
   async get(projectId: string): Promise<CharacterImageSessionState | null> {
     const fp = this.filePath(projectId);
     try {
       const raw = await fs.readFile(fp, "utf-8");
-      return JSON.parse(raw);
+      const session: CharacterImageSessionState = JSON.parse(raw);
+      // Schema migration
+      const schemaMigrated = migrateSession(session, "character_image");
+      // Migration: extract any inline base64 that wasn't extracted yet
+      await this.migrateInlineBase64(session);
+      if (schemaMigrated) {
+        // migrateInlineBase64 already re-saves if it extracts, but schema-only migration needs a save too
+        const fp2 = this.filePath(session.projectId);
+        const tmp2 = fp2 + ".tmp";
+        await fs.writeFile(tmp2, JSON.stringify(session, null, 2));
+        await fs.rename(tmp2, fp2);
+      }
+      return session;
     } catch (e: any) {
       if (e.code !== "ENOENT") {
         console.error(`[CharacterImageStore] get failed: ${fp}`, e.code === undefined ? "parse error" : e.code, e.message);
@@ -66,6 +96,9 @@ export class CharacterImageStore {
   }
 
   async save(session: CharacterImageSessionState): Promise<void> {
+    session.schemaVersion = CURRENT_SCHEMA_VERSION;
+    // Extract base64 to separate files before saving session JSON
+    await this.extractBase64ToAssets(session);
     const fp = this.filePath(session.projectId);
     const tmp = fp + ".tmp";
     await fs.writeFile(tmp, JSON.stringify(session, null, 2));
@@ -79,6 +112,19 @@ export class CharacterImageStore {
       if (e.code !== "ENOENT") {
         console.error(`[CharacterImageStore] delete failed: ${this.filePath(projectId)}`, e.code, e.message);
       }
+    }
+  }
+
+  /** Read a base64 image from its asset file */
+  async readImageBase64(ref: string): Promise<string | null> {
+    const fp = path.join(this.dataDir, ref);
+    try {
+      return await fs.readFile(fp, "utf-8");
+    } catch (e: any) {
+      if (e.code !== "ENOENT") {
+        console.error(`[CharacterImageStore] readImageBase64 failed: ${fp}`, e.message);
+      }
+      return null;
     }
   }
 
@@ -124,6 +170,51 @@ export class CharacterImageStore {
         console.error(`[CharacterImageStore] getExport failed: ${fp}`, e.code === undefined ? "parse error" : e.code, e.message);
       }
       return null;
+    }
+  }
+
+  // ── Base64 extraction helpers ─────────────────────────────────────
+
+  /**
+   * Extract inline image_base64 from GeneratedCharacterImage entries to separate .b64 files.
+   * Replaces image_base64 with image_ref in the session object (mutates in place).
+   */
+  private async extractBase64ToAssets(session: CharacterImageSessionState): Promise<void> {
+    for (const [role, img] of Object.entries(session.generatedImages)) {
+      if (img.image_base64 && !img.image_ref) {
+        const ref = this.assetRef(session.projectId, role);
+        const fp = path.join(this.dataDir, ref);
+        await fs.writeFile(fp, img.image_base64, "utf-8");
+        img.image_ref = ref;
+        delete img.image_base64;
+        console.log(`[CharacterImageStore] Extracted base64 for ${role} → ${ref}`);
+      }
+    }
+  }
+
+  /**
+   * Migration-on-load: if a session still has inline image_base64, extract and re-save.
+   */
+  private async migrateInlineBase64(session: CharacterImageSessionState): Promise<void> {
+    let migrated = false;
+    for (const [role, img] of Object.entries(session.generatedImages)) {
+      if (img.image_base64 && !img.image_ref) {
+        const ref = this.assetRef(session.projectId, role);
+        const fp = path.join(this.dataDir, ref);
+        await fs.writeFile(fp, img.image_base64, "utf-8");
+        img.image_ref = ref;
+        delete img.image_base64;
+        migrated = true;
+        console.log(`[CharacterImageStore] Migrated inline base64 for ${role} → ${ref}`);
+      }
+    }
+    if (migrated) {
+      // Re-save session without inline base64
+      const sessionFp = this.filePath(session.projectId);
+      const tmp = sessionFp + ".tmp";
+      await fs.writeFile(tmp, JSON.stringify(session, null, 2));
+      await fs.rename(tmp, sessionFp);
+      console.log(`[CharacterImageStore] Migration re-saved session ${session.projectId}`);
     }
   }
 }

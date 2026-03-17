@@ -1,5 +1,6 @@
 import { promises as fs } from "fs";
 import * as path from "path";
+import { migrateSession, CURRENT_SCHEMA_VERSION } from "./migrations";
 import {
   SceneSessionState,
   ScenePack,
@@ -46,7 +47,11 @@ export class SceneStore {
     const filePath = path.join(this.dataDir, `${this.sanitize(projectId)}.json`);
     try {
       const raw = await fs.readFile(filePath, "utf8");
-      return JSON.parse(raw) as SceneSessionState;
+      const session = JSON.parse(raw) as SceneSessionState;
+      if (migrateSession(session, "scene")) {
+        await this.save(session);
+      }
+      return session;
     } catch (e: any) {
       if (e.code !== "ENOENT") {
         console.error(`[SceneStore] get failed: ${filePath}`, e.code === undefined ? "parse error" : e.code, e.message);
@@ -56,6 +61,7 @@ export class SceneStore {
   }
 
   async save(session: SceneSessionState): Promise<void> {
+    session.schemaVersion = CURRENT_SCHEMA_VERSION;
     const filePath = path.join(this.dataDir, `${this.sanitize(session.projectId)}.json`);
     const tmpPath = filePath + ".tmp";
     await fs.writeFile(tmpPath, JSON.stringify(session, null, 2), "utf8");

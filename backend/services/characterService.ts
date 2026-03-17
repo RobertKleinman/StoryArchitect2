@@ -1840,6 +1840,8 @@ export class CharacterService {
       editedUser: overrides?.user,
       wasEdited,
       responseSummary: responseSummary?.slice(0, 500),
+      provider: this.llm.lastCallProvenance?.provider,
+      model: this.llm.lastCallProvenance?.model,
     });
   }
 

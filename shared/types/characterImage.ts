@@ -111,7 +111,10 @@ export interface GeneratedCharacterImage {
   lora: string | null;
   quality: string;
   seed: number;
-  image_base64: string;
+  /** @deprecated Use image_ref instead. Kept for migration-on-load compat. */
+  image_base64?: string;
+  /** Path to extracted base64 file (relative to data dir), replaces inline image_base64 */
+  image_ref?: string;
   enhanced_prompt: string;         // what anime-gen actually used (tag-expanded)
   generation_time_ms: number;
   approved: boolean;
@@ -129,7 +132,10 @@ export interface CharacterImagePack {
     characters: Record<string, {
       role: string;
       visual_description: VisualDescription;
-      image_base64: string;
+      /** @deprecated Use image_ref instead */
+      image_base64?: string;
+      /** Path to extracted base64 file */
+      image_ref?: string;
       enhanced_prompt: string;
     }>;
     ensemble_cohesion_note: string;
@@ -180,11 +186,14 @@ export interface CharacterImagePromptHistoryEntry {
   editedUser?: string;
   wasEdited: boolean;
   responseSummary?: string;
+  provider?: string;
+  model?: string;
 }
 
 // ─── Session State ───
 
 export interface CharacterImageSessionState {
+  schemaVersion?: number;
   projectId: string;
   characterProjectId: string;
   sourceCharacterPack: import("./character").CharacterPack;

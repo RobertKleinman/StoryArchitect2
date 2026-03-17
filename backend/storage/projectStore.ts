@@ -1,6 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { HookSessionState } from "../../shared/types/hook";
+import { migrateSession, CURRENT_SCHEMA_VERSION } from "./migrations";
 
 export interface ModuleExport {
   exportedAt: string;
@@ -70,7 +71,11 @@ export class ProjectStore {
     const fp = this.filePath(projectId);
     try {
       const raw = await fs.readFile(fp, "utf-8");
-      return JSON.parse(raw);
+      const session: HookSessionState = JSON.parse(raw);
+      if (migrateSession(session, "hook")) {
+        await this.save(session);
+      }
+      return session;
     } catch (e: any) {
       if (e.code !== "ENOENT") {
         console.error(`[ProjectStore] get failed: ${fp}`, e.code === undefined ? "parse error" : e.code, e.message);
@@ -80,6 +85,7 @@ export class ProjectStore {
   }
 
   async save(session: HookSessionState): Promise<void> {
+    session.schemaVersion = CURRENT_SCHEMA_VERSION;
     const fp = this.filePath(session.projectId);
     const tmp = fp + ".tmp";
     await fs.writeFile(tmp, JSON.stringify(session, null, 2));

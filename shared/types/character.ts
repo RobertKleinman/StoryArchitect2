@@ -280,11 +280,14 @@ export interface CharacterPromptHistoryEntry {
   editedUser?: string;
   wasEdited: boolean;
   responseSummary?: string;
+  provider?: string;
+  model?: string;
 }
 
 // ─── Session State ───
 
 export interface CharacterSessionState {
+  schemaVersion?: number;
   projectId: string;
   hookProjectId: string;
   sourceHook: import("./hook").HookPack;
