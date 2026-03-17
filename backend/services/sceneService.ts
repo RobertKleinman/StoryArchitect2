@@ -43,6 +43,7 @@ import type { HookPack } from "../../shared/types/hook";
 import type { UserPsychologyLedger } from "../../shared/types/userPsychology";
 
 import { SceneStore } from "../storage/sceneStore";
+import { withProjectLock } from "../storage/projectMutex";
 import { PlotStore } from "../storage/plotStore";
 import { WorldStore } from "../storage/worldStore";
 import { CharacterImageStore } from "../storage/characterImageStore";
@@ -454,11 +455,13 @@ export class SceneService {
         const ledgerCopy = JSON.parse(JSON.stringify(session.psychologyLedger));
         runConsolidation(ledgerCopy, turnNumber, "scene", this.llm)
           .then(async () => {
-            const fresh = await this.sceneStore.get(bgProjId);
-            if (fresh) {
-              fresh.psychologyLedger = ledgerCopy;
-              await this.sceneStore.save(fresh);
-            }
+            await withProjectLock(bgProjId, async () => {
+              const fresh = await this.sceneStore.get(bgProjId);
+              if (fresh) {
+                fresh.psychologyLedger = ledgerCopy;
+                await this.sceneStore.save(fresh);
+              }
+            });
           })
           .catch(err => console.error("SCENE PLAN CONSOLIDATION ERROR (non-fatal):", err));
       }
@@ -584,12 +587,13 @@ export class SceneService {
       this.runSceneDivergence(session, scenePlan, modelOverride)
         .then(async (result) => {
           if (result) {
-            // Re-fetch the latest session to avoid overwriting main-flow changes
-            const freshSession = await this.sceneStore.get(bgProjectId);
-            if (freshSession) {
-              freshSession.sceneDivergenceResults[bgSceneId] = result;
-              await this.sceneStore.save(freshSession);
-            }
+            await withProjectLock(bgProjectId, async () => {
+              const freshSession = await this.sceneStore.get(bgProjectId);
+              if (freshSession) {
+                freshSession.sceneDivergenceResults[bgSceneId] = result;
+                await this.sceneStore.save(freshSession);
+              }
+            });
           }
         })
         .catch(err => console.error("SCENE DIVERGENCE ERROR (non-fatal, background):", err));
@@ -771,11 +775,13 @@ export class SceneService {
         const ledgerCopy = JSON.parse(JSON.stringify(session.psychologyLedger));
         runConsolidation(ledgerCopy, turnNumber, "scene", this.llm)
           .then(async () => {
-            const fresh = await this.sceneStore.get(bgProjId);
-            if (fresh) {
-              fresh.psychologyLedger = ledgerCopy;
-              await this.sceneStore.save(fresh);
-            }
+            await withProjectLock(bgProjId, async () => {
+              const fresh = await this.sceneStore.get(bgProjId);
+              if (fresh) {
+                fresh.psychologyLedger = ledgerCopy;
+                await this.sceneStore.save(fresh);
+              }
+            });
           })
           .catch(err => console.error("SCENE CONSOLIDATION ERROR (non-fatal):", err));
       }
