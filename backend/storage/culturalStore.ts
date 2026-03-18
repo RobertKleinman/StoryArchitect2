@@ -69,6 +69,29 @@ export class CulturalStore {
     return latest.brief;
   }
 
+  /**
+   * Get the most recent brief from ANY module for this project.
+   * Used as a cross-module fallback when a new module has no briefs yet.
+   * No staleness check — caller decides whether to use it.
+   */
+  async getMostRecentBriefAnyModule(projectId: string): Promise<CulturalBrief | null> {
+    await this.ensureDirs();
+    const files = await fs.readdir(BRIEFS_DIR).catch(() => []);
+    const prefix = `${projectId}_`;
+    const matching = files
+      .filter(f => f.startsWith(prefix) && f.endsWith(".json"))
+      .sort()
+      .reverse();
+
+    if (matching.length === 0) return null;
+
+    const latest = JSON.parse(
+      await fs.readFile(path.join(BRIEFS_DIR, matching[0]), "utf-8"),
+    ) as BriefCacheEntry;
+
+    return latest.brief;
+  }
+
   async saveBrief(brief: CulturalBrief): Promise<void> {
     await this.ensureDirs();
     const entry: BriefCacheEntry = {

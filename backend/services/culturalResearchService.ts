@@ -76,13 +76,26 @@ export class CulturalResearchService {
 
     // Turn 1 is fine — the seed input alone provides rich cultural research signal
 
-    // Check cache
+    // Check cache for this module
     const cached = await this.store.getCachedBrief(
       context.projectId,
       context.module,
       context.turnNumber,
     );
     if (cached) return cached;
+
+    // Cross-module fallback: if this is the first turn of a new module,
+    // bridge with the most recent brief from any previous module while
+    // generating a fresh one in the background.
+    if (context.turnNumber <= 1) {
+      const crossModuleBrief = await this.store.getMostRecentBriefAnyModule(context.projectId);
+      if (crossModuleBrief) {
+        // Use the previous module's brief as a bridge for this turn.
+        // The background research (fired after this turn) will generate
+        // a module-specific brief that includes the previous evidence as seed.
+        return crossModuleBrief;
+      }
+    }
 
     // Generate new brief
     return this.generateBrief(context);
@@ -189,10 +202,28 @@ export class CulturalResearchService {
     try {
       // Step 1: Generate research contract (compress creative state)
       const ledger = await this.store.getLedger(context.projectId);
-      const previousBriefSummaries = ledger.decisions
+
+      // Build previous research summary: decision history + best evidence from prior modules
+      const decisionSummaries = ledger.decisions
         .slice(-5)
         .map(d => d.offered)
         .join("; ");
+
+      // Carry forward key evidence from previous modules so research builds on itself
+      let carryForwardEvidence = "";
+      const prevModuleBrief = await this.store.getMostRecentBriefAnyModule(context.projectId);
+      if (prevModuleBrief && prevModuleBrief.module !== context.module) {
+        const topEvidence = prevModuleBrief.evidenceBrief.items
+          .filter(item => item.confidence === "high" || item.confidence === "medium")
+          .slice(0, 3)
+          .map(item => `[${item.sourceFamily}] ${item.claim} — ${item.specificDetail}`)
+          .join("\n");
+        if (topEvidence) {
+          carryForwardEvidence = `\nKey findings from ${prevModuleBrief.module} module (build on these, don't repeat):\n${topEvidence}`;
+        }
+      }
+
+      const previousBriefSummaries = (decisionSummaries || "(first research)") + carryForwardEvidence;
 
       const contractPrompt = CULTURAL_SUMMARIZER_USER_TEMPLATE
         .replace("{{LOCKED_PACKS}}", context.lockedPacksSummary || "(none locked yet)")
