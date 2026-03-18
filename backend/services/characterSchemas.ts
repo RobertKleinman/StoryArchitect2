@@ -232,16 +232,17 @@ export const CHARACTER_BUILDER_SCHEMA = {
       },
     },
     differentiation_matrix: {
-      type: "object",
-      additionalProperties: {
+      type: "array",
+      items: {
         type: "object",
         properties: {
+          role: { type: "string" },
           stress_response: { type: "string" },
           communication_style: { type: "string" },
           core_value: { type: "string" },
           power_strategy: { type: "string" },
         },
-        required: ["stress_response", "communication_style", "core_value", "power_strategy"],
+        required: ["role", "stress_response", "communication_style", "core_value", "power_strategy"],
         additionalProperties: false,
       },
     },

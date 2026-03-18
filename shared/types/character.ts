@@ -172,7 +172,8 @@ export interface CharacterBuilderOutput {
     explanation: string;
   };
   collision_sources: CharacterCollisionSource[];
-  differentiation_matrix: Record<string, {
+  differentiation_matrix: Array<{
+    role: string;
     stress_response: string;
     communication_style: string;
     core_value: string;
@@ -227,7 +228,8 @@ export interface CharacterPack {
     ensemble_dynamic: string;
     relationship_tensions: RelationshipTension[];
     cast_count: number;
-    differentiation_matrix?: Record<string, {
+    differentiation_matrix?: Array<{
+      role: string;
       stress_response: string;
       communication_style: string;
       core_value: string;

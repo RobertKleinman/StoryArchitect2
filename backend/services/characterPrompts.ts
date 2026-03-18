@@ -419,7 +419,7 @@ ALSO PRODUCE (with budgets):
     communication_style: "direct" | "indirect" | "manipulative" | "avoidant" | "performative" | "silent"
     core_value: "freedom" | "control" | "connection" | "truth" | "safety" | "status" | "pleasure"
     power_strategy: "charm" | "force" | "intelligence" | "endurance" | "deception" | "vulnerability"
-  Output as: Record<string, { stress_response: string; communication_style: string; core_value: string; power_strategy: string }>
+  Output as array: [{ role: string; stress_response: string; communication_style: string; core_value: string; power_strategy: string }]
 - collision_sources: 3-5 entries, each source + element_extracted + applied_to, max 20 words per entry.
 
 ═══ FIELD-BY-FIELD GOOD/BAD EXAMPLES ═══
