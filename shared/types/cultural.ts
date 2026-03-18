@@ -114,12 +114,13 @@ export interface CulturalInfluenceLog {
 // ── Real-World Grounding Layer ──
 
 export type GroundingDomain =
-  | "historical_event"        // Well-documented past events
-  | "institutional_system"    // How real institutions/bureaucracies/organizations work
-  | "philosophical_framework" // Named philosophical or ethical frameworks
-  | "cultural_touchstone"     // Canonical works, movements, or cultural moments
-  | "scientific_finding"      // Psychology, sociology, behavioral economics
-  | "social_pattern";         // Recurring human dynamics, power structures
+  | "historical_behavioral_pattern"  // Real incidents revealing how power/deception/resistance operates
+  | "institutional_mechanics"        // How real organizations distribute power (who decides/blocks/benefits/absorbs risk)
+  | "material_lived_reality"         // Housing, money, transit, class signals, bodily routine — friction and constraint
+  | "philosophical_framework"        // Named philosophical or ethical frameworks with specific useful concepts
+  | "scientific_finding"             // Psychology, behavioral economics, sociology — named phenomena
+  | "regional_local_specificity"     // How institutions/norms/daily life work in a specific confirmed setting
+  | "durable_cultural_dynamic";      // Long-tail social forces with multi-year relevance
 
 export interface GroundingItem {
   /** The real-world reference — specific enough to be useful */
