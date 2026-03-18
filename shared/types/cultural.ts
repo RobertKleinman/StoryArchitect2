@@ -111,6 +111,48 @@ export interface CulturalInfluenceLog {
   entries: InfluenceLogEntry[];
 }
 
+// ── Real-World Grounding Layer ──
+
+export type GroundingDomain =
+  | "historical_event"        // Well-documented past events
+  | "institutional_system"    // How real institutions/bureaucracies/organizations work
+  | "philosophical_framework" // Named philosophical or ethical frameworks
+  | "cultural_touchstone"     // Canonical works, movements, or cultural moments
+  | "scientific_finding"      // Psychology, sociology, behavioral economics
+  | "social_pattern";         // Recurring human dynamics, power structures
+
+export interface GroundingItem {
+  /** The real-world reference — specific enough to be useful */
+  reference: string;
+  /** Why this connects to the creative direction */
+  relevance: string;
+  /** The concrete detail that makes this useful for fiction — a mechanism, dynamic, or texture */
+  narrative_fuel: string;
+  /** What domain this comes from */
+  domain: GroundingDomain;
+  /** How confident the connection is */
+  confidence: "strong" | "moderate" | "speculative";
+  /** Source type: stable_memory (LLM knowledge, historically settled) */
+  source_mode: "stable_memory";
+}
+
+export interface GroundingBrief {
+  id: string;
+  projectId: string;
+  module: CulturalModule;
+  generatedAt: string;
+  afterTurn: number;
+  items: GroundingItem[];            // 2-3 items
+  /** The real-world contradiction or tension this story could explore */
+  thematic_tension?: string;
+}
+
+export interface GroundingCacheEntry {
+  brief: GroundingBrief;
+  createdAt: string;
+  staleAfterTurn: number;           // Tighter window than cultural: 1 turn
+}
+
 // ── Cache types ──
 
 export interface BriefCacheEntry {

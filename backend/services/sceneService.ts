@@ -377,6 +377,15 @@ export class SceneService {
       dynamicSuffix += "\n\n" + planCulturalText;
     }
 
+    // ─── Real-world grounding injection (clarifier only) ───
+    const planGroundingBrief = await culturalResearchService.getGroundingBriefForClarifier(
+      session.projectId, "scene", session.planningTurns.length + 1,
+    );
+    const planGroundingText = culturalResearchService.formatGroundingBriefForClarifier(planGroundingBrief);
+    if (planGroundingText) {
+      dynamicSuffix += "\n\n" + planGroundingText;
+    }
+
     // ─── MUST HONOR constraint reinforcement (end of prompt = highest attention) ───
     const planMustHonor = buildMustHonorBlock(session.constraintLedger ?? []);
     if (planMustHonor) {
@@ -638,6 +647,15 @@ export class SceneService {
     const sceneCulturalText = culturalResearchService.formatBriefForClarifier(sceneCulturalBrief);
     if (sceneCulturalText) {
       dynamicSuffix += "\n\n" + sceneCulturalText;
+    }
+
+    // ─── Real-world grounding injection (clarifier only) ───
+    const sceneGroundingBrief = await culturalResearchService.getGroundingBriefForClarifier(
+      session.projectId, "scene", session.writingTurns.length + 1,
+    );
+    const sceneGroundingText = culturalResearchService.formatGroundingBriefForClarifier(sceneGroundingBrief);
+    if (sceneGroundingText) {
+      dynamicSuffix += "\n\n" + sceneGroundingText;
     }
 
     // ─── MUST HONOR constraint reinforcement (end of prompt = highest attention) ───

@@ -999,6 +999,15 @@ export class WorldService {
       dynamic += "\n\n" + culturalText;
     }
 
+    // ─── Real-world grounding injection (clarifier only) ───
+    const groundingBrief = await culturalResearchService.getGroundingBriefForClarifier(
+      session.projectId, "world", currentTurn,
+    );
+    const groundingText = culturalResearchService.formatGroundingBriefForClarifier(groundingBrief);
+    if (groundingText) {
+      dynamic += "\n\n" + groundingText;
+    }
+
     // ─── MUST HONOR constraint reinforcement (end of prompt = highest attention) ───
     const mustHonor = buildMustHonorBlock(session.constraintLedger ?? []);
     if (mustHonor) {

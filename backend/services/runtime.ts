@@ -57,6 +57,7 @@ export const activeModelConfig: ModelConfig = {
   cultural_summarizer: envModel("CULTURAL_MODEL_SUMMARIZER", DEFAULT_MODEL_CONFIG.cultural_summarizer),
   cultural_researcher: envModel("CULTURAL_MODEL_RESEARCHER", DEFAULT_MODEL_CONFIG.cultural_researcher),
   hook_escalation: envModel("HOOK_MODEL_ESCALATION", DEFAULT_MODEL_CONFIG.hook_escalation),
+  grounding_researcher: envModel("GROUNDING_MODEL_RESEARCHER", DEFAULT_MODEL_CONFIG.grounding_researcher),
 };
 
 export const projectStore = new ProjectStore();

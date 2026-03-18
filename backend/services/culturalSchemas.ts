@@ -71,3 +71,30 @@ export const CULTURAL_BRIEF_SCHEMA = {
   required: ["evidenceItems", "searchDimensions", "creativeApplications", "proposals"],
   additionalProperties: false,
 };
+
+export const GROUNDING_BRIEF_SCHEMA = {
+  type: "object" as const,
+  properties: {
+    groundingItems: {
+      type: "array" as const,
+      items: {
+        type: "object" as const,
+        properties: {
+          reference: { type: "string" as const },
+          relevance: { type: "string" as const },
+          narrative_fuel: { type: "string" as const },
+          domain: {
+            type: "string" as const,
+            enum: ["historical_event", "institutional_system", "philosophical_framework", "cultural_touchstone", "scientific_finding", "social_pattern"],
+          },
+          confidence: { type: "string" as const, enum: ["strong", "moderate", "speculative"] },
+        },
+        required: ["reference", "relevance", "narrative_fuel", "domain", "confidence"],
+        additionalProperties: false,
+      },
+    },
+    thematic_tension: { type: "string" as const },
+  },
+  required: ["groundingItems"],
+  additionalProperties: false,
+};

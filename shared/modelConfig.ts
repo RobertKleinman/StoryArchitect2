@@ -12,7 +12,8 @@ export type HookRole = "clarifier" | "builder" | "judge" | "summary" | "polish"
   | "divergence_explorer"
   | "cultural_summarizer"
   | "cultural_researcher"
-  | "hook_escalation";
+  | "hook_escalation"
+  | "grounding_researcher";
 
 export interface ModelConfig {
   clarifier: string;
@@ -56,6 +57,8 @@ export interface ModelConfig {
   cultural_researcher: string;
   /** Escalation mechanic — heightens user creative input (feature-flagged) */
   hook_escalation: string;
+  /** Real-world grounding researcher — finds parallels from stable knowledge */
+  grounding_researcher: string;
 }
 
 // ── Provider detection from model string ────────────────────────────
@@ -200,4 +203,5 @@ export const DEFAULT_MODEL_CONFIG: ModelConfig = {
   cultural_researcher: FAST,      // background research — fast tier
   // Escalation
   hook_escalation: FAST,          // micro-call — speed-critical, max 200 tokens
+  grounding_researcher: FAST,     // background research — runs during user think-time
 };

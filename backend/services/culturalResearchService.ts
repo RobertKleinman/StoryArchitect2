@@ -19,6 +19,8 @@ import type {
   CreativeApplication,
   CulturalProposal,
   CulturalDecisionLedger,
+  GroundingBrief,
+  GroundingItem,
 } from "../../shared/types/cultural";
 import {
   CULTURAL_SUMMARIZER_SYSTEM,
@@ -27,10 +29,14 @@ import {
   CULTURAL_RESEARCHER_USER_TEMPLATE,
   CULTURAL_CONTEXT_CLARIFIER_HEADER,
   CULTURAL_CONTEXT_BUILDER_HEADER,
+  GROUNDING_RESEARCHER_SYSTEM,
+  GROUNDING_RESEARCHER_USER_TEMPLATE,
+  GROUNDING_CONTEXT_CLARIFIER_HEADER,
 } from "./culturalPrompts";
 import {
   RESEARCH_CONTRACT_SCHEMA,
   CULTURAL_BRIEF_SCHEMA,
+  GROUNDING_BRIEF_SCHEMA,
 } from "./culturalSchemas";
 
 // ── Context needed to generate a brief ──
@@ -134,6 +140,41 @@ export class CulturalResearchService {
   }
 
   /**
+   * Get the cached grounding brief for a clarifier prompt.
+   * Returns null if no cached brief or grounding is disabled.
+   */
+  async getGroundingBriefForClarifier(
+    projectId: string,
+    module: CulturalModule,
+    turnNumber: number,
+  ): Promise<GroundingBrief | null> {
+    if (!process.env.ENABLE_CULTURAL_ENGINE) return null;
+    return this.store.getCachedGroundingBrief(projectId, module, turnNumber);
+  }
+
+  /**
+   * Format a grounding brief as a prompt-injectable block for a clarifier.
+   * Returns empty string if no brief available.
+   */
+  formatGroundingBriefForClarifier(brief: GroundingBrief | null): string {
+    if (!brief || brief.items.length === 0) return "";
+    const lines: string[] = [GROUNDING_CONTEXT_CLARIFIER_HEADER, ""];
+
+    for (const item of brief.items) {
+      lines.push(`▸ [${item.domain}/${item.confidence}] ${item.reference}`);
+      lines.push(`  Relevance: ${item.relevance}`);
+      lines.push(`  Narrative fuel: ${item.narrative_fuel}`);
+      lines.push("");
+    }
+
+    if (brief.thematic_tension) {
+      lines.push(`THEMATIC TENSION: ${brief.thematic_tension}`);
+    }
+
+    return lines.join("\n");
+  }
+
+  /**
    * Get the decision ledger for a project.
    */
   async getDecisionLedger(projectId: string): Promise<CulturalDecisionLedger> {
@@ -180,7 +221,7 @@ export class CulturalResearchService {
 
       const contract = JSON.parse(contractRaw) as ResearchContract;
 
-      // Step 2: Run cultural researcher with the contract
+      // Step 2: Run cultural researcher AND grounding researcher in parallel
       const researchPrompt = CULTURAL_RESEARCHER_USER_TEMPLATE
         .replace("{{STORY_ESSENCE}}", contract.storyEssence)
         .replace("{{EMOTIONAL_CORE}}", contract.emotionalCore)
@@ -192,16 +233,42 @@ export class CulturalResearchService {
         .replace("{{MODULE}}", context.module)
         .replace("{{TURN_NUMBER}}", String(context.turnNumber));
 
-      const researchRaw = await this.llm.call(
-        "cultural_researcher",
-        CULTURAL_RESEARCHER_SYSTEM,
-        researchPrompt,
-        {
-          temperature: 0.8,  // Higher temp for creative research
-          maxTokens: 4096,
-          jsonSchema: CULTURAL_BRIEF_SCHEMA,
-        },
-      );
+      const groundingPrompt = GROUNDING_RESEARCHER_USER_TEMPLATE
+        .replace("{{STORY_ESSENCE}}", contract.storyEssence)
+        .replace("{{EMOTIONAL_CORE}}", contract.emotionalCore)
+        .replace("{{CONFIRMED_ELEMENTS}}", contract.confirmedElements.join("\n") || "(none)")
+        .replace("{{OPEN_QUESTIONS}}", contract.openQuestions.join("\n") || "(none)")
+        .replace("{{NEGATIVE_PROFILE}}", contract.negativeProfile.join("\n") || "(none)")
+        .replace("{{MODULE}}", context.module)
+        .replace("{{TURN_NUMBER}}", String(context.turnNumber));
+
+      // Fire both researchers in parallel — same contract, different jobs
+      const [researchRaw, groundingRaw] = await Promise.all([
+        this.llm.call(
+          "cultural_researcher",
+          CULTURAL_RESEARCHER_SYSTEM,
+          researchPrompt,
+          {
+            temperature: 0.8,
+            maxTokens: 4096,
+            jsonSchema: CULTURAL_BRIEF_SCHEMA,
+          },
+        ),
+        this.llm.call(
+          "grounding_researcher",
+          GROUNDING_RESEARCHER_SYSTEM,
+          groundingPrompt,
+          {
+            temperature: 0.7,  // Slightly lower than cultural — want accuracy over creativity
+            maxTokens: 2048,
+            jsonSchema: GROUNDING_BRIEF_SCHEMA,
+          },
+        ).catch(err => {
+          // Grounding is non-critical — if it fails, cultural brief still works
+          console.warn("[GROUNDING] Researcher failed (non-fatal):", err);
+          return null;
+        }),
+      ]);
 
       const parsed = JSON.parse(researchRaw);
 
@@ -225,8 +292,31 @@ export class CulturalResearchService {
         })) as CulturalProposal[],
       };
 
-      // Step 4: Cache
+      // Step 4: Cache cultural brief
       await this.store.saveBrief(brief);
+
+      // Step 5: Package and cache grounding brief (if it succeeded)
+      if (groundingRaw) {
+        try {
+          const groundingParsed = JSON.parse(groundingRaw);
+          const groundingBrief: GroundingBrief = {
+            id: `gb_${context.module}_${context.turnNumber}_${Date.now()}`,
+            projectId: context.projectId,
+            module: context.module,
+            generatedAt: new Date().toISOString(),
+            afterTurn: context.turnNumber,
+            items: (groundingParsed.groundingItems ?? []).map((item: any) => ({
+              ...item,
+              source_mode: "stable_memory" as const,
+            })) as GroundingItem[],
+            thematic_tension: groundingParsed.thematic_tension,
+          };
+          await this.store.saveGroundingBrief(groundingBrief);
+          console.log(`[GROUNDING] Brief generated: ${groundingBrief.items.length} items for ${context.module} turn ${context.turnNumber}`);
+        } catch (parseErr) {
+          console.warn("[GROUNDING] Failed to parse grounding brief:", parseErr);
+        }
+      }
 
       return brief;
     } catch (err) {
