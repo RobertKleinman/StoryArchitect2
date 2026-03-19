@@ -518,10 +518,16 @@ export class PlotService {
       session!.consecutiveHighReadiness = 0;
     }
 
+    // Gate: require at least 1 confirmed conflict/stakes entry before forcing readiness
+    const conflictConfirmed = (session!.constraintLedger ?? []).some(
+      (e) => (e.key.startsWith("conflict") || e.key.startsWith("stakes") || e.key === "core_conflict" || e.key === "central_tension") && e.confidence === "confirmed"
+    );
+
     if (
       session!.consecutiveHighReadiness! >= 2 &&
       !turn.clarifierResponse.ready_for_plot &&
-      session!.turns.length >= 3
+      session!.turns.length >= 3 &&
+      conflictConfirmed
     ) {
       turn.clarifierResponse.ready_for_plot = true;
       turn.clarifierResponse.readiness_note =
@@ -687,6 +693,7 @@ export class PlotService {
         maxTokens: 12000,
         modelOverride,
         jsonSchema: PLOT_BUILDER_SCHEMA,
+        truncationMode: "critical",
         cacheableUserPrefix: promptOverrides?.builder?.user ? undefined : builderPrompt.cacheableUserPrefix,
       });
     } catch (err) {
@@ -723,6 +730,7 @@ export class PlotService {
         maxTokens: 1500,
         modelOverride,
         jsonSchema: PLOT_JUDGE_SCHEMA,
+        truncationMode: "critical",
       });
     } catch (err) {
       console.error("PLOT JUDGE LLM ERROR:", err);
@@ -974,18 +982,24 @@ export class PlotService {
     session.lastSavedAt = new Date().toISOString();
     await this.plotStore.save(session);
 
-    // Generate/update story bible (non-fatal — session is already saved)
+    // Update ProjectBrief with plot module output (non-fatal)
     try {
-      const bibleKey = session.hookProjectId;
-      const existingBible = await runtimeProjectStore.getStoryBible(bibleKey);
-      const bible = await storyBibleService.generateBible(
-        bibleKey,
-        plotPack.state_summary ?? "",
-        existingBible ?? undefined,
+      const briefKey = session.hookProjectId;
+      const existingBrief = await runtimeProjectStore.getProjectBrief(briefKey);
+      const keyBeats = (plotPack.locked?.tension_chain ?? []).map((b: any) => b.beat_title ?? b.title ?? "").filter(Boolean);
+      const brief = await storyBibleService.updateBrief(
+        briefKey, "plot",
+        {
+          plot: {
+            arc_summary: { value: plotPack.locked?.core_conflict ?? "", confidence: "confirmed", source_module: "plot" },
+            key_beats: { value: keyBeats, confidence: "confirmed", source_module: "plot" },
+          },
+        },
+        existingBrief,
       );
-      await runtimeProjectStore.saveStoryBible(bibleKey, bible);
+      await runtimeProjectStore.saveProjectBrief(brief);
     } catch (err) {
-      console.error("STORY BIBLE UPDATE ERROR (non-fatal):", err);
+      console.error("PLOT PROJECT BRIEF ERROR (non-fatal):", err);
     }
 
     return plotPack;
@@ -1062,10 +1076,11 @@ export class PlotService {
       .replace("{{DIRECTION_MAP}}", directionMapText || "")
       + (probeText ? "\n\n" + probeText : "");
 
-    // ─── Story Bible injection ───
-    const storyBible = await runtimeProjectStore.getStoryBible(session.hookProjectId);
+    // ─── ProjectBrief injection ───
+    const projectBrief = await runtimeProjectStore.getProjectBrief(session.hookProjectId);
+    const { formatProjectBriefForPrompt } = await import("../../shared/types/projectBrief");
     dynamic += "\n\n═══ STORY BIBLE (do NOT contradict — these are confirmed canonical facts) ═══\n" +
-      (storyBible || "(not yet available)");
+      formatProjectBriefForPrompt(projectBrief);
 
     // ─── Cultural Intelligence Engine injection ───
     const culturalBrief = await this.getCulturalBrief(session, currentTurn);
@@ -1156,10 +1171,11 @@ export class PlotService {
       .replace("{{TONE_CHIPS}}", JSON.stringify(hook.preferences?.tone_chips ?? []))
       .replace("{{BAN_LIST}}", JSON.stringify(hook.preferences?.bans ?? []));
 
-    // ─── Story Bible injection ───
-    const storyBibleBuilder = await runtimeProjectStore.getStoryBible(session.hookProjectId);
+    // ─── ProjectBrief injection ───
+    const projectBriefBuilder = await runtimeProjectStore.getProjectBrief(session.hookProjectId);
+    const { formatProjectBriefForPrompt: fmtBrief } = await import("../../shared/types/projectBrief");
     dynamic += "\n\n═══ STORY BIBLE (do NOT contradict — these are confirmed canonical facts) ═══\n" +
-      (storyBibleBuilder || "(not yet available)");
+      fmtBrief(projectBriefBuilder);
 
     // ─── Cultural Intelligence Engine injection ───
     const culturalBrief = await this.getCulturalBriefForBuilder(session);

@@ -380,9 +380,16 @@ export class CharacterImageService {
       session.consecutiveHighReadiness = 0;
     }
 
+    // Gate: require confirmed art style preference before forcing readiness
+    const artStyleConfirmed = (session.constraintLedger ?? []).some(
+      (e) => (e.key === "art_style" || e.key === "visual_style") && e.confidence === "confirmed"
+    );
+
     if (
-      (session.consecutiveHighReadiness >= 2 && session.turns.length >= 2) ||
-      (session.turns.length >= 4) // Hard cap: 4 turns max for visual clarification
+      artStyleConfirmed && (
+        (session.consecutiveHighReadiness >= 2 && session.turns.length >= 2) ||
+        (session.turns.length >= 4) // Hard cap: 4 turns max for visual clarification
+      )
     ) {
       if (!turn.clarifierResponse.ready_for_images) {
         turn.clarifierResponse.ready_for_images = true;
@@ -545,6 +552,7 @@ export class CharacterImageService {
         maxTokens: 12000,
         modelOverride,
         jsonSchema: CHARACTER_IMAGE_BUILDER_SCHEMA,
+        truncationMode: "critical",
       });
     } catch (err) {
       console.error("IMG BUILDER LLM ERROR:", err);
@@ -596,6 +604,7 @@ export class CharacterImageService {
         maxTokens: 1200,
         modelOverride,
         jsonSchema: CHARACTER_IMAGE_JUDGE_SCHEMA,
+        truncationMode: "critical",
       });
     } catch (err) {
       console.error("IMG JUDGE LLM ERROR:", err);
@@ -1067,6 +1076,7 @@ export class CharacterImageService {
         temperature: 0.8,
         maxTokens: 12000,
         jsonSchema: CHARACTER_IMAGE_BUILDER_SCHEMA,
+        truncationMode: "critical",
       });
 
       builderResult = this.parseAndValidate<CharacterImageBuilderOutput>(builderRaw, [

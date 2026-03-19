@@ -459,10 +459,16 @@ export class WorldService {
       session!.consecutiveHighReadiness = 0;
     }
 
+    // Gate: require at least 1 confirmed setting-related entry before forcing readiness
+    const settingConfirmed = (session!.constraintLedger ?? []).some(
+      (e) => (e.key.startsWith("setting") || e.key.startsWith("world.") || e.key === "arena" || e.key === "scope") && e.confidence === "confirmed"
+    );
+
     if (
       session!.consecutiveHighReadiness! >= 2 &&
       !turn.clarifierResponse.ready_for_world &&
-      session!.turns.length >= 3
+      session!.turns.length >= 3 &&
+      settingConfirmed
     ) {
       turn.clarifierResponse.ready_for_world = true;
       turn.clarifierResponse.readiness_note =
@@ -626,6 +632,7 @@ export class WorldService {
         maxTokens: 12000,
         modelOverride,
         jsonSchema: WORLD_BUILDER_SCHEMA,
+        truncationMode: "critical",
         // Only use cached prefix when not using prompt overrides
         cacheableUserPrefix: promptOverrides?.builder?.user ? undefined : builderPrompt.cacheableUserPrefix,
       });
@@ -669,6 +676,7 @@ export class WorldService {
         maxTokens: 1500,
         modelOverride,
         jsonSchema: WORLD_JUDGE_SCHEMA,
+        truncationMode: "critical",
       });
     } catch (err) {
       console.error("WORLD JUDGE LLM ERROR:", err);
@@ -901,17 +909,34 @@ export class WorldService {
       psychologyLedger: session.psychologyLedger,
     };
 
-    // Update story bible with world module output
+    // Update ProjectBrief with world module output (non-fatal)
     try {
-      const existingBible = await runtimeProjectStore.getStoryBible(session.projectId);
-      const bible = await storyBibleService.generateBible(
-        session.projectId,
-        worldPack.state_summary ?? "",
-        existingBible ?? undefined,
+      const briefKey = session.hookProjectId ?? session.projectId;
+      const existingBrief = await runtimeProjectStore.getProjectBrief(briefKey);
+      const worldSetting: any = {};
+      // Extract setting info from arena primary stage and scope
+      if (worldPack.locked?.arena?.primary_stage) {
+        const primary = worldPack.locked.arena.locations?.find(
+          (l: any) => l.id === worldPack.locked!.arena.primary_stage
+        );
+        if (primary) {
+          worldSetting.anchor = { value: `${primary.name}: ${primary.description}`, confidence: "confirmed", source_module: "world" };
+        }
+      }
+      if (worldPack.locked?.scope?.time_pressure) {
+        worldSetting.time_period = { value: worldPack.locked.scope.time_pressure, confidence: "confirmed", source_module: "world" };
+      }
+      if (worldPack.locked?.scope?.tone_rule) {
+        worldSetting.atmosphere = { value: worldPack.locked.scope.tone_rule, confidence: "confirmed", source_module: "world" };
+      }
+      const brief = await storyBibleService.updateBrief(
+        briefKey, "world",
+        { setting: worldSetting },
+        existingBrief,
       );
-      await runtimeProjectStore.saveStoryBible(session.projectId, bible);
+      await runtimeProjectStore.saveProjectBrief(brief);
     } catch (err) {
-      console.error("WORLD STORY BIBLE ERROR (non-fatal):", err);
+      console.error("WORLD PROJECT BRIEF ERROR (non-fatal):", err);
     }
 
     await this.worldStore.saveExport(session, worldPack);
@@ -987,10 +1012,12 @@ export class WorldService {
     dynamic += (probeText ? "\n\n" + probeText : "");
     dynamic += (directionMapText ? "\n\n" + directionMapText : "");
 
-    // ─── Story Bible injection ───
-    const storyBible = await runtimeProjectStore.getStoryBible(session.projectId);
+    // ─── ProjectBrief injection ───
+    const briefKey = session.hookProjectId ?? session.projectId;
+    const projectBrief = await runtimeProjectStore.getProjectBrief(briefKey);
+    const { formatProjectBriefForPrompt } = await import("../../shared/types/projectBrief");
     dynamic += "\n\n═══ STORY BIBLE (do NOT contradict — these are confirmed canonical facts) ═══\n" +
-      (storyBible || "(not yet available)");
+      formatProjectBriefForPrompt(projectBrief);
 
     // ─── Cultural Intelligence Engine injection ───
     const culturalBrief = await this.getCulturalBrief(session, currentTurn);
@@ -1064,10 +1091,12 @@ export class WorldService {
       .replace("{{PSYCHOLOGY_SIGNALS}}", signalsText)
       .replace("{{CONSTRAINT_LEDGER}}", ledgerText);
 
-    // ─── Story Bible injection ───
-    const storyBibleBuilder = await runtimeProjectStore.getStoryBible(session.projectId);
+    // ─── ProjectBrief injection ───
+    const briefKeyBuilder = session.hookProjectId ?? session.projectId;
+    const projectBriefBuilder = await runtimeProjectStore.getProjectBrief(briefKeyBuilder);
+    const { formatProjectBriefForPrompt: fmtBrief } = await import("../../shared/types/projectBrief");
     dynamic += "\n\n═══ STORY BIBLE (do NOT contradict — these are confirmed canonical facts) ═══\n" +
-      (storyBibleBuilder || "(not yet available)");
+      fmtBrief(projectBriefBuilder);
 
     // ─── Cultural Intelligence Engine injection ───
     const culturalBrief = await this.getCulturalBriefForBuilder(session);

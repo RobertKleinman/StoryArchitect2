@@ -1348,8 +1348,8 @@ export class SceneService {
 
     // Get constraint ledger entries relevant to this scene
     const sceneConstraints = session.constraintLedger
-      .filter(e => e.confidence === "confirmed" && (!e.sceneId || e.sceneId === scenePlan.scene_id))
-      .map(e => `[${e.key}] ${e.value} (${e.source})`)
+      .filter(e => (e.confidence === "confirmed" || e.confidence === "imported") && (!e.sceneId || e.sceneId === scenePlan.scene_id))
+      .map(e => `[${e.key}] ${e.value} (${e.source})${e.confidence === "imported" ? " [upstream]" : ""}`)
       .join("\n") || "(no constraints)";
 
     // Static prefix — cacheable (scene plan, character profiles, world summary, theme, tone chips, bans don't change)
@@ -1924,8 +1924,8 @@ export class SceneService {
   private formatLedger(ledger: SceneLedgerEntry[]): string {
     if (ledger.length === 0) return "(empty)";
     return ledger
-      .filter(e => e.confidence === "confirmed")
-      .map(e => `[${e.key}] ${e.value} (${e.source})`)
+      .filter(e => e.confidence === "confirmed" || e.confidence === "imported")
+      .map(e => `[${e.key}] ${e.value} (${e.source})${e.confidence === "imported" ? " [upstream]" : ""}`)
       .join("\n");
   }
 

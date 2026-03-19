@@ -102,11 +102,18 @@ characterImageRoutes.post("/reroll", async (req, res) => {
     return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "projectId is required" });
   }
 
+  const inflightKey = buildInflightKey(projectId, "character_image", "reroll");
+  if (!acquireInflight(inflightKey)) {
+    return res.status(409).json({ error: true, code: "IN_FLIGHT", message: "A reroll is already in progress for this project" });
+  }
+
   try {
     const result = await characterImageService.reroll(projectId, modelOverride, promptOverrides, constraintOverrides);
     return res.json(result);
   } catch (err) {
     return handleError(res, err);
+  } finally {
+    releaseInflight(inflightKey);
   }
 });
 
@@ -120,11 +127,18 @@ characterImageRoutes.post("/generate-images", async (req, res) => {
     return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "checkpoint is required" });
   }
 
+  const inflightKey = buildInflightKey(projectId, "character_image", "generate-images");
+  if (!acquireInflight(inflightKey)) {
+    return res.status(409).json({ error: true, code: "IN_FLIGHT", message: "Image generation is already in progress for this project" });
+  }
+
   try {
     const result = await characterImageService.generateImages(projectId, checkpoint, lora, quality, seed);
     return res.json(result);
   } catch (err) {
     return handleError(res, err);
+  } finally {
+    releaseInflight(inflightKey);
   }
 });
 
@@ -156,6 +170,11 @@ characterImageRoutes.post("/redo-image", async (req, res) => {
     return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "role is required" });
   }
 
+  const inflightKey = buildInflightKey(projectId, "character_image", "redo-image");
+  if (!acquireInflight(inflightKey)) {
+    return res.status(409).json({ error: true, code: "IN_FLIGHT", message: "An image redo is already in progress for this project" });
+  }
+
   const overrides = (checkpoint || lora !== undefined || quality)
     ? { checkpoint, lora, quality }
     : undefined;
@@ -165,6 +184,8 @@ characterImageRoutes.post("/redo-image", async (req, res) => {
     return res.json(result);
   } catch (err) {
     return handleError(res, err);
+  } finally {
+    releaseInflight(inflightKey);
   }
 });
 
@@ -176,11 +197,18 @@ characterImageRoutes.post("/lock", async (req, res) => {
     return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "projectId is required" });
   }
 
+  const inflightKey = buildInflightKey(projectId, "character_image", "lock");
+  if (!acquireInflight(inflightKey)) {
+    return res.status(409).json({ error: true, code: "IN_FLIGHT", message: "A lock operation is already in progress for this project" });
+  }
+
   try {
     const result = await characterImageService.lockImages(projectId, modelOverride);
     return res.json(result);
   } catch (err) {
     return handleError(res, err);
+  } finally {
+    releaseInflight(inflightKey);
   }
 });
 
@@ -350,20 +378,7 @@ characterImageRoutes.get("/list-sessions", async (_req, res) => {
   }
 });
 
-// /:projectId MUST be after all /debug/* and other static GET routes
-characterImageRoutes.get("/:projectId", async (req, res) => {
-  try {
-    const session = await characterImageService.getSession(req.params.projectId);
-    if (!session) {
-      return res.status(404).json({ error: true, code: "NOT_FOUND", message: "Character image session not found" });
-    }
-    return res.json(session);
-  } catch (err) {
-    return handleError(res, err);
-  }
-});
-
-/** Serve extracted base64 image by ref path */
+/** Serve extracted base64 image by ref path — MUST be before /:projectId catch-all */
 characterImageRoutes.get("/image/:projectId/:role", async (req, res) => {
   try {
     const session = await characterImageStore.get(req.params.projectId);
@@ -385,6 +400,19 @@ characterImageRoutes.get("/image/:projectId/:role", async (req, res) => {
       }
     }
     return res.status(404).json({ error: true, code: "NOT_FOUND", message: "Image data not found" });
+  } catch (err) {
+    return handleError(res, err);
+  }
+});
+
+// /:projectId catch-all MUST be after all /image/* and /debug/* routes
+characterImageRoutes.get("/:projectId", async (req, res) => {
+  try {
+    const session = await characterImageService.getSession(req.params.projectId);
+    if (!session) {
+      return res.status(404).json({ error: true, code: "NOT_FOUND", message: "Character image session not found" });
+    }
+    return res.json(session);
   } catch (err) {
     return handleError(res, err);
   }

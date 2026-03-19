@@ -12,14 +12,19 @@ interface LedgerEntryLike {
 }
 
 /**
- * Build a compact MUST HONOR block from confirmed constraint ledger entries.
- * Returns empty string if there are no confirmed entries.
+ * Build a compact MUST HONOR block from confirmed AND imported constraint ledger entries.
+ * Returns empty string if there are no authoritative entries.
  */
 export function buildMustHonorBlock(ledger: LedgerEntryLike[]): string {
-  const confirmed = ledger.filter((e) => e.confidence === "confirmed");
-  if (confirmed.length === 0) return "";
+  const authoritative = ledger.filter(
+    (e) => e.confidence === "confirmed" || e.confidence === "imported"
+  );
+  if (authoritative.length === 0) return "";
 
-  const lines = confirmed.map((e) => `${e.key.toUpperCase()}: ${e.value}`);
+  const lines = authoritative.map((e) => {
+    const suffix = e.confidence === "imported" ? " (upstream)" : "";
+    return `${e.key.toUpperCase()}: ${e.value}${suffix}`;
+  });
   return `\u2550\u2550\u2550 MUST HONOR \u2014 CONFIRMED FACTS (do NOT contradict) \u2550\u2550\u2550\n${lines.join("\n")}`;
 }
 

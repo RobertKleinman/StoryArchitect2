@@ -287,7 +287,7 @@ OUTPUT FORMAT
    - 60–80: Most pieces in place, refining and tightening
    - 80–100: Strong hook with user-shaped choices, ready to generate
    Use the constraint ledger to help: if user has confirmed 4+ key dimensions, you're probably above 60%. If protagonist_desire hasn't been surfaced yet, you shouldn't be above 75%.
-   Be honest — don't inflate. But also don't stall — if the ledger shows strong confirmed constraints and the hook feels vivid, move forward. Users who skip assumptions are fine with your inferences.
+   Be honest — don't inflate. But also don't stall — if the ledger shows strong confirmed constraints and the hook feels vivid, move forward. However, inferred items the user hasn't seen or responded to are still OPEN QUESTIONS, not confirmed. If key dimensions (protagonist_desire, setting_anchor, hook_engine) remain inferred, surface them as assumptions before pushing readiness higher.
 
 7. readiness_note — When ready: something exciting ("I think we've found something special — ready to see this come to life?"). When not ready: ""
 
@@ -394,7 +394,7 @@ Run the adaptive engine:
    - Propose hook directions? Ask a creative constraint they'd enjoy shaping? Challenge a weak spot? Sharpen what they've given you?
 5. Infer what you can from their language and choices — but surface choices they'd WANT control over (setting, character roles, tone, relationship dynamics).
 6. Surface your assumptions — but DON'T re-surface anything that's already CONFIRMED in the ledger. Only surface NEW assumptions or things still marked as inferred.
-7. Quality gate: is the hook strong enough AND has the user had meaningful creative input? Use the ledger's confirmed count to help judge — but remember, not every dimension needs confirming. If the user hasn't pushed back on inferred items after several turns, they're likely fine with them.`;
+7. Quality gate: is the hook strong enough AND has the user had meaningful creative input? Use the ledger's confirmed count to help judge — not every dimension needs confirming, but HIGH-IMPACT dimensions (protagonist_desire, setting_anchor, hook_engine) should be confirmed by the user, not just inferred. If these remain inferred, surface them as assumptions before declaring readiness. Silence is not confirmation — only explicit user action (keep, change, freeform) confirms an assumption.`;
 
 export const HOOK_BUILDER_SYSTEM = `You are HookBuilder. Use COLLISION + specificity to generate a hook that feels like it could only be THIS story.
 

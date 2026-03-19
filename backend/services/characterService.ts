@@ -690,6 +690,7 @@ export class CharacterService {
           maxTokens: builderMaxTokens,
           modelOverride,
           jsonSchema: CHARACTER_BUILDER_SCHEMA,
+          truncationMode: "critical",
           cacheableUserPrefix: promptOverrides?.builder?.user ? undefined : builderPrompt.cacheableUserPrefix,
         });
       } catch (err) {
@@ -736,6 +737,7 @@ export class CharacterService {
           maxTokens: 1200,
           modelOverride,
           jsonSchema: CHARACTER_JUDGE_SCHEMA,
+          truncationMode: "critical",
         });
       } catch (err) {
         console.error(`CHAR JUDGE ${i + 1} LLM ERROR:`, err);
@@ -1059,17 +1061,37 @@ export class CharacterService {
       hookpack_reference: { hookProjectId: session.hookProjectId },
     };
 
-    // Update story bible with character module output
+    // Update ProjectBrief with character module output (non-fatal)
     try {
-      const existingBible = await runtimeProjectStore.getStoryBible(session.projectId);
-      const bible = await storyBibleService.generateBible(
-        session.projectId,
-        characterPack.state_summary ?? "",
-        existingBible ?? undefined,
+      const briefKey = session.hookProjectId ?? session.projectId;
+      const existingBrief = await runtimeProjectStore.getProjectBrief(briefKey);
+      const briefCharacters = Object.entries(lockedCharacters).map(([role, profile]: [string, any]) => ({
+        name: profile.name ?? role,
+        role,
+        confidence: "confirmed" as const,
+        source_module: "character" as const,
+        key_traits: [
+          profile.threshold_statement,
+          profile.competence_axis,
+          profile.cost_type,
+        ].filter(Boolean),
+        presentation: profile.presentation,
+        age_range: profile.age_range,
+      }));
+      const briefRelationships = (cast.relationship_tensions ?? []).map((rt: any) => ({
+        between: [rt.between?.[0] ?? "?", rt.between?.[1] ?? "?"] as [string, string],
+        nature: rt.nature ?? rt.tension ?? "",
+        confidence: "confirmed" as const,
+        source_module: "character" as const,
+      }));
+      const brief = await storyBibleService.updateBrief(
+        briefKey, "character",
+        { characters: briefCharacters, relationships: briefRelationships },
+        existingBrief,
       );
-      await runtimeProjectStore.saveStoryBible(session.projectId, bible);
+      await runtimeProjectStore.saveProjectBrief(brief);
     } catch (err) {
-      console.error("CHAR STORY BIBLE ERROR (non-fatal):", err);
+      console.error("CHAR PROJECT BRIEF ERROR (non-fatal):", err);
     }
 
     // Save export separately (clean handoff payload for downstream modules)
@@ -1255,10 +1277,12 @@ export class CharacterService {
     dynamic += (probeText ? "\n\n" + probeText : "");
     dynamic += (directionMapText ? "\n\n" + directionMapText : "");
 
-    // ─── Story Bible injection ───
-    const storyBible = await runtimeProjectStore.getStoryBible(session.projectId);
+    // ─── ProjectBrief injection ───
+    const briefKey = session.hookProjectId ?? session.projectId;
+    const projectBrief = await runtimeProjectStore.getProjectBrief(briefKey);
+    const { formatProjectBriefForPrompt } = await import("../../shared/types/projectBrief");
     dynamic += "\n\n═══ STORY BIBLE (do NOT contradict — these are confirmed canonical facts) ═══\n" +
-      (storyBible || "(not yet available)");
+      formatProjectBriefForPrompt(projectBrief);
 
     // ─── Cultural Intelligence Engine injection ───
     const culturalBrief = await this.getCulturalBrief(session, currentTurn);
@@ -1319,10 +1343,12 @@ export class CharacterService {
       .replace("{{PSYCHOLOGY_SIGNALS}}", signalsText)
       .replace("{{CONSTRAINT_LEDGER}}", ledgerText);
 
-    // ─── Story Bible injection ───
-    const storyBibleBuilder = await runtimeProjectStore.getStoryBible(session.projectId);
+    // ─── ProjectBrief injection ───
+    const briefKeyBuilder = session.hookProjectId ?? session.projectId;
+    const projectBriefBuilder = await runtimeProjectStore.getProjectBrief(briefKeyBuilder);
+    const { formatProjectBriefForPrompt: fmtBrief } = await import("../../shared/types/projectBrief");
     dynamic += "\n\n═══ STORY BIBLE (do NOT contradict — these are confirmed canonical facts) ═══\n" +
-      (storyBibleBuilder || "(not yet available)");
+      fmtBrief(projectBriefBuilder);
 
     // ─── Cultural Intelligence Engine injection ───
     const culturalBrief = await this.getCulturalBriefForBuilder(session);

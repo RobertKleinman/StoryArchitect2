@@ -9,7 +9,7 @@ import { ModelSettings } from "./ModelSettings";
 
 type Module = "hook" | "character" | "character_image" | "world" | "plot" | "scene";
 
-const ALL_MODULES: Module[] = ["hook", "character", "character_image", "world", "plot", "scene"];
+const ALL_MODULES: Module[] = ["hook", "character", "world", "plot", "scene", "character_image"];
 
 /** Workshops dispatch these events when their phase changes to locked / active / reset */
 export function emitModuleStatus(module: Module, status: "locked" | "active" | "idle") {
@@ -60,31 +60,31 @@ export function App() {
         </button>
         <button
           type="button"
-          className={`module-tab${activeModule === "character_image" ? " module-tab-active" : ""}`}
-          onClick={() => setActiveModule("character_image")}
-        >
-          3. Char Images {tabDot("character_image")}
-        </button>
-        <button
-          type="button"
           className={`module-tab${activeModule === "world" ? " module-tab-active" : ""}`}
           onClick={() => setActiveModule("world")}
         >
-          4. World {tabDot("world")}
+          3. World {tabDot("world")}
         </button>
         <button
           type="button"
           className={`module-tab${activeModule === "plot" ? " module-tab-active" : ""}`}
           onClick={() => setActiveModule("plot")}
         >
-          5. Plot {tabDot("plot")}
+          4. Plot {tabDot("plot")}
         </button>
         <button
           type="button"
           className={`module-tab${activeModule === "scene" ? " module-tab-active" : ""}`}
           onClick={() => setActiveModule("scene")}
         >
-          6. Scenes {tabDot("scene")}
+          5. Scenes {tabDot("scene")}
+        </button>
+        <button
+          type="button"
+          className={`module-tab${activeModule === "character_image" ? " module-tab-active" : ""}`}
+          onClick={() => setActiveModule("character_image")}
+        >
+          6. Char Images {tabDot("character_image")}
         </button>
         <button
           type="button"

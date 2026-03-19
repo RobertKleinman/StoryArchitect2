@@ -114,9 +114,15 @@ export class CharacterImageStore {
     }
   }
 
-  /** Read a base64 image from its asset file */
+  /** Read a base64 image from its asset file (with path containment check) */
   async readImageBase64(ref: string): Promise<string | null> {
-    const fp = path.join(this.dataDir, ref);
+    const fp = path.resolve(this.dataDir, ref);
+    const root = path.resolve(this.dataDir);
+    // Prevent path traversal — ref must resolve within dataDir
+    if (!fp.startsWith(root + path.sep) && fp !== root) {
+      console.warn(`[CharacterImageStore] path traversal blocked: ${ref} resolved to ${fp}`);
+      return null;
+    }
     try {
       return await fs.readFile(fp, "utf-8");
     } catch (e: any) {

@@ -1,6 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { HookSessionState } from "../../shared/types/hook";
+import type { ProjectBrief } from "../../shared/types/projectBrief";
 import { migrateSession, CURRENT_SCHEMA_VERSION } from "./migrations";
 
 export interface ModuleExport {
@@ -181,5 +182,37 @@ export class ProjectStore {
     };
     await fs.writeFile(tmp, JSON.stringify(data, null, 2));
     await fs.rename(tmp, fp);
+  }
+
+  // ─── ProjectBrief ───
+
+  private briefPath(projectId: string): string {
+    const safe = projectId.replace(/[^a-zA-Z0-9_-]/g, "");
+    return path.join(this.bibleDir, `${safe}.brief.json`);
+  }
+
+  /** Get the ProjectBrief for a project */
+  async getProjectBrief(projectId: string): Promise<ProjectBrief | null> {
+    const fp = this.briefPath(projectId);
+    try {
+      const raw = await fs.readFile(fp, "utf-8");
+      return JSON.parse(raw);
+    } catch (e: any) {
+      if (e.code !== "ENOENT") {
+        console.error(`[ProjectStore] getProjectBrief failed: ${fp}`, e.code === undefined ? "parse error" : e.code, e.message);
+      }
+      return null;
+    }
+  }
+
+  /** Save the ProjectBrief for a project */
+  async saveProjectBrief(brief: ProjectBrief): Promise<void> {
+    const fp = this.briefPath(brief.projectId);
+    const tmp = fp + ".tmp";
+    await fs.writeFile(tmp, JSON.stringify(brief, null, 2));
+    await fs.rename(tmp, fp);
+
+    // Also update the legacy bible with the narrative summary for backwards compat
+    await this.saveStoryBible(brief.projectId, brief.narrative_summary);
   }
 }

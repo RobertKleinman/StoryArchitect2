@@ -374,10 +374,18 @@ export class HookService {
       session.consecutiveHighReadiness = 0;
     }
 
+    // Gate forced readiness: require at least 2 of 3 high-impact entries confirmed
+    const highImpactKeys = ["hook_engine", "setting_anchor", "protagonist_role"];
+    const confirmedHighImpact = session.constraintLedger.filter(
+      (e) => highImpactKeys.includes(e.key) && e.confidence === "confirmed"
+    ).length;
+    const highImpactGateMet = confirmedHighImpact >= 2;
+
     if (
       session.consecutiveHighReadiness >= 2 &&
       !turn.clarifierResponse.ready_for_hook &&
-      session.turns.length >= 3  // minimum 3 turns before forcing
+      session.turns.length >= 3 &&
+      highImpactGateMet  // don't force readiness until user has confirmed key elements
     ) {
       turn.clarifierResponse.ready_for_hook = true;
       turn.clarifierResponse.readiness_note =
@@ -625,6 +633,7 @@ export class HookService {
           maxTokens: 4000,
           modelOverride,
           jsonSchema: HOOK_BUILDER_SCHEMA,
+          truncationMode: "critical",
           cacheableUserPrefix: promptOverrides?.builder?.user ? undefined : builderPrompt.cacheableUserPrefix,
         });
       } catch (err) {
@@ -659,6 +668,7 @@ export class HookService {
           temperature: 0.3,
           modelOverride,
           jsonSchema: HOOK_JUDGE_SCHEMA,
+          truncationMode: "critical",
         });
       } catch (err) {
         console.error(`JUDGE ${i + 1} LLM ERROR:`, err);
@@ -996,17 +1006,37 @@ export class HookService {
       console.error("AUTO-EXPORT ERROR (session saved, export failed):", err);
     }
 
-    // Generate/update story bible (non-fatal — session is already saved)
+    // Generate/update ProjectBrief (non-fatal — session is already saved)
     try {
-      const existingBible = await runtimeProjectStore.getStoryBible(session.projectId);
-      const bible = await storyBibleService.generateBible(
+      const existingBrief = await runtimeProjectStore.getProjectBrief(session.projectId);
+      const toneEntries = (hookPack.preferences.tone_chips ?? []).map((chip: string) => ({
+        value: chip, confidence: "confirmed" as const, source_module: "hook" as const,
+      }));
+      const banEntries = (hookPack.preferences.bans ?? []).map((ban: string) => ({
+        value: ban, confidence: "confirmed" as const, source_module: "hook" as const,
+      }));
+      const brief = await storyBibleService.updateBrief(
         session.projectId,
-        hookPack.state_summary ?? "",
-        existingBible ?? undefined,
+        "hook",
+        {
+          hook: {
+            sentence: { value: hookPack.locked.hook_sentence, confidence: "confirmed", source_module: "hook" },
+            engine: { value: hookPack.locked.core_engine.hook_engine, confidence: "confirmed", source_module: "hook" },
+            stakes: { value: hookPack.locked.core_engine.stakes, confidence: "confirmed", source_module: "hook" },
+            emotional_promise: { value: hookPack.locked.emotional_promise, confidence: "confirmed", source_module: "hook" },
+          },
+          tone: toneEntries,
+          bans: banEntries,
+          open_questions: hookPack.open_threads ?? [],
+          setting: hookPack.locked.core_engine.setting_anchor
+            ? { anchor: { value: hookPack.locked.core_engine.setting_anchor, confidence: "confirmed", source_module: "hook" } }
+            : undefined,
+        },
+        existingBrief,
       );
-      await runtimeProjectStore.saveStoryBible(session.projectId, bible);
+      await runtimeProjectStore.saveProjectBrief(brief);
     } catch (err) {
-      console.error("STORY BIBLE UPDATE ERROR (non-fatal):", err);
+      console.error("PROJECT BRIEF UPDATE ERROR (non-fatal):", err);
     }
 
     return hookPack;
@@ -1069,10 +1099,11 @@ export class HookService {
     dynamic += (probeText ? "\n\n" + probeText : "");
     dynamic += (directionMapText ? "\n\n" + directionMapText : "");
 
-    // ─── Story Bible injection ───
-    const storyBible = await runtimeProjectStore.getStoryBible(session.projectId);
+    // ─── ProjectBrief injection (replaces legacy story bible) ───
+    const projectBrief = await runtimeProjectStore.getProjectBrief(session.projectId);
+    const { formatProjectBriefForPrompt } = await import("../../shared/types/projectBrief");
     dynamic += "\n\n═══ STORY BIBLE (do NOT contradict — these are confirmed canonical facts) ═══\n" +
-      (storyBible || "(not yet available)");
+      formatProjectBriefForPrompt(projectBrief);
 
     // ─── Cultural Intelligence Engine injection ───
     const culturalBrief = await this.getCulturalBrief(session, currentTurn);
@@ -1123,10 +1154,11 @@ export class HookService {
       .replace("{{CONSTRAINT_LEDGER}}", ledgerText)
       .replace("{{PSYCHOLOGY_SIGNALS}}", signalsText);
 
-    // ─── Story Bible injection ───
-    const storyBible = await runtimeProjectStore.getStoryBible(session.projectId);
+    // ─── ProjectBrief injection (replaces legacy story bible) ───
+    const projectBriefBuilder = await runtimeProjectStore.getProjectBrief(session.projectId);
+    const { formatProjectBriefForPrompt: fmtBrief } = await import("../../shared/types/projectBrief");
     dynamic += "\n\n═══ STORY BIBLE (do NOT contradict — these are confirmed canonical facts) ═══\n" +
-      (storyBible || "(not yet available)");
+      fmtBrief(projectBriefBuilder);
 
     // ─── Cultural Intelligence Engine injection ───
     const culturalBrief = await this.getCulturalBriefForBuilder(session);
