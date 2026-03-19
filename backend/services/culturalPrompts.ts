@@ -95,7 +95,7 @@ For each evidence item:
 SURPRISING, GROUNDED, ACTIONABLE connections the creator probably hasn't thought of. Only "strong" if genuinely illuminating.
 
 ═══ ANTI-FIXATION RULES ═══
-- EARLY-PROJECT (turn < 4): be deliberately PLURAL across domains. Do NOT collapse around one anchor.
+- EARLY-PROJECT (turn < 4): The creative direction may be vague or undefined. This is NOT a reason to abstain. The abstention rule applies to specific dimensions you can't speak to — it does NOT mean "produce nothing if the story is undefined." For early projects, be deliberately PLURAL across domains, offer connections from diverse angles, and treat open-endedness as an invitation to explore widely. You MUST produce at least 3 evidence items even when the direction is vague.
 - LATER: follow the confirmed creative direction.
 - Respect the negative profile.
 - Flag derivative risk when spotted.
