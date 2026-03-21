@@ -739,7 +739,7 @@ export class CharacterService {
       try {
         judgeRaw = await this.llm.call("char_judge", judgeSystem, judgeUser, {
           temperature: 0.3,
-          maxTokens: 1200,
+          maxTokens: 2048,
           modelOverride,
           jsonSchema: CHARACTER_JUDGE_SCHEMA,
           truncationMode: "critical",
