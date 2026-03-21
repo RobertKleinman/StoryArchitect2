@@ -158,7 +158,9 @@ export function creativeConfig(modelId: string): Partial<ModelConfig> {
 
 // ── Tier constants (change these to retier the whole system) ─────────
 const STRONG = "claude-sonnet-4-6";   // builders, judges, clarifiers — quality-critical
-const FAST   = "claude-haiku-4-5-20251001";  // summaries, polish, psych — speed-critical
+const FAST   = "claude-haiku-4-5-20251001";  // psych consolidator — accuracy-critical
+const SUMMARY = "gpt-5.4-mini";      // summaries — close to Haiku quality (4.29 vs 4.38), 2x faster
+const POLISH  = "gpt-5.4-mini";      // polish — beats Haiku on quality (4.54 vs 4.43) and craft (4.9 vs 4.8)
 
 // ── Background research models (based on v2 blind test results) ─────
 // Primary models: best quality within 30s think-time window
@@ -173,31 +175,31 @@ export const DEFAULT_MODEL_CONFIG: ModelConfig = {
   clarifier: STRONG,
   builder: STRONG,
   judge: STRONG,
-  summary: FAST,
-  polish: FAST,
+  summary: SUMMARY,
+  polish: POLISH,
   // Character
   char_clarifier: STRONG,
   char_builder: STRONG,
   char_judge: STRONG,
-  char_polish: FAST,
-  char_summary: FAST,
+  char_polish: POLISH,
+  char_summary: SUMMARY,
   // Character Image
   img_clarifier: STRONG,
   img_builder: STRONG,
   img_judge: STRONG,
-  img_summary: FAST,
+  img_summary: SUMMARY,
   // World
   world_clarifier: STRONG,
   world_builder: STRONG,
   world_judge: STRONG,
-  world_polish: FAST,
-  world_summary: FAST,
+  world_polish: POLISH,
+  world_summary: SUMMARY,
   // Plot
   plot_clarifier: STRONG,
   plot_builder: STRONG,
   plot_judge: STRONG,
-  plot_polish: FAST,
-  plot_summary: FAST,
+  plot_polish: POLISH,
+  plot_summary: SUMMARY,
   // Scene
   scene_planner: STRONG,
   scene_clarifier: STRONG,
