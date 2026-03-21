@@ -204,14 +204,14 @@ export const DEFAULT_MODEL_CONFIG: ModelConfig = {
   scene_builder: STRONG,
   scene_minor_judge: FAST,        // deterministic checks gate this; when it runs, fast is fine
   scene_final_judge: STRONG,      // one-time whole-work assessment — keep strong
-  scene_divergence: FAST,         // background exploration — fast tier
+  scene_divergence: "gpt-5.4-mini",  // background — perfect score at 1/3 Haiku latency (5.3s)
   // Background
-  psych_consolidator: FAST,       // runs during user think-time
+  psych_consolidator: FAST,       // runs during user think-time — Haiku wins on accuracy (4.96 vs 4.42)
   divergence_explorer: RESEARCH_PRIMARY_DIVERGENCE,  // background — GPT-5.4 Mini (4.48 composite, 11s)
   // Cultural Intelligence Engine
-  cultural_summarizer: FAST,      // compression task — fast tier
+  cultural_summarizer: "gpt-5.4-nano",  // compression task — perfect score, fastest (3.8s)
   cultural_researcher: RESEARCH_PRIMARY_CULTURAL,   // background — Gemini Flash (4.70 composite, 13s)
   // Escalation
-  hook_escalation: FAST,          // micro-call — speed-critical, max 200 tokens
+  hook_escalation: "gpt-5.4-nano",    // micro-call — plain text, any fast model works
   grounding_researcher: RESEARCH_PRIMARY_GROUNDING, // background — Gemini Flash (4.81 composite, 11s)
 };
