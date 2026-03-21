@@ -158,9 +158,7 @@ export function creativeConfig(modelId: string): Partial<ModelConfig> {
 
 // ── Tier constants (change these to retier the whole system) ─────────
 const STRONG = "claude-sonnet-4-6";   // builders, judges, clarifiers — quality-critical
-const FAST   = "claude-haiku-4-5-20251001";  // psych consolidator — accuracy-critical
-const SUMMARY = "gpt-5.4-mini";      // summaries — close to Haiku quality (4.29 vs 4.38), 2x faster
-const POLISH  = "gpt-5.4-mini";      // polish — beats Haiku on quality (4.54 vs 4.43) and craft (4.9 vs 4.8)
+const FAST   = "claude-haiku-4-5-20251001";  // summaries, consolidator, most polish — comparative re-judge validated
 
 // ── Background research models (based on v2 blind test results) ─────
 // Primary models: best quality within 30s think-time window
@@ -175,45 +173,45 @@ export const DEFAULT_MODEL_CONFIG: ModelConfig = {
   clarifier: STRONG,
   builder: STRONG,
   judge: STRONG,
-  summary: SUMMARY,
-  polish: POLISH,
+  summary: FAST,
+  polish: "gpt-5.4-mini",          // premise_polish: Mini wins 100% head-to-head vs Haiku
   // Character
   char_clarifier: STRONG,
   char_builder: STRONG,
   char_judge: STRONG,
-  char_polish: POLISH,
-  char_summary: SUMMARY,
+  char_polish: "grok-4-1-fast-non-reasoning", // char_polish: Grok 4.1 wins 83% head-to-head
+  char_summary: FAST,
   // Character Image
   img_clarifier: STRONG,
   img_builder: STRONG,
   img_judge: STRONG,
-  img_summary: SUMMARY,
+  img_summary: FAST,
   // World
   world_clarifier: STRONG,
   world_builder: STRONG,
   world_judge: STRONG,
-  world_polish: POLISH,
-  world_summary: SUMMARY,
+  world_polish: FAST,               // world_polish: Haiku wins 83% head-to-head
+  world_summary: FAST,
   // Plot
   plot_clarifier: STRONG,
   plot_builder: STRONG,
   plot_judge: STRONG,
-  plot_polish: POLISH,
-  plot_summary: SUMMARY,
+  plot_polish: FAST,                // plot_polish: no comparative data — default to Haiku (safe)
+  plot_summary: FAST,
   // Scene
   scene_planner: STRONG,
   scene_clarifier: STRONG,
   scene_builder: STRONG,
-  scene_minor_judge: FAST,        // deterministic checks gate this; when it runs, fast is fine
-  scene_final_judge: STRONG,      // one-time whole-work assessment — keep strong
-  scene_divergence: "gpt-5.4-mini",  // background — perfect score at 1/3 Haiku latency (5.3s)
+  scene_minor_judge: FAST,          // deterministic checks gate this; when it runs, fast is fine
+  scene_final_judge: STRONG,        // one-time whole-work assessment — keep strong
+  scene_divergence: FAST,           // Haiku wins 93% head-to-head vs Mini on scene_divergence
   // Background
-  psych_consolidator: FAST,       // runs during user think-time — Haiku wins on accuracy (4.96 vs 4.42)
-  divergence_explorer: RESEARCH_PRIMARY_DIVERGENCE,  // background — GPT-5.4 Mini (4.48 composite, 11s)
+  psych_consolidator: FAST,         // Haiku wins on accuracy — comparative confirmed 75% three-way tie
+  divergence_explorer: RESEARCH_PRIMARY_DIVERGENCE,  // background — GPT-5.4 Mini (80% win rate, 3x faster than Haiku)
   // Cultural Intelligence Engine
-  cultural_summarizer: "gpt-5.4-nano",  // compression task — perfect score, fastest (3.8s)
-  cultural_researcher: RESEARCH_PRIMARY_CULTURAL,   // background — Gemini Flash (4.70 composite, 13s)
+  cultural_summarizer: FAST,        // Haiku wins 87% head-to-head — reverted from Nano
+  cultural_researcher: RESEARCH_PRIMARY_CULTURAL,    // background — Gemini Flash (validated in original research tests)
   // Escalation
-  hook_escalation: "gpt-5.4-nano",    // micro-call — plain text, any fast model works
-  grounding_researcher: RESEARCH_PRIMARY_GROUNDING, // background — Gemini Flash (4.81 composite, 11s)
+  hook_escalation: "gpt-5.4-nano",  // micro-call — plain text, any fast model works
+  grounding_researcher: RESEARCH_PRIMARY_GROUNDING,  // background — Gemini Flash (validated in original research tests)
 };
