@@ -100,6 +100,7 @@ export const PROVIDER_MODELS: ProviderModelEntry[] = [
   { id: "grok-4",                         label: "Grok 4",              provider: "grok", tier: "powerful" },
   { id: "grok-4-fast",                    label: "Grok 4 Fast",         provider: "grok", tier: "fast" },
   { id: "grok-4-1-fast-reasoning",        label: "Grok 4.1 Fast",       provider: "grok", tier: "balanced" },
+  { id: "grok-4-1-fast-non-reasoning",   label: "Grok 4.1 Fast NR",    provider: "grok", tier: "fast" },
 ];
 
 /** Flat list of model IDs for validation */
@@ -138,6 +139,8 @@ export const CREATIVE_ROLES: ReadonlyArray<keyof ModelConfig> = [
   "divergence_explorer",
   "cultural_summarizer",
   "cultural_researcher",
+  "hook_escalation",
+  "grounding_researcher",
 ];
 
 /** Build a partial ModelConfig setting all judge roles to one model */

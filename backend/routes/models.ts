@@ -17,6 +17,8 @@ const MODEL_CONFIG_KEYS: ReadonlySet<string> = new Set<keyof ModelConfig>([
   "divergence_explorer",
   "cultural_summarizer",
   "cultural_researcher",
+  "hook_escalation",
+  "grounding_researcher",
 ]);
 
 /** GET /api/models — current per-role model config */

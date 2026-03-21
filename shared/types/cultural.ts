@@ -92,7 +92,6 @@ export interface ResearchContract {
   confirmedElements: string[];      // Key confirmed constraints (from constraint ledger)
   openQuestions: string[];           // What's still being decided
   userStyleSignals: string[];       // From psychology ledger — what kind of creator this is
-  previousResearch: string[];       // Brief IDs already generated (avoid repetition)
   directedReferences: string[];     // Any explicit references the user named
   negativeProfile: string[];        // "What this story is not"
 }

@@ -311,9 +311,9 @@ sceneRoutes.get("/list-sessions", async (_req, res) => {
 
         let hasExport = false;
         try {
-          await fs.readFile(nodePath.join(exportDir, file), "utf-8");
+          await fs.stat(nodePath.join(exportDir, file));
           hasExport = true;
-        } catch (err) { console.warn("[SCENE] non-critical error:", err); }
+        } catch { /* export doesn't exist — expected */ }
 
         sessions.push({
           projectId: session.projectId,

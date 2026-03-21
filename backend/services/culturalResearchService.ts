@@ -369,7 +369,31 @@ export class CulturalResearchService {
         groundingPrompt += "\n\n" + externalSourcesSection;
       }
 
-      // Fire primary + diversity researchers in parallel — same prompts, different models
+      // Fire primary + diversity researchers in parallel
+      // Primary calls are non-fatal individually so partial results can be used
+      // Diversity calls have a 10s timeout with AbortController to prevent stalling
+      const diversityTimeout = 10_000;
+
+      const withTimeout = <T>(promise: Promise<T>, label: string): Promise<T | null> => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), diversityTimeout);
+        // Note: AbortController is passed for logging; the LLM call itself uses its own timeout.
+        // We race the promise against a timeout rejection.
+        return Promise.race([
+          promise.then(r => { clearTimeout(timer); return r; }),
+          new Promise<null>((resolve) => {
+            controller.signal.addEventListener("abort", () => {
+              console.warn(`[${label}] Diversity call timed out after ${diversityTimeout}ms — skipping`);
+              resolve(null);
+            });
+          }),
+        ]).catch(err => {
+          clearTimeout(timer);
+          console.warn(`[${label}] Diversity call failed (non-fatal):`, err);
+          return null;
+        });
+      };
+
       const [researchRaw, groundingRaw, culturalDiversityRaw, groundingDiversityRaw] = await Promise.all([
         this.llm.call(
           "cultural_researcher",
@@ -380,7 +404,10 @@ export class CulturalResearchService {
             maxTokens: 4096,
             jsonSchema: CULTURAL_BRIEF_SCHEMA,
           },
-        ),
+        ).catch(err => {
+          console.warn("[CULTURAL] Primary researcher failed (non-fatal):", err);
+          return null;
+        }),
         this.llm.call(
           "grounding_researcher",
           GROUNDING_RESEARCHER_SYSTEM,
@@ -394,58 +421,52 @@ export class CulturalResearchService {
           console.warn("[GROUNDING] Researcher failed (non-fatal):", err);
           return null;
         }),
-        // Diversity: cultural researcher with fast cheap model
-        this.llm.call(
-          "cultural_researcher",
-          CULTURAL_RESEARCHER_SYSTEM,
-          researchPrompt,
-          {
-            temperature: 0.8,
-            maxTokens: 4096,
-            jsonSchema: CULTURAL_BRIEF_SCHEMA,
-            modelOverride: RESEARCH_DIVERSITY_MODEL,
-          },
-        ).catch(err => {
-          console.warn("[CULTURAL] Diversity call failed (non-fatal):", err);
-          return null;
-        }),
-        // Diversity: grounding researcher with fast cheap model
-        this.llm.call(
-          "grounding_researcher",
-          GROUNDING_RESEARCHER_SYSTEM,
-          groundingPrompt,
-          {
-            temperature: 0.7,
-            maxTokens: 2048,
-            jsonSchema: GROUNDING_BRIEF_SCHEMA,
-            modelOverride: RESEARCH_DIVERSITY_MODEL,
-          },
-        ).catch(err => {
-          console.warn("[GROUNDING] Diversity call failed (non-fatal):", err);
-          return null;
-        }),
+        withTimeout(
+          this.llm.call(
+            "cultural_researcher",
+            CULTURAL_RESEARCHER_SYSTEM,
+            researchPrompt,
+            {
+              temperature: 0.8,
+              maxTokens: 4096,
+              jsonSchema: CULTURAL_BRIEF_SCHEMA,
+              modelOverride: RESEARCH_DIVERSITY_MODEL,
+            },
+          ),
+          "CULTURAL",
+        ),
+        withTimeout(
+          this.llm.call(
+            "grounding_researcher",
+            GROUNDING_RESEARCHER_SYSTEM,
+            groundingPrompt,
+            {
+              temperature: 0.7,
+              maxTokens: 2048,
+              jsonSchema: GROUNDING_BRIEF_SCHEMA,
+              modelOverride: RESEARCH_DIVERSITY_MODEL,
+            },
+          ),
+          "GROUNDING",
+        ),
       ]);
 
-      const parsed = JSON.parse(researchRaw);
-
-      // Merge diversity cultural items (deduplicate by claim similarity)
-      if (culturalDiversityRaw) {
-        try {
-          const diversityParsed = JSON.parse(culturalDiversityRaw);
-          const existingClaims = new Set(
-            (parsed.evidenceItems ?? []).map((item: any) => item.claim?.toLowerCase().slice(0, 60))
-          );
-          for (const item of (diversityParsed.evidenceItems ?? [])) {
-            const claimKey = item.claim?.toLowerCase().slice(0, 60);
-            if (claimKey && !existingClaims.has(claimKey)) {
-              parsed.evidenceItems.push(item);
-              existingClaims.add(claimKey);
-            }
-          }
-          console.log(`[CULTURAL] Merged diversity items: ${(diversityParsed.evidenceItems ?? []).length} candidates`);
-        } catch {
-          console.warn("[CULTURAL] Failed to parse diversity output");
+      // If primary cultural failed, try to use diversity as fallback
+      const culturalRaw = researchRaw ?? culturalDiversityRaw;
+      if (!culturalRaw) {
+        console.error("[CULTURAL] Both primary and diversity calls failed — no cultural brief");
+        // Still try to cache grounding if available
+        if (groundingRaw) {
+          await this.cacheGroundingBrief(context, groundingRaw, groundingDiversityRaw, ledger);
         }
+        return null;
+      }
+
+      const parsed = JSON.parse(culturalRaw);
+
+      // Merge diversity cultural items if primary succeeded and diversity also available
+      if (researchRaw && culturalDiversityRaw) {
+        this.mergeDiversityCultural(parsed, culturalDiversityRaw);
       }
 
       // Step 3: Package into CulturalBrief
@@ -474,57 +495,104 @@ export class CulturalResearchService {
       // Step 4b: Accumulate high-value cultural evidence into insights ledger
       await this.accumulateCulturalInsights(context, brief, ledger);
 
-      // Step 5: Package and cache grounding brief (if it succeeded)
-      if (groundingRaw) {
-        try {
-          const groundingParsed = JSON.parse(groundingRaw);
-          const groundingItems = (groundingParsed.groundingItems ?? []).map((item: any) => ({
-            ...item,
-            source_mode: "stable_memory" as const,
-          }));
-
-          // Merge diversity grounding items
-          if (groundingDiversityRaw) {
-            try {
-              const diversityParsed = JSON.parse(groundingDiversityRaw);
-              const existingRefs = new Set(
-                groundingItems.map((item: any) => item.reference?.toLowerCase().slice(0, 60))
-              );
-              for (const item of (diversityParsed.groundingItems ?? [])) {
-                const refKey = item.reference?.toLowerCase().slice(0, 60);
-                if (refKey && !existingRefs.has(refKey)) {
-                  groundingItems.push({ ...item, source_mode: "stable_memory" as const });
-                  existingRefs.add(refKey);
-                }
-              }
-              console.log(`[GROUNDING] Merged diversity items: ${(diversityParsed.groundingItems ?? []).length} candidates`);
-            } catch {
-              console.warn("[GROUNDING] Failed to parse diversity output");
-            }
-          }
-
-          const groundingBrief: GroundingBrief = {
-            id: `gb_${context.module}_${context.turnNumber}_${Date.now()}`,
-            projectId: context.projectId,
-            module: context.module,
-            generatedAt: new Date().toISOString(),
-            afterTurn: context.turnNumber,
-            items: groundingItems as GroundingItem[],
-            thematic_tension: groundingParsed.thematic_tension,
-          };
-          await this.store.saveGroundingBrief(groundingBrief);
-          // Accumulate high-value grounding items into insights ledger
-          await this.accumulateGroundingInsights(context, groundingBrief);
-          console.log(`[GROUNDING] Brief generated: ${groundingBrief.items.length} items for ${context.module} turn ${context.turnNumber}`);
-        } catch (parseErr) {
-          console.warn("[GROUNDING] Failed to parse grounding brief:", parseErr);
-        }
-      }
+      // Step 5: Package and cache grounding brief
+      await this.cacheGroundingBrief(context, groundingRaw, groundingDiversityRaw, ledger);
 
       return brief;
     } catch (err) {
       console.error("[CULTURAL] Brief generation failed:", err);
       return null;
+    }
+  }
+
+  /** Normalize a string for deduplication: lowercase, strip punctuation/extra whitespace */
+  private static normalizeForDedup(s: string): string {
+    return s.toLowerCase().replace(/[^\w\s]/g, "").replace(/\s+/g, " ").trim();
+  }
+
+  /** Merge diversity cultural items into primary parsed output using full normalized comparison */
+  private mergeDiversityCultural(parsed: any, diversityRaw: string): void {
+    try {
+      const diversityParsed = JSON.parse(diversityRaw);
+      const existingKeys = new Set(
+        (parsed.evidenceItems ?? []).map((item: any) => {
+          const claim = CulturalResearchService.normalizeForDedup(item.claim ?? "");
+          const family = CulturalResearchService.normalizeForDedup(item.sourceFamily ?? "");
+          return `${claim}||${family}`;
+        })
+      );
+      let merged = 0;
+      for (const item of (diversityParsed.evidenceItems ?? [])) {
+        const key = `${CulturalResearchService.normalizeForDedup(item.claim ?? "")}||${CulturalResearchService.normalizeForDedup(item.sourceFamily ?? "")}`;
+        if (key !== "||" && !existingKeys.has(key)) {
+          parsed.evidenceItems.push(item);
+          existingKeys.add(key);
+          merged++;
+        }
+      }
+      console.log(`[CULTURAL] Merged ${merged} diversity items (${(diversityParsed.evidenceItems ?? []).length} candidates)`);
+    } catch {
+      console.warn("[CULTURAL] Failed to parse diversity output");
+    }
+  }
+
+  /** Cache grounding brief with diversity merge */
+  private async cacheGroundingBrief(
+    context: CulturalResearchContext,
+    groundingRaw: string | null,
+    groundingDiversityRaw: string | null,
+    ledger: CulturalDecisionLedger,
+  ): Promise<void> {
+    const rawToParse = groundingRaw ?? groundingDiversityRaw;
+    if (!rawToParse) return;
+
+    try {
+      const groundingParsed = JSON.parse(rawToParse);
+      const groundingItems = (groundingParsed.groundingItems ?? []).map((item: any) => ({
+        ...item,
+        source_mode: "stable_memory" as const,
+      }));
+
+      // Merge diversity grounding items if both primary and diversity succeeded
+      if (groundingRaw && groundingDiversityRaw) {
+        try {
+          const diversityParsed = JSON.parse(groundingDiversityRaw);
+          const existingKeys = new Set(
+            groundingItems.map((item: any) => {
+              const ref = CulturalResearchService.normalizeForDedup(item.reference ?? "");
+              const domain = CulturalResearchService.normalizeForDedup(item.domain ?? "");
+              return `${ref}||${domain}`;
+            })
+          );
+          let merged = 0;
+          for (const item of (diversityParsed.groundingItems ?? [])) {
+            const key = `${CulturalResearchService.normalizeForDedup(item.reference ?? "")}||${CulturalResearchService.normalizeForDedup(item.domain ?? "")}`;
+            if (key !== "||" && !existingKeys.has(key)) {
+              groundingItems.push({ ...item, source_mode: "stable_memory" as const });
+              existingKeys.add(key);
+              merged++;
+            }
+          }
+          console.log(`[GROUNDING] Merged ${merged} diversity items (${(diversityParsed.groundingItems ?? []).length} candidates)`);
+        } catch {
+          console.warn("[GROUNDING] Failed to parse diversity output");
+        }
+      }
+
+      const groundingBrief: GroundingBrief = {
+        id: `gb_${context.module}_${context.turnNumber}_${Date.now()}`,
+        projectId: context.projectId,
+        module: context.module,
+        generatedAt: new Date().toISOString(),
+        afterTurn: context.turnNumber,
+        items: groundingItems as GroundingItem[],
+        thematic_tension: groundingParsed.thematic_tension,
+      };
+      await this.store.saveGroundingBrief(groundingBrief);
+      await this.accumulateGroundingInsights(context, groundingBrief);
+      console.log(`[GROUNDING] Brief generated: ${groundingBrief.items.length} items for ${context.module} turn ${context.turnNumber}`);
+    } catch (parseErr) {
+      console.warn("[GROUNDING] Failed to parse grounding brief:", parseErr);
     }
   }
 

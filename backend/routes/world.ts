@@ -220,9 +220,9 @@ worldRoutes.get("/list-sessions", async (_req, res) => {
         // Check if export exists
         let hasExport = false;
         try {
-          await fs.readFile(nodePath.join(exportDir, file), "utf-8");
+          await fs.stat(nodePath.join(exportDir, file));
           hasExport = true;
-        } catch (err) { console.warn("[WORLD] non-critical error:", err); }
+        } catch { /* export doesn't exist — expected */ }
 
         sessions.push({
           projectId: session.projectId,

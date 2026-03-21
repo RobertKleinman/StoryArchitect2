@@ -17,6 +17,49 @@ interface OpenAIResponse {
 }
 
 /**
+ * Normalize a JSON schema for OpenAI strict mode.
+ * OpenAI requires: all properties in `required`, `additionalProperties: false` recursively.
+ * For properties that were originally optional (not in `required`), convert to nullable
+ * union to preserve "may be absent" semantics.
+ */
+function normalizeSchemaForStrict(schema: Record<string, unknown>): Record<string, unknown> {
+  function walk(obj: any): any {
+    if (Array.isArray(obj)) return obj.map(walk);
+    if (obj && typeof obj === "object") {
+      const out: any = {};
+      for (const [k, v] of Object.entries(obj)) {
+        if (k === "additionalProperties") continue; // strip — OpenAI adds implicitly
+        out[k] = walk(v);
+      }
+      // If this is an object schema with properties, enforce all required + nullable for optionals
+      if (out.type === "object" && out.properties && typeof out.properties === "object") {
+        const originalRequired = new Set<string>(Array.isArray(out.required) ? out.required : []);
+        const allKeys = Object.keys(out.properties);
+        // Make formerly-optional properties nullable
+        for (const key of allKeys) {
+          if (!originalRequired.has(key)) {
+            const prop = out.properties[key];
+            if (prop && typeof prop === "object" && prop.type && !Array.isArray(prop.type)) {
+              // Simple type → nullable union: type: "string" → type: ["string", "null"]
+              out.properties[key] = { ...prop, type: [prop.type, "null"] };
+            } else if (prop && typeof prop === "object" && prop.enum) {
+              // Enum → add null to enum values
+              out.properties[key] = { ...prop, enum: [...prop.enum, null] };
+            }
+            // Complex schemas (anyOf, oneOf, etc.) are left as-is — rare in this codebase
+          }
+        }
+        out.required = allKeys;
+        out.additionalProperties = false;
+      }
+      return out;
+    }
+    return obj;
+  }
+  return walk(schema);
+}
+
+/**
  * OpenAI-compatible provider.
  * Works with both OpenAI and Grok (xAI) — they share the same chat completions API format.
  * Pass different baseUrl and apiKeyEnvVar for each.
@@ -61,13 +104,14 @@ export class OpenAICompatibleProvider implements LLMProvider {
     };
 
     // Structured output support (OpenAI format)
+    // Normalize schema for strict mode: all properties required, optionals become nullable
     if (options?.jsonSchema) {
       payload.response_format = {
         type: "json_schema",
         json_schema: {
           name: "response",
           strict: true,
-          schema: options.jsonSchema,
+          schema: normalizeSchemaForStrict(options.jsonSchema as Record<string, unknown>),
         },
       };
     }

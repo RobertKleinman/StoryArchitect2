@@ -75,6 +75,39 @@ export async function runDivergenceExploration(
       .replace("{{MODULE}}", context.module);
 
     // Fire primary + diversity explorer in parallel
+    // Diversity has a 10s timeout with cancellation to prevent stalling primary results
+    const diversityTimeout = 10_000;
+    let diversityTimer: ReturnType<typeof setTimeout> | undefined;
+    const diversityAbort = new AbortController();
+
+    const diversityPromise = llm.call(
+      "divergence_explorer",
+      DIVERGENCE_EXPLORER_SYSTEM,
+      userPrompt,
+      {
+        temperature: 1.0,
+        maxTokens: 4096,
+        jsonSchema: DIVERGENCE_EXPLORER_SCHEMA,
+        modelOverride: RESEARCH_DIVERSITY_MODEL,
+      },
+    ).then(r => { clearTimeout(diversityTimer); return r; })
+     .catch(err => {
+       clearTimeout(diversityTimer);
+       console.warn("[DIVERGENCE] Diversity call failed (non-fatal):", err);
+       return null;
+     });
+
+    const diversityWithTimeout = Promise.race([
+      diversityPromise,
+      new Promise<null>((resolve) => {
+        diversityTimer = setTimeout(() => {
+          diversityAbort.abort();
+          console.warn(`[DIVERGENCE] Diversity call timed out after ${diversityTimeout}ms — skipping`);
+          resolve(null);
+        }, diversityTimeout);
+      }),
+    ]);
+
     const [raw, diversityRaw] = await Promise.all([
       llm.call(
         "divergence_explorer",
@@ -86,20 +119,7 @@ export async function runDivergenceExploration(
           jsonSchema: DIVERGENCE_EXPLORER_SCHEMA,
         },
       ),
-      llm.call(
-        "divergence_explorer",
-        DIVERGENCE_EXPLORER_SYSTEM,
-        userPrompt,
-        {
-          temperature: 1.0,
-          maxTokens: 4096,
-          jsonSchema: DIVERGENCE_EXPLORER_SCHEMA,
-          modelOverride: RESEARCH_DIVERSITY_MODEL,
-        },
-      ).catch(err => {
-        console.warn("[DIVERGENCE] Diversity call failed (non-fatal):", err);
-        return null;
-      }),
+      diversityWithTimeout,
     ]);
 
     const parsed = JSON.parse(raw) as DirectionMap;
@@ -110,22 +130,23 @@ export async function runDivergenceExploration(
       return null;
     }
 
-    // Merge diversity families — add families with novel names
+    // Merge diversity families — deduplicate by full normalized name
     if (diversityRaw) {
       try {
         const diversityParsed = JSON.parse(diversityRaw) as DirectionMap;
         if (diversityParsed.families?.length) {
-          const existingNames = new Set(
-            parsed.families.map(f => f.name.toLowerCase().slice(0, 40))
-          );
+          const normalize = (s: string) => s.toLowerCase().replace(/[^\w\s]/g, "").replace(/\s+/g, " ").trim();
+          const existingNames = new Set(parsed.families.map(f => normalize(f.name)));
+          let merged = 0;
           for (const family of diversityParsed.families) {
-            const nameKey = family.name.toLowerCase().slice(0, 40);
-            if (!existingNames.has(nameKey)) {
+            const nameKey = normalize(family.name);
+            if (nameKey && !existingNames.has(nameKey)) {
               parsed.families.push(family);
               existingNames.add(nameKey);
+              merged++;
             }
           }
-          console.log(`[DIVERGENCE] Merged diversity families: ${diversityParsed.families.length} candidates`);
+          console.log(`[DIVERGENCE] Merged ${merged} diversity families (${diversityParsed.families.length} candidates)`);
         }
       } catch {
         console.warn("[DIVERGENCE] Failed to parse diversity output");
