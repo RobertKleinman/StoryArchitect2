@@ -89,6 +89,8 @@ export const PROVIDER_MODELS: ProviderModelEntry[] = [
   // OpenAI — GPT-5 series (GPT-4.1 deprecated Feb 2026)
   { id: "gpt-5.4",                        label: "GPT-5.4",             provider: "openai", tier: "powerful" },
   { id: "gpt-5.4-pro",                    label: "GPT-5.4 Pro",         provider: "openai", tier: "powerful" },
+  { id: "gpt-5.4-mini",                   label: "GPT-5.4 Mini",        provider: "openai", tier: "fast" },
+  { id: "gpt-5.4-nano",                   label: "GPT-5.4 Nano",        provider: "openai", tier: "fast" },
 
   // Google Gemini — 3.x series (2.5 generation deprecated)
   { id: "gemini-3.1-pro-preview",         label: "Gemini 3.1 Pro",      provider: "gemini", tier: "powerful" },
