@@ -11,6 +11,7 @@
 
 import type { LLMClient } from "./llmClient";
 import type { CulturalStore } from "../storage/culturalStore";
+import type { RetrievalService } from "./retrievalService";
 import type {
   CulturalBrief,
   CulturalModule,
@@ -21,6 +22,7 @@ import type {
   CulturalDecisionLedger,
   GroundingBrief,
   GroundingItem,
+  CreativeInsight,
 } from "../../shared/types/cultural";
 import {
   CULTURAL_SUMMARIZER_SYSTEM,
@@ -54,12 +56,15 @@ export interface CulturalResearchContext {
   psychologySummary: string;
   // User-named references detected in free-text input
   directedReferences: string[];
+  // User-provided cultural context (articles, cultural moments, current events)
+  culturalContext?: string;
 }
 
 export class CulturalResearchService {
   constructor(
     private store: CulturalStore,
     private llm: LLMClient,
+    private retrieval?: RetrievalService,
   ) {}
 
   /**
@@ -194,6 +199,50 @@ export class CulturalResearchService {
     return this.store.getLedger(projectId);
   }
 
+  /**
+   * Get top accumulated insights for injection into downstream modules.
+   * Sorted by times_utilized (descending), then confidence.
+   */
+  async getTopInsights(projectId: string, limit: number = 5): Promise<CreativeInsight[]> {
+    const ledger = await this.store.getInsights(projectId);
+    return ledger.insights
+      .filter(i => i.status === "active")
+      .sort((a, b) => {
+        // Sort by utilization count descending, then confidence
+        const aUtil = a.times_utilized.filter(Boolean).length;
+        const bUtil = b.times_utilized.filter(Boolean).length;
+        if (bUtil !== aUtil) return bUtil - aUtil;
+        return a.confidence === "high" ? -1 : 1;
+      })
+      .slice(0, limit);
+  }
+
+  /**
+   * Format accumulated insights as a prompt-injectable block.
+   */
+  formatInsightsForPrompt(insights: CreativeInsight[]): string {
+    if (insights.length === 0) return "";
+    const lines: string[] = [
+      "═══ PROJECT-LEVEL CREATIVE INSIGHTS (proven useful — build on these) ═══",
+      "",
+    ];
+    for (const insight of insights) {
+      const utilCount = insight.times_utilized.filter(Boolean).length;
+      const utilTag = utilCount > 0 ? ` (used ${utilCount}×)` : "";
+      lines.push(`▸ [${insight.source}/${insight.domain}] ${insight.claim}${utilTag}`);
+      lines.push(`  Fuel: ${insight.narrative_fuel}`);
+      lines.push("");
+    }
+    return lines.join("\n");
+  }
+
+  /**
+   * Mark insights as utilized by a module (called at lock time).
+   */
+  async markInsightsUtilized(projectId: string, insightIds: string[]): Promise<void> {
+    await this.store.markUtilized(projectId, insightIds);
+  }
+
   // ── Private ──
 
   private async generateBrief(
@@ -223,7 +272,30 @@ export class CulturalResearchService {
         }
       }
 
-      const previousBriefSummaries = (decisionSummaries || "(first research)") + carryForwardEvidence;
+      // Inject accumulated insights (top 5 by utilization)
+      const topInsights = await this.getTopInsights(context.projectId, 5);
+      let accumulatedInsightsSection = "";
+      if (topInsights.length > 0) {
+        const insightLines = topInsights.map(i =>
+          `[${i.source}/${i.domain}] ${i.claim} — ${i.narrative_fuel}`
+        ).join("\n");
+        accumulatedInsightsSection = `\nAccumulated creative insights (proven useful across modules — build on these):\n${insightLines}`;
+        // Track injection count
+        for (const insight of topInsights) {
+          insight.times_injected++;
+        }
+        const insightsLedger = await this.store.getInsights(context.projectId);
+        const idSet = new Set(topInsights.map(i => i.id));
+        for (const insight of insightsLedger.insights) {
+          if (idSet.has(insight.id)) {
+            insight.times_injected++;
+          }
+        }
+        insightsLedger.lastUpdatedAt = new Date().toISOString();
+        await this.store.saveInsights(insightsLedger);
+      }
+
+      const previousBriefSummaries = (decisionSummaries || "(first research)") + carryForwardEvidence + accumulatedInsightsSection;
 
       const contractPrompt = CULTURAL_SUMMARIZER_USER_TEMPLATE
         .replace("{{LOCKED_PACKS}}", context.lockedPacksSummary || "(none locked yet)")
@@ -231,9 +303,7 @@ export class CulturalResearchService {
         .replace("{{CURRENT_STATE}}", JSON.stringify(context.currentState, null, 2))
         .replace("{{CONSTRAINT_LEDGER}}", context.constraintLedger)
         .replace("{{PSYCHOLOGY_SUMMARY}}", context.psychologySummary || "(no psychology data yet)")
-        .replace("{{DIRECTED_REFERENCES}}", context.directedReferences.length > 0
-          ? context.directedReferences.join("\n")
-          : "(none)")
+        .replace("{{DIRECTED_REFERENCES}}", this.buildDirectedReferencesSection(context))
         .replace("{{PREVIOUS_BRIEF_SUMMARIES}}", previousBriefSummaries || "(first research)")
         .replace("{{NEGATIVE_PROFILE}}", ledger.negativeProfile.length > 0
           ? ledger.negativeProfile.join("\n")
@@ -252,8 +322,27 @@ export class CulturalResearchService {
 
       const contract = JSON.parse(contractRaw) as ResearchContract;
 
+      // Step 1b: Run retrieval in parallel (non-blocking)
+      let externalSourcesSection = "";
+      if (this.retrieval?.isAvailable) {
+        try {
+          const retrievalResult = await this.retrieval.searchForStoryContext(
+            contract.storyEssence,
+            contract.emotionalCore,
+            contract.openQuestions,
+            context.culturalContext,
+          );
+          externalSourcesSection = this.retrieval.formatSourcesForResearchContract(retrievalResult);
+          if (retrievalResult.fallbackReason) {
+            console.log(`[RETRIEVAL] Fallback: ${retrievalResult.fallbackReason}`);
+          }
+        } catch (retrievalErr) {
+          console.warn("[RETRIEVAL] Failed (non-fatal, using training data only):", retrievalErr);
+        }
+      }
+
       // Step 2: Run cultural researcher AND grounding researcher in parallel
-      const researchPrompt = CULTURAL_RESEARCHER_USER_TEMPLATE
+      let researchPrompt = CULTURAL_RESEARCHER_USER_TEMPLATE
         .replace("{{STORY_ESSENCE}}", contract.storyEssence)
         .replace("{{EMOTIONAL_CORE}}", contract.emotionalCore)
         .replace("{{CONFIRMED_ELEMENTS}}", contract.confirmedElements.join("\n") || "(none)")
@@ -264,7 +353,7 @@ export class CulturalResearchService {
         .replace("{{MODULE}}", context.module)
         .replace("{{TURN_NUMBER}}", String(context.turnNumber));
 
-      const groundingPrompt = GROUNDING_RESEARCHER_USER_TEMPLATE
+      let groundingPrompt = GROUNDING_RESEARCHER_USER_TEMPLATE
         .replace("{{STORY_ESSENCE}}", contract.storyEssence)
         .replace("{{EMOTIONAL_CORE}}", contract.emotionalCore)
         .replace("{{CONFIRMED_ELEMENTS}}", contract.confirmedElements.join("\n") || "(none)")
@@ -272,6 +361,12 @@ export class CulturalResearchService {
         .replace("{{NEGATIVE_PROFILE}}", contract.negativeProfile.join("\n") || "(none)")
         .replace("{{MODULE}}", context.module)
         .replace("{{TURN_NUMBER}}", String(context.turnNumber));
+
+      // Inject retrieved external sources into both researcher prompts
+      if (externalSourcesSection) {
+        researchPrompt += "\n\n" + externalSourcesSection;
+        groundingPrompt += "\n\n" + externalSourcesSection;
+      }
 
       // Fire both researchers in parallel — same contract, different jobs
       const [researchRaw, groundingRaw] = await Promise.all([
@@ -326,6 +421,9 @@ export class CulturalResearchService {
       // Step 4: Cache cultural brief
       await this.store.saveBrief(brief);
 
+      // Step 4b: Accumulate high-value cultural evidence into insights ledger
+      await this.accumulateCulturalInsights(context, brief, ledger);
+
       // Step 5: Package and cache grounding brief (if it succeeded)
       if (groundingRaw) {
         try {
@@ -343,6 +441,8 @@ export class CulturalResearchService {
             thematic_tension: groundingParsed.thematic_tension,
           };
           await this.store.saveGroundingBrief(groundingBrief);
+          // Accumulate high-value grounding items into insights ledger
+          await this.accumulateGroundingInsights(context, groundingBrief);
           console.log(`[GROUNDING] Brief generated: ${groundingBrief.items.length} items for ${context.module} turn ${context.turnNumber}`);
         } catch (parseErr) {
           console.warn("[GROUNDING] Failed to parse grounding brief:", parseErr);
@@ -353,6 +453,86 @@ export class CulturalResearchService {
     } catch (err) {
       console.error("[CULTURAL] Brief generation failed:", err);
       return null;
+    }
+  }
+
+  private buildDirectedReferencesSection(context: CulturalResearchContext): string {
+    const parts: string[] = [];
+    if (context.directedReferences.length > 0) {
+      parts.push(...context.directedReferences);
+    }
+    if (context.culturalContext) {
+      parts.push(`[User-provided cultural context]: ${context.culturalContext}`);
+    }
+    return parts.length > 0 ? parts.join("\n") : "(none)";
+  }
+
+  private async accumulateCulturalInsights(
+    context: CulturalResearchContext,
+    brief: CulturalBrief,
+    ledger: CulturalDecisionLedger,
+  ): Promise<void> {
+    try {
+      // Only persist items with high/medium confidence from briefs where
+      // past decisions were accepted or modified (not rejected/ignored).
+      // On the very first brief (no decisions yet), persist anyway.
+      const hasPositiveHistory = ledger.decisions.length === 0 ||
+        ledger.decisions.some(d => d.outcome === "accepted" || d.outcome === "modified");
+      if (!hasPositiveHistory) return;
+
+      const candidates = brief.evidenceBrief.items
+        .filter(item => item.confidence === "high" || item.confidence === "medium");
+
+      for (const item of candidates) {
+        const insight: CreativeInsight = {
+          id: `ci_cultural_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          source: "cultural",
+          module_origin: context.module,
+          turn_origin: context.turnNumber,
+          claim: item.claim,
+          narrative_fuel: item.specificDetail,
+          domain: item.sourceFamily,
+          confidence: item.confidence as "high" | "medium",
+          times_injected: 0,
+          times_utilized: [],
+          status: "active",
+        };
+        await this.store.addInsight(context.projectId, insight);
+      }
+    } catch (err) {
+      console.warn("[INSIGHTS] Cultural accumulation failed (non-fatal):", err);
+    }
+  }
+
+  private async accumulateGroundingInsights(
+    context: CulturalResearchContext,
+    brief: GroundingBrief,
+  ): Promise<void> {
+    try {
+      const candidates = brief.items
+        .filter(item =>
+          (item.confidence === "strong" || item.confidence === "moderate") &&
+          item.narrative_fuel
+        );
+
+      for (const item of candidates) {
+        const insight: CreativeInsight = {
+          id: `ci_grounding_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          source: "grounding",
+          module_origin: context.module,
+          turn_origin: context.turnNumber,
+          claim: item.reference,
+          narrative_fuel: item.narrative_fuel,
+          domain: item.domain,
+          confidence: item.confidence === "strong" ? "high" : "medium",
+          times_injected: 0,
+          times_utilized: [],
+          status: "active",
+        };
+        await this.store.addInsight(context.projectId, insight);
+      }
+    } catch (err) {
+      console.warn("[INSIGHTS] Grounding accumulation failed (non-fatal):", err);
     }
   }
 

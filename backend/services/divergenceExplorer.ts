@@ -40,6 +40,8 @@ export interface DivergenceContext {
   module: "hook" | "character" | "character_image" | "world" | "plot";
   /** Family names from the previous direction map (soft nudge to explore new territory) */
   previousFamilyNames?: string[];
+  /** Top accumulated creative insights for cross-pollination */
+  accumulatedInsights?: string;
 }
 
 /**
@@ -58,12 +60,15 @@ export async function runDivergenceExploration(
       ? context.previousFamilyNames.map(n => `  - ${n}`).join("\n")
       : "(none — this is the first exploration)";
 
+    const insightsSection = context.accumulatedInsights || "";
+
     const userPrompt = DIVERGENCE_EXPLORER_USER_TEMPLATE
       .replace("{{SEED_INPUT}}", context.seedInput)
       .replace("{{CONFIRMED_CONSTRAINTS}}", formatConstraints(context.confirmedConstraints))
       .replace("{{CURRENT_STATE}}", JSON.stringify(context.currentState, null, 2))
       .replace("{{INFERRED_ASSUMPTIONS}}", formatConstraints(context.inferredAssumptions))
       .replace("{{PSYCHOLOGY_SUMMARY}}", context.psychologySummary || "(no psychology data yet)")
+      .replace("{{ACCUMULATED_INSIGHTS}}", insightsSection)
       .replace("{{PREVIOUS_FAMILIES}}", previousFamiliesSection)
       .replace("{{TURN_NUMBER}}", String(context.turnNumber))
       .replace("{{MODULE}}", context.module);
@@ -180,6 +185,7 @@ export function extractDivergenceContext(
   turnNumber: number,
   module: "hook" | "character" | "character_image" | "world" | "plot",
   previousFamilyNames?: string[],
+  accumulatedInsights?: string,
 ): DivergenceContext {
   const confirmed: Record<string, string> = {};
   const inferred: Record<string, string> = {};
@@ -201,6 +207,7 @@ export function extractDivergenceContext(
     turnNumber,
     module,
     previousFamilyNames,
+    accumulatedInsights,
   };
 }
 

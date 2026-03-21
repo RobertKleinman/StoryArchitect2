@@ -69,6 +69,9 @@ export const DIVERGENCE_EXPLORER_USER_TEMPLATE = `Explore the possibility space 
 ═══ USER PSYCHOLOGY (what we know about this user's preferences) ═══
 {{PSYCHOLOGY_SUMMARY}}
 
+═══ ACCUMULATED CREATIVE INSIGHTS (proven useful across modules — riff on these) ═══
+{{ACCUMULATED_INSIGHTS}}
+
 ═══ PREVIOUS DIRECTION FAMILIES (from your last exploration) ═══
 {{PREVIOUS_FAMILIES}}
 If you generated families before, push into NEW territory this time. The clarifier has already seen those directions — repeating them wastes the opportunity to expand the possibility space. You CAN revisit a previous family's territory if you go DEEPER (more specific, more surprising) but don't regenerate the same broad strokes.

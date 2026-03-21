@@ -85,7 +85,7 @@ export const GROUNDING_BRIEF_SCHEMA = {
           narrative_fuel: { type: "string" as const },
           domain: {
             type: "string" as const,
-            enum: ["historical_behavioral_pattern", "institutional_mechanics", "material_lived_reality", "philosophical_framework", "scientific_finding", "regional_local_specificity", "durable_cultural_dynamic"],
+            enum: ["historical_behavioral_pattern", "institutional_mechanics", "material_lived_reality", "philosophical_framework", "scientific_finding", "regional_local_specificity", "durable_cultural_dynamic", "contemporary_systemic_pattern"],
           },
           confidence: { type: "string" as const, enum: ["strong", "moderate", "speculative"] },
         },

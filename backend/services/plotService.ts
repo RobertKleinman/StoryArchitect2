@@ -636,6 +636,11 @@ export class PlotService {
     };
     const previousFamilyNames = session.psychologyLedger?.lastDirectionMap?.directionMap?.families
       ?.map(f => f.name) ?? [];
+
+    // Fetch top 3 accumulated insights for divergence cross-pollination
+    const divTopInsights = await culturalResearchService.getTopInsights(session.projectId, 3);
+    const divInsightsText = culturalResearchService.formatInsightsForPrompt(divTopInsights);
+
     const context = extractDivergenceContext(
       session.sourceHookPack.state_summary ?? "",
       session.constraintLedger as any,
@@ -644,6 +649,7 @@ export class PlotService {
       turnNumber,
       module,
       previousFamilyNames,
+      divInsightsText,
     );
 
     const snapshot = await runDivergenceExploration(context, this.llm);
@@ -1098,6 +1104,13 @@ export class PlotService {
       dynamic += "\n\n" + groundingText;
     }
 
+    // ─── Accumulated creative insights injection ───
+    const topInsights = await culturalResearchService.getTopInsights(session.projectId, 5);
+    const insightsText = culturalResearchService.formatInsightsForPrompt(topInsights);
+    if (insightsText) {
+      dynamic += "\n\n" + insightsText;
+    }
+
     // ─── MUST HONOR constraint reinforcement (end of prompt = highest attention) ───
     const mustHonor = buildMustHonorBlock(session.constraintLedger ?? []);
     if (mustHonor) {
@@ -1182,6 +1195,13 @@ export class PlotService {
     const culturalText = culturalResearchService.formatBriefForBuilder(culturalBrief);
     if (culturalText) {
       dynamic += "\n\n" + culturalText;
+    }
+
+    // ─── Accumulated creative insights injection ───
+    const topInsightsBuilder = await culturalResearchService.getTopInsights(session.projectId, 5);
+    const insightsTextBuilder = culturalResearchService.formatInsightsForPrompt(topInsightsBuilder);
+    if (insightsTextBuilder) {
+      dynamic += "\n\n" + insightsTextBuilder;
     }
 
     // ─── MUST HONOR constraint reinforcement (end of prompt = highest attention) ───

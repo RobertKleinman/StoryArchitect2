@@ -120,7 +120,8 @@ export type GroundingDomain =
   | "philosophical_framework"        // Named philosophical or ethical frameworks with specific useful concepts
   | "scientific_finding"             // Psychology, behavioral economics, sociology — named phenomena
   | "regional_local_specificity"     // How institutions/norms/daily life work in a specific confirmed setting
-  | "durable_cultural_dynamic";      // Long-tail social forces with multi-year relevance
+  | "durable_cultural_dynamic"        // Long-tail social forces with multi-year relevance
+  | "contemporary_systemic_pattern";  // Ongoing structural dynamics shaping current life
 
 export interface GroundingItem {
   /** The real-world reference — specific enough to be useful */
@@ -152,6 +153,32 @@ export interface GroundingCacheEntry {
   brief: GroundingBrief;
   createdAt: string;
   staleAfterTurn: number;           // Tighter window than cultural: 1 turn
+}
+
+// ── Creative Insights Accumulator ──
+
+export interface CreativeInsight {
+  id: string;                         // "ci_{source}_{timestamp}"
+  source: "cultural" | "grounding" | "divergence";
+  module_origin: CulturalModule;      // Which module generated it
+  turn_origin: number;
+
+  // The insight itself
+  claim: string;                      // What was found (1-2 sentences)
+  narrative_fuel: string;             // Concrete usable detail
+  domain: string;                     // sourceFamily, GroundingDomain, or conflictPattern
+  confidence: "high" | "medium";      // Only high/medium persisted
+
+  // Lifecycle
+  times_injected: number;             // How many modules received this
+  times_utilized: boolean[];          // Per-module: did the builder use it?
+  status: "active" | "superseded";    // Superseded if contradicted by later findings
+}
+
+export interface CreativeInsightsLedger {
+  projectId: string;
+  insights: CreativeInsight[];        // Bounded at 40
+  lastUpdatedAt: string;
 }
 
 // ── Cache types ──

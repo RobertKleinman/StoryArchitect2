@@ -157,7 +157,8 @@ export class HookService {
     userSelection?: { type: "option" | "free_text" | "surprise_me"; optionId?: string; label: string },
     modelOverride?: string,
     promptOverrides?: PromptOverrides,
-    assumptionResponses?: AssumptionResponse[]
+    assumptionResponses?: AssumptionResponse[],
+    culturalContext?: string,
   ): Promise<ClarifyResponse> {
     let session = await this.store.get(projectId);
     const isFirstTurn = !session;
@@ -172,6 +173,7 @@ export class HookService {
       session = {
         projectId,
         seedInput,
+        culturalContext: culturalContext || undefined,
         turns: [],
         currentState: {},
         constraintLedger: [],
@@ -451,6 +453,10 @@ export class HookService {
     const psychSummary = formatPsychologyLedgerForPrompt(session.psychologyLedger);
     const previousFamilyNames = session.psychologyLedger?.lastDirectionMap?.directionMap?.families
       ?.map(f => f.name) ?? [];
+    // Fetch top 3 accumulated insights for divergence cross-pollination
+    const topInsights = await culturalResearchService.getTopInsights(session.projectId, 3);
+    const insightsText = culturalResearchService.formatInsightsForPrompt(topInsights);
+
     const context = extractDivergenceContext(
       session.seedInput,
       session.constraintLedger,
@@ -459,6 +465,7 @@ export class HookService {
       turnNumber,
       module,
       previousFamilyNames,
+      insightsText,
     );
 
     const snapshot = await runDivergenceExploration(context, this.llm);
@@ -1121,6 +1128,13 @@ export class HookService {
       dynamic += "\n\n" + groundingText;
     }
 
+    // ─── Accumulated creative insights injection ───
+    const topInsights = await culturalResearchService.getTopInsights(session.projectId, 5);
+    const insightsText = culturalResearchService.formatInsightsForPrompt(topInsights);
+    if (insightsText) {
+      dynamic += "\n\n" + insightsText;
+    }
+
     // ─── MUST HONOR constraint reinforcement (end of prompt = highest attention) ───
     const mustHonor = buildMustHonorBlock(session.constraintLedger ?? []);
     if (mustHonor) {
@@ -1161,10 +1175,17 @@ export class HookService {
       fmtBrief(projectBriefBuilder);
 
     // ─── Cultural Intelligence Engine injection ───
-    const culturalBrief = await this.getCulturalBriefForBuilder(session);
-    const culturalText = culturalResearchService.formatBriefForBuilder(culturalBrief);
-    if (culturalText) {
-      dynamic += "\n\n" + culturalText;
+    const culturalBriefBuilder = await this.getCulturalBriefForBuilder(session);
+    const culturalTextBuilder = culturalResearchService.formatBriefForBuilder(culturalBriefBuilder);
+    if (culturalTextBuilder) {
+      dynamic += "\n\n" + culturalTextBuilder;
+    }
+
+    // ─── Accumulated creative insights injection ───
+    const topInsightsBuilder = await culturalResearchService.getTopInsights(session.projectId, 5);
+    const insightsTextBuilder = culturalResearchService.formatInsightsForPrompt(topInsightsBuilder);
+    if (insightsTextBuilder) {
+      dynamic += "\n\n" + insightsTextBuilder;
     }
 
     // ─── MUST HONOR constraint reinforcement (end of prompt = highest attention) ───
@@ -1478,6 +1499,7 @@ export class HookService {
       constraintLedger: this.formatLedgerForPrompt(session.constraintLedger ?? []),
       psychologySummary: formatPsychologyLedgerForPrompt(session.psychologyLedger) ?? "",
       directedReferences: this.extractDirectedReferences(session),
+      culturalContext: session.culturalContext,
     });
   }
 
@@ -1505,6 +1527,7 @@ export class HookService {
       constraintLedger: this.formatLedgerForPrompt(session.constraintLedger ?? []),
       psychologySummary: formatPsychologyLedgerForPrompt(session.psychologyLedger) ?? "",
       directedReferences: this.extractDirectedReferences(session),
+      culturalContext: session.culturalContext,
     };
     await culturalResearchService.fireBackgroundResearch(context);
   }

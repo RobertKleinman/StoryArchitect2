@@ -12,10 +12,14 @@
     "preview": "vite preview",
     "remote": "vite build && tsx backend/index.ts",
     "remote:backend": "tsx backend/index.ts",
-    "test": "vitest run --config vitest.config.ts"
+    "test": "vitest run --config vitest.config.ts",
+    "pipeline": "tsx scripts/pipeline-runner.ts",
+    "pipeline:hook": "tsx scripts/pipeline-runner.ts --only hook",
+    "pipeline:quick": "tsx scripts/pipeline-runner.ts --through character --turns 2 --skip-images"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.57.0",
+    "@tavily/core": "^0.7.2",
     "cors": "^2.8.5",
     "dotenv": "^17.2.2",
     "express": "^5.1.0",

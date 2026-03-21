@@ -32,7 +32,7 @@ hookRoutes.post("/preview-prompt", async (req, res) => {
 
 hookRoutes.post("/clarify", async (req, res) => {
   const modelOverride = getModelOverride(req.header("X-Model-Override"));
-  const { projectId, seedInput, userSelection, assumptionResponses, promptOverrides } = req.body ?? {};
+  const { projectId, seedInput, userSelection, assumptionResponses, promptOverrides, culturalContext } = req.body ?? {};
 
   if (!projectId || typeof projectId !== "string") {
     return res.status(400).json({ error: true, code: "INVALID_INPUT", message: "projectId is required" });
@@ -44,7 +44,7 @@ hookRoutes.post("/clarify", async (req, res) => {
   }
 
   try {
-    const result = await hookService.runClarifierTurn(projectId, seedInput, userSelection, modelOverride, promptOverrides, assumptionResponses);
+    const result = await hookService.runClarifierTurn(projectId, seedInput, userSelection, modelOverride, promptOverrides, assumptionResponses, culturalContext);
     return res.json(result);
   } catch (err) {
     return handleError(res, err);

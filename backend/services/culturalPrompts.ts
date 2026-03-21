@@ -76,6 +76,7 @@ EMOTIONAL / PSYCHOLOGICAL: What real experiences produce the same emotional text
 VISUAL: What real places, aesthetics, subcultures, or eras look like this story's world?
 OCCUPATIONAL / PROFESSIONAL: How do the specific jobs, workplaces, and professional worlds in this story actually function? Not jargon — role mechanics, incentives, hierarchy, constraints, unwritten rules. Who decides? Who blocks? Who absorbs risk?
 DURABLE CULTURAL CURRENTS: What long-tail social forces are still generating story pressure? Not breaking news — multi-year patterns: wellness as status performance, conspiracy as community formation, climate anxiety shaping life choices, institutional distrust, surveillance normalization, financial precarity among young adults. Focus on mechanisms with multi-year relevance. Do not present anything as "current" or "trending."
+CONTEMPORARY RESONANCE: What current cultural conversations, anxieties, debates, or movements does this story tap into? Not breaking news — but the questions people are ACTUALLY arguing about, the tensions they feel in their daily lives, the cultural shifts they're navigating. Think: what would make a reader say "this story gets what it feels like to be alive right now"? Examples: algorithmic loneliness, performative authenticity, institutional betrayal fatigue, climate grief normalization, attention economy survival, post-pandemic relationship recalibration, AI displacement anxiety, late-capitalism absurdism, parasocial relationship dependency.
 
 ═══ OUTPUT QUALITY ═══
 For each evidence item:
@@ -171,7 +172,9 @@ REGIONAL/LOCAL SPECIFICITY: ONLY when the story has a confirmed setting. How ins
 
 DURABLE CULTURAL/POLITICAL DYNAMICS: Long-tail forces with multi-year relevance — not breaking events. Institutional distrust, surveillance normalization, precarity economics, polarization mechanics, conspiracy as community. Focus on the lasting PATTERN a phenomenon revealed, not the event summary. Do NOT mention anything as "current" or "trending."
 
-DO NOT reference current news, recent politics, or events from the last 2 years. Your knowledge of recent events is unreliable.
+CONTEMPORARY SYSTEMIC PATTERNS: Ongoing structural dynamics that shape how people actually live, work, and relate right now. Housing crisis dynamics, gig economy precarity, social media as public square, institutional trust erosion, remote work culture shift, algorithmic content curation effects. You MAY reference well-established contemporary patterns from recent years IF they are structural/systemic — not breaking news or partisan politics. The test: would this pattern still be relevant 6 months from now? If yes, it's fair game. If it's tied to a specific news cycle, skip it.
+
+DO NOT reference specific current news events, recent partisan politics, or breaking stories. Your knowledge of very recent events may be unreliable. Stick to structural patterns and systemic dynamics, not event summaries.
 
 ═══ OUTPUT QUALITY ═══
 - reference: Name it specifically. Not "bureaucratic failures" — "The UK Post Office Horizon scandal (1999-2015)."

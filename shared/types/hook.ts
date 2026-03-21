@@ -201,6 +201,8 @@ export interface HookSessionState {
   schemaVersion?: number;
   projectId: string;
   seedInput: string;
+  /** User-provided cultural context: articles, cultural moments, current events to engage with */
+  culturalContext?: string;
   turns: HookTurn[];
   currentState: HookStateUpdate;
   /** Structured constraint ledger — deterministically updated from user actions */

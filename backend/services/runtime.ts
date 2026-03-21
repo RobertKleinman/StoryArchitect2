@@ -16,6 +16,7 @@ import { AnimeGenClient } from "./animeGenClient";
 import { CulturalStore } from "../storage/culturalStore";
 import { CulturalResearchService } from "./culturalResearchService";
 import { StoryBibleService } from "./storyBibleService";
+import { RetrievalService } from "./retrievalService";
 
 function envModel(key: string, fallback: string): string {
   return process.env[key] ?? fallback;
@@ -83,5 +84,6 @@ export const sceneService = new SceneService(
   sceneStore, plotStore, worldStore, characterImageStore, characterStore, projectStore, llmClient
 );
 export const culturalStore = new CulturalStore();
-export const culturalResearchService = new CulturalResearchService(culturalStore, llmClient);
+export const retrievalService = new RetrievalService();
+export const culturalResearchService = new CulturalResearchService(culturalStore, llmClient, retrievalService);
 export const storyBibleService = new StoryBibleService(llmClient);

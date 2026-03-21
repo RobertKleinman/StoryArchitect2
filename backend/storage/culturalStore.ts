@@ -21,6 +21,8 @@ import type {
   CulturalModule,
   GroundingBrief,
   GroundingCacheEntry,
+  CreativeInsight,
+  CreativeInsightsLedger,
 } from "../../shared/types/cultural";
 
 const DATA_DIR = path.join(process.cwd(), "data", "cultural");
@@ -28,6 +30,9 @@ const BRIEFS_DIR = path.join(DATA_DIR, "briefs");
 const GROUNDING_DIR = path.join(DATA_DIR, "grounding");
 const LEDGERS_DIR = path.join(DATA_DIR, "ledgers");
 const INFLUENCE_DIR = path.join(DATA_DIR, "influence");
+const INSIGHTS_DIR = path.join(DATA_DIR, "insights");
+
+const MAX_INSIGHTS = 40;
 
 export class CulturalStore {
   private initialized = false;
@@ -38,6 +43,7 @@ export class CulturalStore {
     await fs.mkdir(GROUNDING_DIR, { recursive: true });
     await fs.mkdir(LEDGERS_DIR, { recursive: true });
     await fs.mkdir(INFLUENCE_DIR, { recursive: true });
+    await fs.mkdir(INSIGHTS_DIR, { recursive: true });
     this.initialized = true;
   }
 
@@ -212,6 +218,62 @@ export class CulturalStore {
     );
   }
 
+  // ── Creative Insights ──
+
+  async getInsights(projectId: string): Promise<CreativeInsightsLedger> {
+    await this.ensureDirs();
+    try {
+      const raw = await fs.readFile(
+        path.join(INSIGHTS_DIR, `${projectId}.json`),
+        "utf-8",
+      );
+      return JSON.parse(raw) as CreativeInsightsLedger;
+    } catch {
+      return { projectId, insights: [], lastUpdatedAt: new Date().toISOString() };
+    }
+  }
+
+  async saveInsights(ledger: CreativeInsightsLedger): Promise<void> {
+    await this.ensureDirs();
+    await fs.writeFile(
+      path.join(INSIGHTS_DIR, `${ledger.projectId}.json`),
+      JSON.stringify(ledger, null, 2),
+    );
+  }
+
+  async addInsight(projectId: string, insight: CreativeInsight): Promise<void> {
+    const ledger = await this.getInsights(projectId);
+    ledger.insights.push(insight);
+    // Evict lowest times_utilized active insights when over capacity
+    if (ledger.insights.length > MAX_INSIGHTS) {
+      const active = ledger.insights
+        .filter(i => i.status === "active")
+        .sort((a, b) => a.times_injected - b.times_injected);
+      if (active.length > 0) {
+        const evictId = active[0].id;
+        ledger.insights = ledger.insights.filter(i => i.id !== evictId);
+      } else {
+        // All superseded — drop the oldest
+        ledger.insights.shift();
+      }
+    }
+    ledger.lastUpdatedAt = new Date().toISOString();
+    await this.saveInsights(ledger);
+  }
+
+  async markUtilized(projectId: string, insightIds: string[]): Promise<void> {
+    if (insightIds.length === 0) return;
+    const ledger = await this.getInsights(projectId);
+    const idSet = new Set(insightIds);
+    for (const insight of ledger.insights) {
+      if (idSet.has(insight.id)) {
+        insight.times_utilized.push(true);
+      }
+    }
+    ledger.lastUpdatedAt = new Date().toISOString();
+    await this.saveInsights(ledger);
+  }
+
   // ── Cleanup ──
 
   async deleteProject(projectId: string): Promise<void> {
@@ -223,8 +285,9 @@ export class CulturalStore {
         await fs.unlink(path.join(BRIEFS_DIR, f)).catch(() => {});
       }
     }
-    // Delete ledger and influence log
+    // Delete ledger, influence log, and insights
     await fs.unlink(path.join(LEDGERS_DIR, `${projectId}.json`)).catch(() => {});
     await fs.unlink(path.join(INFLUENCE_DIR, `${projectId}.json`)).catch(() => {});
+    await fs.unlink(path.join(INSIGHTS_DIR, `${projectId}.json`)).catch(() => {});
   }
 }

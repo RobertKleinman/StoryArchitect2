@@ -19,6 +19,20 @@ interface GeminiResponse {
   usageMetadata?: GeminiUsageMetadata;
 }
 
+/** Recursively strip `additionalProperties` — Gemini API rejects this field */
+function stripAdditionalProperties(obj: unknown): unknown {
+  if (Array.isArray(obj)) return obj.map(stripAdditionalProperties);
+  if (obj && typeof obj === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (k === "additionalProperties") continue;
+      out[k] = stripAdditionalProperties(v);
+    }
+    return out;
+  }
+  return obj;
+}
+
 export class GeminiProvider implements LLMProvider {
   readonly name = "gemini";
 
@@ -49,7 +63,7 @@ export class GeminiProvider implements LLMProvider {
         ...(options?.jsonSchema
           ? {
               responseMimeType: "application/json",
-              responseSchema: options.jsonSchema,
+              responseSchema: stripAdditionalProperties(options.jsonSchema),
             }
           : {}),
       },
