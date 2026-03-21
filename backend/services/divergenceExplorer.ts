@@ -21,6 +21,7 @@ import {
   DIVERGENCE_EXPLORER_USER_TEMPLATE,
   DIVERGENCE_EXPLORER_SCHEMA,
 } from "./divergencePrompts";
+import { RESEARCH_DIVERSITY_MODEL } from "../../shared/modelConfig";
 
 /**
  * Context needed to run divergence exploration.
@@ -73,16 +74,33 @@ export async function runDivergenceExploration(
       .replace("{{TURN_NUMBER}}", String(context.turnNumber))
       .replace("{{MODULE}}", context.module);
 
-    const raw = await llm.call(
-      "divergence_explorer",
-      DIVERGENCE_EXPLORER_SYSTEM,
-      userPrompt,
-      {
-        temperature: 1.0, // High temp for maximum creativity
-        maxTokens: 4096,
-        jsonSchema: DIVERGENCE_EXPLORER_SCHEMA,
-      },
-    );
+    // Fire primary + diversity explorer in parallel
+    const [raw, diversityRaw] = await Promise.all([
+      llm.call(
+        "divergence_explorer",
+        DIVERGENCE_EXPLORER_SYSTEM,
+        userPrompt,
+        {
+          temperature: 1.0, // High temp for maximum creativity
+          maxTokens: 4096,
+          jsonSchema: DIVERGENCE_EXPLORER_SCHEMA,
+        },
+      ),
+      llm.call(
+        "divergence_explorer",
+        DIVERGENCE_EXPLORER_SYSTEM,
+        userPrompt,
+        {
+          temperature: 1.0,
+          maxTokens: 4096,
+          jsonSchema: DIVERGENCE_EXPLORER_SCHEMA,
+          modelOverride: RESEARCH_DIVERSITY_MODEL,
+        },
+      ).catch(err => {
+        console.warn("[DIVERGENCE] Diversity call failed (non-fatal):", err);
+        return null;
+      }),
+    ]);
 
     const parsed = JSON.parse(raw) as DirectionMap;
 
@@ -90,6 +108,28 @@ export async function runDivergenceExploration(
     if (!parsed.families || !Array.isArray(parsed.families) || parsed.families.length === 0) {
       console.error("[DIVERGENCE] Explorer returned empty families");
       return null;
+    }
+
+    // Merge diversity families — add families with novel names
+    if (diversityRaw) {
+      try {
+        const diversityParsed = JSON.parse(diversityRaw) as DirectionMap;
+        if (diversityParsed.families?.length) {
+          const existingNames = new Set(
+            parsed.families.map(f => f.name.toLowerCase().slice(0, 40))
+          );
+          for (const family of diversityParsed.families) {
+            const nameKey = family.name.toLowerCase().slice(0, 40);
+            if (!existingNames.has(nameKey)) {
+              parsed.families.push(family);
+              existingNames.add(nameKey);
+            }
+          }
+          console.log(`[DIVERGENCE] Merged diversity families: ${diversityParsed.families.length} candidates`);
+        }
+      } catch {
+        console.warn("[DIVERGENCE] Failed to parse diversity output");
+      }
     }
 
     // Constraint compliance filter: flag (not remove) futures that violate confirmed constraints.

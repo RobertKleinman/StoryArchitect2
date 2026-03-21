@@ -158,7 +158,15 @@ export function creativeConfig(modelId: string): Partial<ModelConfig> {
 
 // ── Tier constants (change these to retier the whole system) ─────────
 const STRONG = "claude-sonnet-4-6";   // builders, judges, clarifiers — quality-critical
-const FAST   = "claude-haiku-4-5-20251001";  // summaries, polish, psych, divergence — speed-critical
+const FAST   = "claude-haiku-4-5-20251001";  // summaries, polish, psych — speed-critical
+
+// ── Background research models (based on v2 blind test results) ─────
+// Primary models: best quality within 30s think-time window
+// Diversity model: runs in parallel for extra angles, costs almost nothing
+export const RESEARCH_PRIMARY_CULTURAL   = "gemini-3-flash-preview";
+export const RESEARCH_PRIMARY_GROUNDING  = "gemini-3-flash-preview";
+export const RESEARCH_PRIMARY_DIVERGENCE = "gpt-5.4-mini";
+export const RESEARCH_DIVERSITY_MODEL    = "gpt-5.4-nano"; // 3-8s, cheapest tier
 
 export const DEFAULT_MODEL_CONFIG: ModelConfig = {
   // Hook
@@ -199,11 +207,11 @@ export const DEFAULT_MODEL_CONFIG: ModelConfig = {
   scene_divergence: FAST,         // background exploration — fast tier
   // Background
   psych_consolidator: FAST,       // runs during user think-time
-  divergence_explorer: FAST,      // runs during user think-time
+  divergence_explorer: RESEARCH_PRIMARY_DIVERGENCE,  // background — GPT-5.4 Mini (4.48 composite, 11s)
   // Cultural Intelligence Engine
   cultural_summarizer: FAST,      // compression task — fast tier
-  cultural_researcher: FAST,      // background research — fast tier
+  cultural_researcher: RESEARCH_PRIMARY_CULTURAL,   // background — Gemini Flash (4.70 composite, 13s)
   // Escalation
   hook_escalation: FAST,          // micro-call — speed-critical, max 200 tokens
-  grounding_researcher: FAST,     // background research — runs during user think-time
+  grounding_researcher: RESEARCH_PRIMARY_GROUNDING, // background — Gemini Flash (4.81 composite, 11s)
 };
