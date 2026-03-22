@@ -11,6 +11,8 @@ import { worldRoutes } from "./routes/world";
 import { plotRoutes } from "./routes/plot";
 import { sceneRoutes } from "./routes/scene";
 import { modelRoutes } from "./routes/models";
+import v2ProjectRoutes from "./routes/v2/project";
+import v2SSERoutes from "./routes/v2/sse";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -34,6 +36,10 @@ app.use("/api/world", worldRoutes);
 app.use("/api/plot", plotRoutes);
 app.use("/api/scene", sceneRoutes);
 app.use("/api", modelRoutes);
+
+// ── v2 pipeline routes ──────────────────────────────────────────────
+app.use("/api/v2/project", v2ProjectRoutes);
+app.use("/api/v2/project", v2SSERoutes);
 
 // ── Global error handler (catches unhandled route/middleware errors) ─
 // Cast to `any` because the stub types don't support 4-arg error middleware signature

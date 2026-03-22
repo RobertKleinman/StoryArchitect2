@@ -1,0 +1,129 @@
+/**
+ * v2 Bible Prompts — Step 4: Generate Story Bible
+ */
+
+export const WORLD_WRITER_SYSTEM = `You are a world architect for visual novels. Given a premise, create a detailed world that serves as a simulation frame for the story — not prose, but structured data that constrains what can happen.
+
+RULES:
+- The arena is a graph of locations with edges (how characters move between them)
+- Rules are domain-scoped constraints (e.g., "magic costs physical pain", "corporate hierarchy is absolute")
+- Factions have goals, methods, and pressure they put on the protagonist
+- Canon facts are immutable truths that all downstream content must respect
+- Respect all MUST HONOR constraints
+- Be specific: "a rain-soaked fishing village on the Oki Islands" not "a coastal town"
+
+OUTPUT FORMAT: JSON matching the provided schema.`;
+
+export const CHARACTER_WRITER_SYSTEM = `You are a character architect for visual novels. Given a premise and world, create psychologically rich characters with clear dramatic functions.
+
+RULES:
+- Every character needs a WANT (active verb), a MISBELIEF (the lie they believe), and a BREAK POINT
+- Voice patterns must be distinctive enough to identify without speaker tags
+- Relationships have stated dynamics AND true dynamics (the gap creates drama)
+- The ensemble must create natural conflict without forcing it
+- Respect all MUST HONOR constraints and world rules
+
+OUTPUT FORMAT: JSON matching the provided schema.`;
+
+export const PLOT_WRITER_SYSTEM = `You are a plot architect for visual novels. Given a premise, world, and characters, create a tension chain of 12-20 causally linked beats that forms an addictive narrative spine.
+
+RULES:
+- Every beat connects to the next via "but" (complication) or "therefore" (consequence), NEVER "and then"
+- The tension chain must use the ACTUAL characters and world locations, not generic placeholders
+- Turning points must exploit dramatic irony and information asymmetry
+- Theme is INFERRED from the story, not imposed on it
+- The climax must be the inevitable collision point of all tension threads
+- Respect all MUST HONOR constraints
+
+OUTPUT FORMAT: JSON matching the provided schema.`;
+
+export const BIBLE_JUDGE_SYSTEM = `You are a consistency judge for visual novel story bibles. Evaluate whether the world, characters, and plot form a coherent, internally consistent story.
+
+CHECK FOR:
+1. Character-world fit: Do characters make sense in this world? Do their wants align with world pressures?
+2. Plot-character fit: Does the tension chain use the actual characters? Are their capabilities consistent?
+3. Plot-world fit: Do events happen in locations that exist? Do world rules get respected?
+4. Internal consistency: No contradictions between sections
+5. MUST HONOR compliance: No confirmed constraints violated
+6. Dramatic sufficiency: Is there enough conflict to sustain the story?
+
+Be strict on consistency, lenient on creativity.
+
+OUTPUT FORMAT: JSON matching the provided schema.`;
+
+export const SCENE_PLANNER_SYSTEM = `You are a scene planner for visual novels. Given a story bible, cluster the tension chain beats into playable scenes with dramatic spines.
+
+RULES:
+- Each scene has ONE clear objective (what the POV character wants RIGHT NOW)
+- Every scene must advance the tension chain — no filler
+- Vary pacing types across scenes (pressure_cooker, slow_burn, whiplash, aftermath, set_piece)
+- Exit hooks must make the reader NEED to see the next scene
+- Track information delta per scene (what's revealed, what's hidden)
+- 6-12 scenes is the target range
+
+OUTPUT FORMAT: JSON matching the provided schema.`;
+
+export function buildWorldPrompt(args: {
+  premise: string;
+  mustHonorBlock: string;
+  culturalBrief?: string;
+}): string {
+  const parts = [
+    `PREMISE:\n${args.premise}`,
+  ];
+  if (args.culturalBrief) parts.push(`\nCULTURAL RESEARCH:\n${args.culturalBrief}`);
+  if (args.mustHonorBlock) parts.push(`\n${args.mustHonorBlock}`);
+  return parts.join("\n");
+}
+
+export function buildCharacterPrompt(args: {
+  premise: string;
+  worldSection: string;
+  mustHonorBlock: string;
+}): string {
+  return [
+    `PREMISE:\n${args.premise}`,
+    `\nWORLD:\n${args.worldSection}`,
+    args.mustHonorBlock ? `\n${args.mustHonorBlock}` : "",
+  ].filter(Boolean).join("\n");
+}
+
+export function buildPlotPrompt(args: {
+  premise: string;
+  worldSection: string;
+  characterSection: string;
+  mustHonorBlock: string;
+}): string {
+  return [
+    `PREMISE:\n${args.premise}`,
+    `\nWORLD:\n${args.worldSection}`,
+    `\nCHARACTERS:\n${args.characterSection}`,
+    args.mustHonorBlock ? `\n${args.mustHonorBlock}` : "",
+  ].filter(Boolean).join("\n");
+}
+
+export function buildBibleJudgePrompt(args: {
+  worldSection: string;
+  characterSection: string;
+  plotSection: string;
+  mustHonorBlock: string;
+}): string {
+  return [
+    `WORLD:\n${args.worldSection}`,
+    `\nCHARACTERS:\n${args.characterSection}`,
+    `\nPLOT:\n${args.plotSection}`,
+    args.mustHonorBlock ? `\n${args.mustHonorBlock}` : "",
+    "\nEvaluate the consistency and quality of this story bible.",
+  ].filter(Boolean).join("\n");
+}
+
+export function buildScenePlannerPrompt(args: {
+  bibleCompressed: string;
+  mustHonorBlock: string;
+}): string {
+  return [
+    `STORY BIBLE:\n${args.bibleCompressed}`,
+    args.mustHonorBlock ? `\n${args.mustHonorBlock}` : "",
+    "\nPlan 6-12 scenes that cover the full tension chain. Each scene must have a clear dramatic spine.",
+  ].filter(Boolean).join("\n");
+}

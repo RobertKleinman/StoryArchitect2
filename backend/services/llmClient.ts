@@ -1,4 +1,4 @@
-import { HookRole, ModelConfig, LLMProvider, detectProvider } from "../../shared/modelConfig";
+import { HookRole, ModelConfig, LLMProvider, detectProvider, V2Role, V2ModelConfig, DEFAULT_V2_MODEL_CONFIG } from "../../shared/modelConfig";
 import type { LLMProvider as ILLMProvider, ProviderCallOptions } from "./providers/types";
 import { ProviderHttpError } from "./providers/types";
 import { AnthropicProvider } from "./providers/anthropicProvider";
@@ -64,10 +64,12 @@ export interface CallProvenance {
 
 export class LLMClient {
   private config: ModelConfig;
+  private v2Config: V2ModelConfig;
   private sessionTokens: TokenUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, calls: 0 };
   private _lastCallProvenance: CallProvenance | null = null;
-  constructor(config: ModelConfig) {
-    this.config = config;
+  constructor(config?: ModelConfig, v2Config?: V2ModelConfig) {
+    this.config = config ?? ({} as ModelConfig);
+    this.v2Config = v2Config ?? DEFAULT_V2_MODEL_CONFIG;
   }
 
   /** Returns provenance metadata from the most recent successful call */
@@ -90,12 +92,14 @@ export class LLMClient {
    * - Optional structured outputs (guaranteed JSON schema compliance)
    */
   async call(
-    role: HookRole,
+    role: HookRole | V2Role,
     systemPrompt: string,
     userPrompt: string,
     options?: CallOptions,
   ): Promise<string> {
-    const model = options?.modelOverride ?? this.config[role];
+    const model = options?.modelOverride
+      ?? (this.config as any)[role]
+      ?? (this.v2Config as any)[role];
     const providerName = detectProvider(model);
     const provider = providers[providerName];
     if (!provider) {

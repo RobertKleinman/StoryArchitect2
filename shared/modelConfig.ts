@@ -2,6 +2,37 @@
 
 export type LLMProvider = "anthropic" | "openai" | "gemini" | "grok";
 
+// ── v2 Pipeline Roles (9 roles, down from 38) ──────────────────────
+
+export type V2Role =
+  | "intake"
+  | "premise_writer"
+  | "premise_judge"
+  | "bible_writer"
+  | "bible_judge"
+  | "scene_planner"
+  | "scene_writer"
+  | "scene_judge"
+  | "v2_cultural_researcher"
+  | "v2_summarizer";
+
+export interface V2ModelConfig {
+  intake: string;
+  premise_writer: string;
+  premise_judge: string;
+  bible_writer: string;
+  bible_judge: string;
+  scene_planner: string;
+  scene_writer: string;
+  scene_judge: string;
+  v2_cultural_researcher: string;
+  v2_summarizer: string;
+}
+
+// DEFAULT_V2_MODEL_CONFIG is defined after the STRONG/FAST tier constants below.
+
+// ── v1 Pipeline Roles (legacy, 38 roles) ────────────────────────────
+
 export type HookRole = "clarifier" | "builder" | "judge" | "summary" | "polish"
   | "char_clarifier" | "char_builder" | "char_judge" | "char_polish" | "char_summary"
   | "img_clarifier" | "img_builder" | "img_judge" | "img_summary"
@@ -217,4 +248,19 @@ export const DEFAULT_MODEL_CONFIG: ModelConfig = {
   // Escalation
   hook_escalation: "gpt-5.4-nano",  // micro-call — plain text, any fast model works
   grounding_researcher: RESEARCH_PRIMARY_GROUNDING,  // background — Gemini Flash (validated in original research tests)
+};
+
+// ── v2 Default Model Config ─────────────────────────────────────────
+
+export const DEFAULT_V2_MODEL_CONFIG: V2ModelConfig = {
+  intake: STRONG,
+  premise_writer: STRONG,
+  premise_judge: STRONG,
+  bible_writer: STRONG,
+  bible_judge: STRONG,
+  scene_planner: STRONG,
+  scene_writer: STRONG,
+  scene_judge: STRONG,
+  v2_cultural_researcher: RESEARCH_PRIMARY_CULTURAL,
+  v2_summarizer: FAST,
 };
