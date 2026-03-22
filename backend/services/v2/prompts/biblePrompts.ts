@@ -57,6 +57,13 @@ CHECK FOR:
 5. MUST HONOR compliance: No confirmed constraints violated
 6. Dramatic sufficiency: Is there enough conflict to sustain the story?
 
+ALSO ASK YOURSELF:
+- Does the protagonist ever choose who gets hurt, or do consequences just happen to them?
+- Is the climax morally complicated, or is the protagonist clearly right?
+- Does every ally get through the story without being wrong?
+- Is there a moment where the reader should feel uncomfortable with what the protagonist does?
+If any of these reveal a weakness, flag it as a consistency issue. Not every story needs all of these — but if the story is trying to be serious and the protagonist is never genuinely wrong, that's worth noting.
+
 Be strict on consistency, lenient on creativity.
 
 OUTPUT FORMAT: JSON matching the provided schema.`;
