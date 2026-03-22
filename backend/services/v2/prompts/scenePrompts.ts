@@ -24,6 +24,7 @@ WRITING QUALITY:
 - Characters should sound different in thought pattern, not just vocabulary. A soldier notices physical things. An intellectual's composure should crack under pressure.
 - Vary pacing — mix long and short sentences, use silence and pauses, let reveals break the rhythm.
 - Not every emotional moment should land cleanly. Awkwardness, interruptions, and inarticulacy are more human than polished beats.
+- Never end a scene on a line that summarizes what the scene meant. End on action, dialogue, image, or silence — not on theme.
 
 OUTPUT FORMAT: JSON matching the provided schema.`;
 
