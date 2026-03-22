@@ -77,7 +77,7 @@ RULES:
 - Exit hooks must make the reader NEED to see the next scene
 - Track information delta per scene (what's revealed, what's hidden)
 - 6-12 scenes is the target range
-- If the story's confirmed constraints include romantic or erotic content, plan specific scenes where that content occurs naturally within the narrative. Include it in the scene's purpose field so the scene writer knows to write it.
+- If the story's confirmed constraints include romantic or erotic content, the scene purpose must state this DIRECTLY — not in euphemism. Write "this scene includes explicit sexual content between X and Y" not "something passes between them." Write "the foot fetish element is present as X does Y to Z's feet" not "tenderness as transgression." The scene writer will follow your purpose field literally — if you write around the content, the writer will too.
 
 OUTPUT FORMAT: JSON matching the provided schema.`;
 

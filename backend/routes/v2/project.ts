@@ -30,8 +30,18 @@ const orchestrator = new Orchestrator(store);
 let llm: LLMClient;
 function getLLM(): LLMClient {
   if (!llm) {
-    // Import lazily to avoid circular deps
-    llm = new LLMClient();
+    const override = process.env.V2_MODEL_OVERRIDE;
+    if (override) {
+      console.log(`[v2] Model override active: all roles → ${override}`);
+      const v2Config: any = {};
+      const roles = ["intake", "premise_writer", "premise_judge", "bible_writer",
+        "bible_judge", "scene_planner", "scene_writer", "scene_judge",
+        "v2_cultural_researcher", "v2_summarizer"];
+      for (const role of roles) v2Config[role] = override;
+      llm = new LLMClient(undefined, v2Config);
+    } else {
+      llm = new LLMClient();
+    }
   }
   return llm;
 }
