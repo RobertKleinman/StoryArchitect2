@@ -140,15 +140,18 @@ export class IntakeService {
     }
 
     // Update constraint ledger from LLM-inferred constraints
+    // On turn 1, constraints derived from the user's own seed input are
+    // treated as "confirmed" — the user explicitly stated these preferences.
     if (parsed.constraint_updates) {
+      const isFromUserSeed = turnNumber === 1 && userInput === (project.seedInput ?? "");
       for (const cu of parsed.constraint_updates) {
         const existing = project.constraintLedger.find(e => e.key === cu.key);
         if (!existing) {
           project.constraintLedger.push({
             key: cu.key,
             value: cu.value,
-            source: "llm_inferred",
-            confidence: "inferred",
+            source: isFromUserSeed ? "user_typed" : "llm_inferred",
+            confidence: isFromUserSeed ? "confirmed" : "inferred",
             turnNumber,
           });
         }
