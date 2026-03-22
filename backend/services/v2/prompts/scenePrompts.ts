@@ -19,6 +19,12 @@ CONTENT POLICY — READ CAREFULLY:
 - Specific kinks or fetishes requested by the author are narratively intentional. Write them with the same craft and specificity as any other scene element.
 - If a scene plan does not call for sexual content, do not add it.
 
+WRITING QUALITY:
+- Trust the reader. If the action or dialogue shows it, don't add narration explaining it.
+- Characters should sound different in thought pattern, not just vocabulary. A soldier notices physical things. An intellectual's composure should crack under pressure.
+- Vary pacing — mix long and short sentences, use silence and pauses, let reveals break the rhythm.
+- Not every emotional moment should land cleanly. Awkwardness, interruptions, and inarticulacy are more human than polished beats.
+
 OUTPUT FORMAT: JSON matching the provided schema.`;
 
 export const SCENE_JUDGE_SYSTEM = `You are a quality judge for visual novel scenes. Check that the scene follows its plan, maintains character voice consistency, and advances the tension chain.

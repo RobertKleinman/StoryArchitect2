@@ -8,7 +8,7 @@ import { IntakeService } from "../../services/v2/intakeService";
 import { PremiseService } from "../../services/v2/premiseService";
 import { BibleService } from "../../services/v2/bibleService";
 import { SceneGenerationService } from "../../services/v2/sceneGenerationService";
-import { PolishService } from "../../services/v2/polishService";
+// PolishService available but not used in default pipeline — quality baked into scene writer prompt
 import { ProjectStoreV2 } from "../../storage/v2/projectStoreV2";
 import { LLMClient } from "../../services/llmClient";
 import { emitStepComplete, emitError } from "../../services/v2/progressEmitter";
@@ -407,17 +407,7 @@ router.post("/:projectId/generate-scenes", async (req: Request, res: Response) =
       );
       generating.traces.push(...result.traces);
 
-      // ── Polish pass: de-LLM-ify scenes ─────────────────────
-      const polish = new PolishService(getLLM());
-      const polishResult = await polish.polishAll(
-        req.params.projectId,
-        result.scenes,
-        generating.storyBible,
-        controller.signal,
-      );
-      generating.traces.push(...polishResult.traces);
-
-      await orchestrator.transitionToCompleted(projectId, generating, polishResult.scenes);
+      await orchestrator.transitionToCompleted(projectId, generating, result.scenes);
       emitStepComplete(req.params.projectId, "completed");
     } catch (err: any) {
       if (err.name === "AbortError") {

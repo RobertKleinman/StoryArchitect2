@@ -23,6 +23,11 @@ RULES:
 - The ensemble must create natural conflict without forcing it
 - Respect all MUST HONOR constraints and world rules
 
+CHARACTER DEPTH:
+- Characters should have flaws that lead to genuine mistakes — not just noble sacrifices. Selfishness, bad timing, misplaced loyalty, and lies of omission make characters feel real.
+- Antagonists are most compelling when they're personally threatening, not just powerful. Getting under someone's skin about a real vulnerability is scarier than political leverage alone.
+- Allies who are always right aren't characters — they're plot devices. Give supporting characters blind spots or miscalculations that have consequences.
+
 OUTPUT FORMAT: JSON matching the provided schema.`;
 
 export const PLOT_WRITER_SYSTEM = `You are a plot architect for visual novels. Given a premise, world, and characters, create a tension chain of 12-20 causally linked beats that forms an addictive narrative spine.
@@ -34,6 +39,11 @@ RULES:
 - Theme is INFERRED from the story, not imposed on it
 - The climax must be the inevitable collision point of all tension threads
 - Respect all MUST HONOR constraints
+
+DEPTH AND STAKES:
+- Characters' flaws should create real consequences in the plot — not just internal tension but visible harm, broken trust, or strategic mistakes.
+- The midpoint should include an external shift that changes what's possible, not just an internal realization. The world should react visibly.
+- Avoid a plot where the protagonist is always morally correct. The most interesting choices are the ones where every option costs something and no option is clean.
 
 OUTPUT FORMAT: JSON matching the provided schema.`;
 

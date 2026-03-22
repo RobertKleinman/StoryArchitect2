@@ -52,9 +52,11 @@ export class BibleService {
       });
 
       const startMs = Date.now();
+      // World is structural (locations, rules, factions) — faster model is fine
       const raw = await this.llm.call("bible_writer", WORLD_WRITER_SYSTEM,
         buildWorldPrompt({ premise: premiseStr, mustHonorBlock: mustHonor, culturalBrief }),
-        { temperature: 0.8, maxTokens: 4000, jsonSchema: WORLD_WRITER_SCHEMA, abortSignal },
+        { temperature: 0.8, maxTokens: 4000, jsonSchema: WORLD_WRITER_SCHEMA, abortSignal,
+          modelOverride: "gemini-3-flash-preview" },
       );
       traces.push(this.makeTrace(project.operationId, "bible_writer", startMs, "world"));
       worldData = JSON.parse(raw);
