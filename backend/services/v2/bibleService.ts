@@ -94,12 +94,13 @@ export class BibleService {
         startedAt: new Date().toISOString(),
       });
 
-      const worldStr = worldData ? JSON.stringify(worldData, null, 2) : "(world not available)";
-      const charStr = charData ? JSON.stringify(charData, null, 2) : "(characters not available)";
+      // Compress world + chars for plot writer (no full JSON — just what plot needs)
+      const worldForPlot = this.compressWorldForPlot(worldData);
+      const charsForPlot = this.compressCharsForPlot(charData);
       const startMs = Date.now();
       const raw = await this.llm.call("bible_writer", PLOT_WRITER_SYSTEM,
-        buildPlotPrompt({ premise: premiseStr, worldSection: worldStr, characterSection: charStr, mustHonorBlock: mustHonor }),
-        { temperature: 0.8, maxTokens: 6000, jsonSchema: PLOT_WRITER_SCHEMA, abortSignal },
+        buildPlotPrompt({ premise: premiseStr, worldSection: worldForPlot, characterSection: charsForPlot, mustHonorBlock: mustHonor }),
+        { temperature: 0.8, maxTokens: 4000, jsonSchema: PLOT_WRITER_SCHEMA, abortSignal },
       );
       traces.push(this.makeTrace(project.operationId, "bible_writer", startMs, "plot"));
       plotData = JSON.parse(raw);
@@ -108,31 +109,30 @@ export class BibleService {
       if (onCheckpoint) await onCheckpoint(project);
     }
 
-    // ── Sub-step 4: Judge ────────────────────────────────────────
+    // ── Sub-step 4: Judge (non-blocking) ─────────────────────────
+    // Bible judge runs in background — doesn't block scene planning.
+    // Results logged for diagnostics but don't gate the pipeline.
     if (!completed.includes("judge")) {
-      emitProgress(projectId, {
-        totalSteps: 5, completedSteps: 3,
-        currentStep: "Checking consistency...",
-        startedAt: new Date().toISOString(),
-      });
-
-      const startMs = Date.now();
-      const judgeRaw = await this.llm.call("bible_judge", BIBLE_JUDGE_SYSTEM,
+      completed.push("judge"); // Mark done immediately — don't wait
+      // Fire-and-forget: log judge results for debugging
+      this.llm.call("bible_judge", BIBLE_JUDGE_SYSTEM,
         buildBibleJudgePrompt({
-          worldSection: JSON.stringify(worldData, null, 2),
-          characterSection: JSON.stringify(charData, null, 2),
-          plotSection: JSON.stringify(plotData, null, 2),
+          worldSection: this.compressWorldForPlot(worldData),
+          characterSection: this.compressCharsForPlot(charData),
+          plotSection: JSON.stringify(plotData),
           mustHonorBlock: mustHonor,
         }),
-        { temperature: 0.3, maxTokens: 2000, jsonSchema: BIBLE_JUDGE_SCHEMA, abortSignal },
-      );
-      traces.push(this.makeTrace(project.operationId, "bible_judge", startMs, "judge"));
-
-      // If judge finds critical issues, we could do a repair pass here.
-      // For now, log and continue — the user reviews in Step 5.
-
-      completed.push("judge");
-      if (onCheckpoint) await onCheckpoint(project);
+        { temperature: 0.3, maxTokens: 1000, jsonSchema: BIBLE_JUDGE_SCHEMA },
+      ).then(raw => {
+        try {
+          const result = JSON.parse(raw);
+          if (!result.pass) {
+            console.warn("[v2] Bible judge flagged issues:", JSON.stringify(result.consistency_issues ?? []).slice(0, 500));
+          }
+        } catch { /* ignore parse failures in background */ }
+      }).catch(err => {
+        console.warn("[v2] Bible judge background call failed:", err.message);
+      });
     }
 
     // ── Sub-step 5: Scene Plan ───────────────────────────────────
@@ -149,7 +149,7 @@ export class BibleService {
       const startMs = Date.now();
       const raw = await this.llm.call("scene_planner", SCENE_PLANNER_SYSTEM,
         buildScenePlannerPrompt({ bibleCompressed, mustHonorBlock: mustHonor }),
-        { temperature: 0.7, maxTokens: 4000, jsonSchema: SCENE_PLANNER_SCHEMA, abortSignal },
+        { temperature: 0.7, maxTokens: 3000, jsonSchema: SCENE_PLANNER_SCHEMA, abortSignal },
       );
       traces.push(this.makeTrace(project.operationId, "scene_planner", startMs, "scene_plan"));
       scenePlanData = JSON.parse(raw);
@@ -235,6 +235,35 @@ export class BibleService {
       `CHARACTERS: ${premise.characters_sketch?.map((c: any) => `${c.name} (${c.role}): ${c.one_liner}`).join("; ")}`,
       premise.bans?.length ? `BANS: ${premise.bans.join(", ")}` : "",
     ].filter(Boolean).join("\n");
+  }
+
+  /** Compress world to just what the plot writer needs: locations, rules, factions, thesis */
+  private compressWorldForPlot(world: any): string {
+    if (!world) return "(world not available)";
+    const parts = [
+      `Thesis: ${world.world_thesis ?? ""}`,
+      `Locations: ${(world.arena?.locations ?? []).map((l: any) => l.name).join(", ")}`,
+      `Rules: ${(world.rules ?? []).map((r: any) => r.rule).join("; ")}`,
+      `Factions: ${(world.factions ?? []).map((f: any) => `${f.name}: ${f.goal}`).join("; ")}`,
+    ];
+    return parts.join("\n");
+  }
+
+  /** Compress characters to just what the plot writer needs: want, misbelief, relationships */
+  private compressCharsForPlot(chars: any): string {
+    if (!chars) return "(characters not available)";
+    const parts: string[] = [];
+    for (const c of (chars.characters ?? [])) {
+      const pp = c.psychological_profile ?? {};
+      parts.push(`${c.name} (${c.role}): wants ${pp.want ?? "?"}; misbelieves ${pp.misbelief ?? "?"}; breaks when ${pp.break_point ?? "?"}`);
+    }
+    if (chars.relationships?.length) {
+      parts.push("");
+      for (const r of chars.relationships) {
+        parts.push(`${(r.between ?? []).join(" + ")}: ${r.nature} (stated: ${r.stated_dynamic}; true: ${r.true_dynamic})`);
+      }
+    }
+    return parts.join("\n");
   }
 
   private compressBibleForPlanner(world: any, chars: any, plot: any): string {

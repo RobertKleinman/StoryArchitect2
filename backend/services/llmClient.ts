@@ -122,7 +122,7 @@ export class LLMClient {
       // Check abort signal before each attempt (e.g. client disconnected)
       if (options?.abortSignal?.aborted) {
         console.warn(`[LLM] ${role} aborted before attempt ${attempt} — client disconnected`);
-        throw new Error(`LLM [${role}] aborted: client disconnected`);
+        throw new DOMException(`LLM [${role}] aborted: client disconnected`, "AbortError");
       }
 
       try {

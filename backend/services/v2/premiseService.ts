@@ -86,7 +86,7 @@ export class PremiseService {
     const judgeStartMs = Date.now();
     const judgeRaw = await this.llm.call("premise_judge", PREMISE_JUDGE_SYSTEM, judgePrompt, {
       temperature: 0.3,
-      maxTokens: 1500,
+      maxTokens: 800,
       jsonSchema: PREMISE_JUDGE_SCHEMA,
       abortSignal,
     });

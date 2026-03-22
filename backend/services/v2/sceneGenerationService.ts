@@ -38,6 +38,17 @@ export class SceneGenerationService {
       plan => !project.checkpoint.completedSceneIds.includes(plan.scene_id),
     );
 
+    // Build cacheable prefix: shared context across all scene calls
+    // This gets cached by the Anthropic API so scenes 2-9 skip re-processing it
+    const mustHonor = buildMustHonorBlock(project.constraintLedger);
+    const cacheablePrefix = [
+      `STORY BIBLE CONTEXT (shared across all scenes):`,
+      `World: ${project.storyBible.world?.world_thesis ?? ""}`,
+      `Locations: ${project.storyBible.world?.arena?.locations?.map((l: any) => l.name).join(", ") ?? ""}`,
+      `Tone: ${project.storyBible.world?.scope?.tone_rule ?? ""}`,
+      mustHonor ? `\n${mustHonor}` : "",
+    ].filter(Boolean).join("\n");
+
     // Process in batches of BATCH_SIZE
     for (let batchStart = 0; batchStart < remaining.length; batchStart += BATCH_SIZE) {
       if (abortSignal?.aborted) throw new DOMException("Aborted", "AbortError");
@@ -54,7 +65,6 @@ export class SceneGenerationService {
       });
 
       // Build prompts for each scene in the batch
-      const mustHonor = buildMustHonorBlock(project.constraintLedger);
       const prevDigest = previousSceneDigest(allScenes);
 
       // Launch all scenes in this batch in parallel
@@ -77,6 +87,7 @@ export class SceneGenerationService {
           maxTokens: 6000,
           jsonSchema: SCENE_WRITER_SCHEMA,
           abortSignal,
+          cacheableUserPrefix: cacheablePrefix,
         });
         const trace = this.makeTrace(project.operationId, "scene_writer", startMs, plan.scene_id);
 
