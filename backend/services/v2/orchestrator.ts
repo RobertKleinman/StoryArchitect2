@@ -94,7 +94,12 @@ export class Orchestrator {
     projectId: ProjectId,
     current: Step1_IdeaGathering,
   ): Promise<Step2_PremiseGenerating> {
-    if (!current.seedInput && current.conversationTurns.length === 0) {
+    // Derive seed from conversation if not explicitly set
+    const seedInput = current.seedInput
+      ?? current.conversationTurns[0]?.userInput
+      ?? null;
+
+    if (!seedInput) {
       throw new Error("Cannot generate premise without seed input or conversation");
     }
 
@@ -102,7 +107,7 @@ export class Orchestrator {
       ...current,
       step: "premise_generating",
       operationId: createOperationId(randomUUID()),
-      seedInput: current.seedInput!,
+      seedInput,
     };
     await this.store.transition(projectId, next);
     return next;

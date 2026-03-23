@@ -63,6 +63,32 @@ if (existsSync(distDir)) {
   console.log("No frontend build found — API-only mode (use Vite dev server for frontend)");
 }
 
+// ── v2 startup recovery: unstick projects left in 'generating' states ──
+import { ProjectStoreV2 } from "./storage/v2/projectStoreV2";
+
+async function recoverStuckProjects() {
+  const store = new ProjectStoreV2();
+  try {
+    const ids = await store.list();
+    for (const id of ids) {
+      const project = await store.get(id);
+      if (!project) continue;
+      if (project.step === "premise_generating" || project.step === "bible_generating" || project.step === "scene_generating") {
+        console.warn(`[v2] Recovering stuck project ${id} (was ${project.step}) → failed`);
+        (project as any).step = "failed";
+        (project as any).failedAt = project.step;
+        (project as any).error = "Server restarted during generation. Retry to continue.";
+        (project as any).recoverySnapshot = JSON.stringify({ step: project.step });
+        project.updatedAt = new Date().toISOString();
+        await store.save(project);
+      }
+    }
+  } catch (err) {
+    console.warn("[v2] Startup recovery scan failed:", err);
+  }
+}
+recoverStuckProjects();
+
 const PORT = process.env.PORT ?? 3001;
 const server = app.listen(PORT, () => console.log(`Backend running on :${PORT}`));
 

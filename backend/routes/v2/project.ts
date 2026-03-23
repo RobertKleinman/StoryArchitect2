@@ -11,7 +11,7 @@ import { SceneGenerationService } from "../../services/v2/sceneGenerationService
 // PolishService available but not used in default pipeline — quality baked into scene writer prompt
 import { ProjectStoreV2 } from "../../storage/v2/projectStoreV2";
 import { LLMClient } from "../../services/llmClient";
-import { emitStepComplete, emitError } from "../../services/v2/progressEmitter";
+import { emitStepComplete, emitError, cleanupEmitter } from "../../services/v2/progressEmitter";
 import { acquireInflight, releaseInflight, buildInflightKey } from "../../services/inflightGuard";
 import type { ProjectId } from "../../../shared/types/project";
 import { createProjectId } from "../../../shared/types/project";
@@ -73,6 +73,7 @@ router.delete("/:projectId", async (req: Request, res: Response) => {
   try {
     const projectId = createProjectId(req.params.projectId);
     await orchestrator.deleteProject(projectId);
+    cleanupEmitter(req.params.projectId);
     res.json({ deleted: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -87,6 +88,7 @@ router.post("/:projectId/abort", async (req: Request, res: Response) => {
 
     const aborted = abortProject(req.params.projectId);
     if (aborted) {
+      cleanupEmitter(req.params.projectId);
       await orchestrator.transitionToAborted(projectId, project);
     }
     res.json({ aborted });
@@ -359,7 +361,7 @@ router.post("/:projectId/review-scenes", async (req: Request, res: Response) => 
     }
 
     if (body.action === "revise" && body.changes) {
-      // Apply scene plan edits
+      const EDITABLE_FIELDS = new Set(["title", "purpose", "setting", "pov_character"]);
       for (const edit of body.changes) {
         if (edit.action === "remove") {
           project.scenePlan.scenes = project.scenePlan.scenes.filter(
@@ -368,8 +370,15 @@ router.post("/:projectId/review-scenes", async (req: Request, res: Response) => 
         } else if (edit.action === "modify" && edit.changes) {
           const scene = project.scenePlan.scenes.find(s => s.scene_id === edit.scene_id);
           if (scene) {
-            Object.assign(scene, edit.changes);
+            // Only allow safe field overwrites
+            for (const [key, value] of Object.entries(edit.changes)) {
+              if (EDITABLE_FIELDS.has(key) && typeof value === "string") {
+                (scene as any)[key] = value;
+              }
+            }
           }
+        } else if (edit.action === "reorder") {
+          return res.status(400).json({ error: "Reorder is not yet supported" });
         }
       }
       project.scenePlan.total_scenes = project.scenePlan.scenes.length;

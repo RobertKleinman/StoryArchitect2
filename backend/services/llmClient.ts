@@ -114,6 +114,7 @@ export class LLMClient {
       maxTokens: options?.maxTokens,
       jsonSchema: options?.jsonSchema,
       cacheableUserPrefix: options?.cacheableUserPrefix,
+      abortSignal: options?.abortSignal,
     };
 
     let truncationRetried = false;

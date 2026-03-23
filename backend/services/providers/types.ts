@@ -11,6 +11,8 @@ export interface ProviderCallOptions {
   /** Static prefix of the user prompt — cached separately for Anthropic prompt caching.
    *  Other providers prepend it to the user prompt string. */
   cacheableUserPrefix?: string;
+  /** Abort signal for cancelling in-flight requests */
+  abortSignal?: AbortSignal;
 }
 
 export interface ProviderResponse {

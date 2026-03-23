@@ -123,7 +123,9 @@ export class OpenAICompatibleProvider implements LLMProvider {
         authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(300_000),
+      signal: options?.abortSignal
+        ? AbortSignal.any([options.abortSignal, AbortSignal.timeout(300_000)])
+        : AbortSignal.timeout(300_000),
     });
 
     if (!res.ok) {

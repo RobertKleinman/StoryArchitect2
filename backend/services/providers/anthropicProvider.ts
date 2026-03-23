@@ -92,6 +92,11 @@ export class AnthropicProvider implements LLMProvider {
           : {}),
       });
 
+      // Abort stream if caller signals cancellation
+      if (options?.abortSignal) {
+        options.abortSignal.addEventListener("abort", () => stream.abort(), { once: true });
+      }
+
       const finalMessage = await stream.finalMessage();
 
       const text = (finalMessage.content ?? [])

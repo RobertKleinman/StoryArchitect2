@@ -75,7 +75,9 @@ export class GeminiProvider implements LLMProvider {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(300_000),
+      signal: options?.abortSignal
+        ? AbortSignal.any([options.abortSignal, AbortSignal.timeout(300_000)])
+        : AbortSignal.timeout(300_000),
     });
 
     if (!res.ok) {

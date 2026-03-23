@@ -37,9 +37,10 @@ export class BibleService {
     const mustHonor = buildMustHonorBlock(project.constraintLedger);
     const premiseStr = this.formatPremise(project.premise);
 
-    let worldData: any = null;
-    let charData: any = null;
-    let plotData: any = null;
+    // Restore persisted intermediate artifacts from checkpoint (for resume)
+    let worldData: any = project.checkpoint.worldData ?? null;
+    let charData: any = project.checkpoint.charData ?? null;
+    let plotData: any = project.checkpoint.plotData ?? null;
 
     const completed = project.checkpoint.completedSubSteps;
 
@@ -62,6 +63,7 @@ export class BibleService {
       worldData = JSON.parse(raw);
 
       completed.push("world");
+      project.checkpoint.worldData = worldData;
       if (onCheckpoint) await onCheckpoint(project);
     }
 
@@ -83,6 +85,7 @@ export class BibleService {
       charData = JSON.parse(raw);
 
       completed.push("characters");
+      project.checkpoint.charData = charData;
       if (onCheckpoint) await onCheckpoint(project);
     }
 
@@ -106,6 +109,7 @@ export class BibleService {
       plotData = JSON.parse(raw);
 
       completed.push("plot");
+      project.checkpoint.plotData = plotData;
       if (onCheckpoint) await onCheckpoint(project);
     }
 

@@ -99,6 +99,10 @@ export interface BibleCheckpoint {
   completedSubSteps: BibleSubStep[];
   failedAt?: BibleSubStep;
   error?: string;
+  /** Persisted intermediate artifacts for resume */
+  worldData?: any;
+  charData?: any;
+  plotData?: any;
 }
 
 // ── Scene generation checkpoint ─────────────────────────────────────
