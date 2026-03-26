@@ -170,11 +170,13 @@ export const PLOT_WRITER_SCHEMA = {
           type: "object",
           properties: {
             id: { type: "string" },
-            beat: { type: "string", description: "What happens — 1-2 sentences, causally linked to previous beat" },
+            beat: { type: "string", description: "What happens — 1-2 sentences max. State cause before effect. Be concrete." },
+            causal_logic: { type: "string", description: "WHY does this beat follow from the previous? 1-2 sentences naming the specific cause." },
+            stakes_level: { type: "number", description: "1-10 tension level. Generally escalates; dips before jumps OK. First beat 2-4, pre-climax 8-10." },
             characters_involved: { type: "array", items: { type: "string" } },
             question_opened: { type: ["string", "null"], description: "What question this beat plants in the reader's mind" },
           },
-          required: ["id", "beat", "characters_involved"],
+          required: ["id", "beat", "causal_logic", "stakes_level", "characters_involved"],
           additionalProperties: false,
         },
       },
@@ -261,11 +263,23 @@ export const PLOT_WRITER_SCHEMA = {
         required: ["new_normal", "emotional_landing", "ending_energy"],
         additionalProperties: false,
       },
+      dirty_hands: {
+        type: "object",
+        description: "The moment the protagonist must do something morally wrong to achieve something right. Required.",
+        properties: {
+          beat_id: { type: "string", description: "Which beat contains the moral compromise" },
+          what_they_do: { type: "string", description: "The specific wrong act — a lie, manipulation, sacrifice of someone's safety" },
+          why_necessary: { type: "string", description: "Why the right outcome required this wrong act" },
+          cost: { type: "string", description: "What this act costs the protagonist internally — not just consequences, but self-knowledge" },
+        },
+        required: ["beat_id", "what_they_do", "why_necessary", "cost"],
+        additionalProperties: false,
+      },
       addiction_engine: { type: "string" },
     },
     required: ["core_conflict", "tension_chain", "turning_points", "theme_cluster",
                "dramatic_irony_points", "motifs", "mystery_hooks", "climax",
-               "resolution", "addiction_engine"],
+               "resolution", "dirty_hands", "addiction_engine"],
     additionalProperties: false,
 };
 
@@ -281,9 +295,24 @@ export const BIBLE_JUDGE_SCHEMA = {
             section: { type: "string", description: "world, characters, or plot" },
             issue: { type: "string" },
             severity: { type: "string", enum: ["critical", "major", "minor"] },
-            fix_instruction: { type: "string" },
+            fix_instruction: { type: "string", description: "Specific instruction for regeneration — what to change and how" },
           },
           required: ["section", "issue", "severity", "fix_instruction"],
+          additionalProperties: false,
+        },
+      },
+      quality_issues: {
+        type: "array",
+        description: "Dramatic quality issues (moral compromise, grounding, register, names, etc.)",
+        items: {
+          type: "object",
+          properties: {
+            dimension: { type: "string", description: "moral_compromise | emotional_grounding | violence_consequences | register_variation | antagonist | mirror_exploitation | name_quality" },
+            issue: { type: "string" },
+            severity: { type: "string", enum: ["critical", "major", "minor"] },
+            fix_instruction: { type: "string", description: "Specific instruction for regeneration" },
+          },
+          required: ["dimension", "issue", "severity", "fix_instruction"],
           additionalProperties: false,
         },
       },
@@ -292,7 +321,7 @@ export const BIBLE_JUDGE_SCHEMA = {
         items: { type: "string" },
       },
     },
-    required: ["pass", "consistency_issues", "constraint_violations"],
+    required: ["pass", "consistency_issues", "quality_issues", "constraint_violations"],
     additionalProperties: false,
 };
 
@@ -335,6 +364,11 @@ export const SCENE_PLANNER_SCHEMA = {
             pacing_type: {
               type: "string",
               enum: ["pressure_cooker", "slow_burn", "whiplash", "aftermath", "set_piece"],
+            },
+            content_directives: {
+              type: "array",
+              items: { type: "string" },
+              description: "Factual routing instructions for the scene writer: explicit content requirements, specific required elements, hard constraints. NO thematic or emotional framing — only concrete directives.",
             },
           },
           required: ["scene_id", "beat_ids", "title", "purpose", "setting",

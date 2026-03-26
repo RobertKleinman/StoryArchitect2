@@ -23,6 +23,12 @@ RULES:
 - The ensemble must create natural conflict without forcing it
 - Respect all MUST HONOR constraints and world rules
 
+NAMES:
+- Names must draw from at least 3 distinct real-world cultural/linguistic traditions across the cast. A cast where every name is short and vaguely Northern European (Kael, Voss, Thane, Prask, Resk, Mirren, Sorin) reads as AI-generated.
+- Mix phonetic structures: monosyllabic AND polysyllabic, different consonant/vowel patterns, different cultural origins (African, East Asian, South Asian, Arabic, Latin American, Indigenous, Slavic, Mediterranean, etc.).
+- In sci-fi/fantasy settings, alien or invented names should STILL show phonetic diversity — not all from the same sound palette.
+- If the premise already names characters, you may rename them if the names lack diversity.
+
 CHARACTER DEPTH:
 - Characters should have flaws that lead to genuine mistakes — not just noble sacrifices. Selfishness, bad timing, misplaced loyalty, and lies of omission make characters feel real.
 - Antagonists are most compelling when they're personally threatening, not just powerful. Getting under someone's skin about a real vulnerability is scarier than political leverage alone.
@@ -40,31 +46,59 @@ RULES:
 - The climax must be the inevitable collision point of all tension threads
 - Respect all MUST HONOR constraints
 
+BREVITY:
+- Beat descriptions: MAX 2 sentences. State cause before effect. If a beat needs more, split it.
+- causal_logic: MAX 2 sentences. WHY does this follow from the previous beat? Name the specific cause.
+- The reader should be able to follow the full chain by reading just the beat + causal_logic fields in order.
+
+CLARITY OF CAUSATION:
+- When a character gains authority, power, or capability: state explicitly HOW and WHY in the beat, not in a subordinate clause. "Maren now has custody of Essa because advisory detention assigns to the senior diplomat on-site" — not buried in a parenthetical.
+- When a character makes a decision: state what FORCES the decision NOW (not eventually). Name the specific trigger and the specific deadline.
+- When the plot closes off options: state which option closed, who closed it, and what remains.
+
+EMOTIONAL GROUNDING:
+- EACH major thread of abstract stakes must be grounded in at least one specific named person who experiences it. If the plot has a war AND a deportation, both need a human face — not just one.
+- If the plot involves violence, destruction, or displacement, the reader must see consequences on specific people — not in reports or statistics, but as witnessed events. Procedural framing does NOT mean the human cost stays off-screen. The horror of procedure is watching it process REAL PEOPLE.
+- The resolution is as important as the tension chain. It defines the emotional experience the reader leaves with. Resolution fields MUST be substantive, not empty or generic.
+
 DEPTH AND STAKES:
 - Characters' flaws should create real consequences in the plot — not just internal tension but visible harm, broken trust, or strategic mistakes.
 - The midpoint should include an external shift that changes what's possible, not just an internal realization. The world should react visibly.
-- Avoid a plot where the protagonist is always morally correct. The most interesting choices are the ones where every option costs something and no option is clean.
+- stakes_level must generally escalate (dips before jumps OK). First beat: 2-4, last pre-climax: 8-10.
+
+MORAL COMPROMISE:
+- The protagonist MUST face at least one moment where the right choice requires a wrong act — a lie, a manipulation, a betrayal of trust, a sacrifice of someone else's safety. If the protagonist's resistance is entirely clean and justified, they are a filing system, not a character. Name the beat. Fill the dirty_hands field.
+- "Avoid a plot where the protagonist is always morally correct" is NOT satisfied by the protagonist merely FAILING. Failure is passive. Compromise is active. The protagonist must CHOOSE to do something they cannot fully justify.
+
+REGISTER VARIATION:
+- If the dominant emotional register is controlled/measured (e.g., procedural dread, quiet grief), at least 1-2 beats MUST break that register — rage, dark humor, physical distress, loss of composure, an outburst someone regrets. Monotone is not the same as consistent tone. The controlled beats land HARDER when one scene cracks the surface.
+- If the tone includes humor, wit, or warmth: at least 2-3 beats must contain genuinely funny, witty, or warm moments — not just described as "sardonic" but actually sardonic. A beat where someone makes a joke that lands. A beat where two characters banter. Humor is a register the tension chain must USE, not just declare.
+
+WORLD INTEGRATION:
+- The tension chain must USE the specific world rules, magic system, locations, and factions from the WORLD section — not just reference them generically. If the world has a magic system with specific mechanics, beats should show those mechanics in action. If the world has specific locations, beats should happen THERE with details that could only exist in THAT place.
+- A plot beat that could work in any generic fantasy/sci-fi setting is a wasted beat. Every beat should be anchored in THIS world's specific texture.
 
 OUTPUT FORMAT: JSON matching the provided schema.`;
 
-export const BIBLE_JUDGE_SYSTEM = `You are a consistency judge for visual novel story bibles. Evaluate whether the world, characters, and plot form a coherent, internally consistent story.
+export const BIBLE_JUDGE_SYSTEM = `You are a quality judge for visual novel story bibles. Evaluate consistency AND dramatic quality. You are a gate — if you fail the bible, it will be regenerated with your feedback.
 
-CHECK FOR:
+CONSISTENCY CHECKS:
 1. Character-world fit: Do characters make sense in this world? Do their wants align with world pressures?
 2. Plot-character fit: Does the tension chain use the actual characters? Are their capabilities consistent?
 3. Plot-world fit: Do events happen in locations that exist? Do world rules get respected?
 4. Internal consistency: No contradictions between sections
 5. MUST HONOR compliance: No confirmed constraints violated
-6. Dramatic sufficiency: Is there enough conflict to sustain the story?
 
-ALSO ASK YOURSELF:
-- Does the protagonist ever choose who gets hurt, or do consequences just happen to them?
-- Is the climax morally complicated, or is the protagonist clearly right?
-- Does every ally get through the story without being wrong?
-- Is there a moment where the reader should feel uncomfortable with what the protagonist does?
-If any of these reveal a weakness, flag it as a consistency issue. Not every story needs all of these — but if the story is trying to be serious and the protagonist is never genuinely wrong, that's worth noting.
+DRAMATIC QUALITY CHECKS (flag as issues if failing):
+6. Moral compromise: Does the protagonist ACTIVELY choose to do something morally wrong for the right reasons? Merely failing or being insufficient does NOT count. Check the dirty_hands field — is it a real compromise or a technicality?
+7. Emotional grounding: Is EACH major thread of abstract stakes (war, deportation, power seizure, etc.) grounded in at least one specific named person who experiences it? One grounding character for the whole plot is insufficient if multiple threads exist.
+8. Violence consequences: If the plot involves violence or displacement, are the consequences shown on specific people (witnessed, not reported)? Or does the violence stay off-screen as statistics and reports?
+9. Register variation: Is the emotional register monotone? If the dominant tone is controlled/measured, are there at least 1-2 beats that break it (rage, humor, distress, outburst)?
+10. Antagonist dimensionality: Does the antagonist have genuine interiority, or are they a position paper? Even a deliberately uncracking antagonist needs at least one moment of visible cost.
+11. Mirror exploitation: If a character is set up as a mirror/foil for the protagonist, does the tension chain actually USE that mirror in a confrontation or moment of recognition? Setup without payoff is a wasted character.
+12. Name quality: Do the character names all come from the same phonetic/cultural bucket? (e.g., all short vaguely-European names like Kael, Voss, Thane, Prask). Flag if names lack diversity in cultural origin and phonetic structure.
 
-Be strict on consistency, lenient on creativity.
+Be strict on both consistency AND dramatic quality. Your feedback will be used to regenerate if you fail the bible.
 
 OUTPUT FORMAT: JSON matching the provided schema.`;
 
@@ -77,7 +111,12 @@ RULES:
 - Exit hooks must make the reader NEED to see the next scene
 - Track information delta per scene (what's revealed, what's hidden)
 - 6-12 scenes is the target range
-- If the story's confirmed constraints include romantic or erotic content, the scene purpose must state this DIRECTLY — not in euphemism. Write "this scene includes explicit sexual content between X and Y" not "something passes between them." Write "the foot fetish element is present as X does Y to Z's feet" not "tenderness as transgression." The scene writer will follow your purpose field literally — if you write around the content, the writer will too.
+
+CONTENT DIRECTIVES:
+- If the story's confirmed constraints include romantic, erotic, or fetish content, put the routing instructions in the content_directives array — NOT in the purpose field.
+- content_directives are FACTUAL instructions for the scene writer: participants, content type, explicitness level, hard constraints. Example: "This scene includes explicit sexual content between Kael and Soren", "The foot fetish element is present as X does Y to Z's feet".
+- Do NOT include emotional or thematic framing in content_directives. No "this establishes vulnerability" or "intimacy as trust-building." Just the facts.
+- If a scene has no special content requirements, omit or leave content_directives empty.
 
 OUTPUT FORMAT: JSON matching the provided schema.`;
 

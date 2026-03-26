@@ -113,6 +113,10 @@ export interface ScenePlan {
   information_delta: InformationDelta;
   exit_hook: string;
 
+  // ─── Content routing (factual directives for scene writer) ───
+  /** Factual routing instructions: explicit content requirements, required elements, hard constraints. No thematic framing. */
+  content_directives?: string[];
+
   // ─── Secondary fields (derivable, improve cohesion) ───
   pacing_type: PacingType;
   /** Concrete detail or line from previous scene that carries into this one */

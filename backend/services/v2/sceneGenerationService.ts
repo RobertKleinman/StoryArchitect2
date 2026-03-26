@@ -1,9 +1,11 @@
 /**
  * v2 Scene Generation Service — Step 6: Generate VN Scenes
  *
- * Generates scenes in parallel batches of 3 for speed.
- * No separate judge or polish passes — quality instructions baked into writer prompt.
- * Each batch uses the prior batch's digest for continuity.
+ * Generates scenes in configurable batches (default 3) for speed.
+ * Uses playable briefs instead of raw plan JSON — the writer receives
+ * situation + constraints, not interpretive analysis.
+ *
+ * Set batchSize=1 for sequential generation (useful for A/B testing).
  */
 
 import { createHash } from "crypto";
@@ -18,7 +20,7 @@ import { compressForScene, previousSceneDigest } from "./contextCompressor";
 import { emitProgress, emitSceneComplete } from "./progressEmitter";
 import { getAbortSignal } from "./orchestrator";
 
-const BATCH_SIZE = 3;
+const DEFAULT_BATCH_SIZE = 3;
 
 export class SceneGenerationService {
   constructor(private llm: LLMClient) {}
@@ -26,7 +28,9 @@ export class SceneGenerationService {
   async generate(
     project: Step6_SceneGenerating,
     onCheckpoint?: (project: Step6_SceneGenerating) => Promise<void>,
+    options?: { batchSize?: number },
   ): Promise<{ scenes: GeneratedScene[]; traces: StepTrace[] }> {
+    const batchSize = options?.batchSize ?? DEFAULT_BATCH_SIZE;
     const projectId = project.projectId as string;
     const abortSignal = getAbortSignal(projectId);
     const traces: StepTrace[] = [];
@@ -49,13 +53,13 @@ export class SceneGenerationService {
       mustHonor ? `\n${mustHonor}` : "",
     ].filter(Boolean).join("\n");
 
-    // Process in batches of BATCH_SIZE
-    for (let batchStart = 0; batchStart < remaining.length; batchStart += BATCH_SIZE) {
+    // Process in batches
+    for (let batchStart = 0; batchStart < remaining.length; batchStart += batchSize) {
       if (abortSignal?.aborted) throw new DOMException("Aborted", "AbortError");
 
-      const batch = remaining.slice(batchStart, batchStart + BATCH_SIZE);
-      const batchNum = Math.floor(batchStart / BATCH_SIZE) + 1;
-      const totalBatches = Math.ceil(remaining.length / BATCH_SIZE);
+      const batch = remaining.slice(batchStart, batchStart + batchSize);
+      const batchNum = Math.floor(batchStart / batchSize) + 1;
+      const totalBatches = Math.ceil(remaining.length / batchSize);
 
       emitProgress(projectId, {
         totalSteps: totalScenes,
@@ -64,7 +68,7 @@ export class SceneGenerationService {
         startedAt: new Date().toISOString(),
       });
 
-      // Build prompts for each scene in the batch
+      // Build continuity digest from all completed scenes so far
       const prevDigest = previousSceneDigest(allScenes);
 
       // Launch all scenes in this batch in parallel
