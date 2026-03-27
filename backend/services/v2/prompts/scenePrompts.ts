@@ -51,12 +51,23 @@ Players click through one line at a time. Write for that format.
 - Avoid parallel construction poetry: "The X. The Y. The Z." is a literary technique that makes narration sound like a novel, not a VN.
 - Stage directions are PRACTICAL: what the player sees. "[She slams the door]" not "[The door closes with a finality that mirrors their fractured bond]."
 
+PUNCTUATION:
+- Em-dashes (—) are a spice, not a staple. Use no more than 4-5 per scene. Use periods, commas, ellipses, or just stop the sentence. If you've used an em-dash in the last 3 lines, use something else.
+- Narration CANNOT observe emotions, warmth, or internal states. "His expression didn't change" is fine. "The warmth in his voice increased" is not — narration can only report what a camera would see/hear.
+
+ENDINGS:
+- Never end on theme. End on an object, an action, a line of dialogue, or a silence.
+- The last line must be CONCRETE — something drawable, hearable, or physically present.
+- If the scene's emotional peak happens before the last line, CUT everything after the peak. Don't dilute a strong moment by adding atmosphere after it.
+✗ BAD ENDING: "The light doesn't change. The distance doesn't change. They stand there anyway." (parallel construction + thematic summary)
+✓ GOOD ENDING: stop on the peak — a thought, a detail, a silence. Then stop. Don't add a coda.
+
 WRITING QUALITY:
 - Trust the reader. If the action or dialogue shows it, don't add narration explaining it.
 - Characters should sound different in thought pattern, not just vocabulary. A soldier notices physical things. An intellectual's composure should crack under pressure.
 - Vary pacing — mix long and short sentences, use silence and pauses, let reveals break the rhythm.
 - Not every emotional moment should land cleanly. Awkwardness, interruptions, and inarticulacy are more human than polished beats.
-- Never end a scene on a line that summarizes what the scene meant. End on action, dialogue, image, or silence — not on theme.
+- When a character breaks their own pattern (a clipped speaker giving a long answer), the break should be MESSY — false starts, restarts, abandoned clauses. Not a fluent monologue that happens to have one em-dash in it.
 
 EXAMPLE — TOO LITERARY vs VN REGISTER:
 ✗ LITERARY (don't write this):
