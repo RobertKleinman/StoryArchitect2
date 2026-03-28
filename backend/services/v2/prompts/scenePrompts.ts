@@ -275,14 +275,16 @@ export function buildSceneWriterPrompt(args: {
   worldContext: string;
   previousSceneDigest: string;
   mustHonorBlock: string;
+  tensionState?: string;
 }): string {
   return [
     args.scenePlan,
+    args.tensionState ? `\n${args.tensionState}` : "",
     `\nCHARACTERS IN THIS SCENE:\n${args.characterProfiles}`,
     `\nWORLD CONTEXT:\n${args.worldContext}`,
     args.previousSceneDigest ? `\nPREVIOUS SCENE:\n${args.previousSceneDigest}` : "",
     args.mustHonorBlock ? `\n${args.mustHonorBlock}` : "",
-    "\nWrite this scene. The SITUATION section is your mandate. The BACKGROUND PRESSURE section is submerged fuel — transmute it into objects, gestures, and silences. Make the path to the destination messy and human.",
+    "\nWrite this scene. The SITUATION section is your mandate. The BACKGROUND PRESSURE section is submerged fuel — transmute it into objects, gestures, and silences. The STORY STATE tells you what pressure has been building — use it. Make the path to the destination messy and human.",
   ].filter(Boolean).join("\n");
 }
 

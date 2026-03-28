@@ -111,6 +111,12 @@ export interface StoryBibleArtifact {
       emotional_landing: string;
       ending_energy: string;
     };
+    dirty_hands?: {
+      beat_id: string;
+      what_they_do: string;
+      why_necessary: string;
+      cost: string;
+    };
     addiction_engine: string;
   };
 }
@@ -138,5 +144,13 @@ export interface GeneratedScene {
     pass: boolean;
     issues: string[];
     repaired: boolean;
+    vitality?: {
+      has_failed_intention: boolean;
+      has_non_optimal_response: boolean;
+      has_behavioral_turn: boolean;
+      has_asymmetry: boolean;
+      has_discovery: boolean;
+      over_explanation_lines: number;
+    };
   };
 }

@@ -1,11 +1,12 @@
 /**
  * v2 Scene Generation Service — Step 6: Generate VN Scenes
  *
- * Generates scenes in configurable batches (default 3) for speed.
- * Uses playable briefs instead of raw plan JSON — the writer receives
- * situation + constraints, not interpretive analysis.
+ * Generates scenes with cumulative tension tracking:
+ * - Default batchSize=1 for sequential generation with tension state
+ * - After each scene: Haiku updates tension state, judge validates it
+ * - Marginal scenes (low vitality) get a second candidate roll
  *
- * Set batchSize=1 for sequential generation (useful for A/B testing).
+ * Set batchSize>1 for parallel generation (faster, no tension tracking).
  */
 
 import { createHash } from "crypto";
@@ -20,8 +21,20 @@ import { compressForScene, previousSceneDigest, buildCanonicalNames } from "./co
 import { emitProgress, emitSceneComplete } from "./progressEmitter";
 import { getAbortSignal } from "./orchestrator";
 
-const DEFAULT_BATCH_SIZE = 3;
-const MAX_SCENE_RETRIES = 2;  // retry on name hallucination or judge failure
+const DEFAULT_BATCH_SIZE = 1;  // sequential by default for tension tracking
+const MAX_SCENE_RETRIES = 2;
+const VITALITY_REROLL_THRESHOLD = 3; // reroll if fewer than 3 of 5 vitality flags are true
+
+/** Running state that accumulates across scenes — the story's memory */
+interface TensionState {
+  relationships: Record<string, { current: string; trajectory: string; last_shift: string }>;
+  unresolved_threads: string[];
+  emotional_temperature: number;
+  register_history: string[];
+  what_the_reader_knows: string[];
+  what_hasnt_broken_yet: string[];
+  scene_count: number;
+}
 
 export class SceneGenerationService {
   constructor(private llm: LLMClient) {}
@@ -56,6 +69,17 @@ export class SceneGenerationService {
       mustHonor ? `\n${mustHonor}` : "",
     ].filter(Boolean).join("\n");
 
+    // ── Cumulative tension state — the story's running memory ──
+    let tensionState: TensionState = {
+      relationships: {},
+      unresolved_threads: [],
+      emotional_temperature: 3,
+      register_history: [],
+      what_the_reader_knows: [],
+      what_hasnt_broken_yet: [],
+      scene_count: 0,
+    };
+
     // Process in batches
     for (let batchStart = 0; batchStart < remaining.length; batchStart += batchSize) {
       if (abortSignal?.aborted) throw new DOMException("Aborted", "AbortError");
@@ -80,129 +104,54 @@ export class SceneGenerationService {
           project.storyBible, plan,
         );
 
+        // Build tension state block for the writer (empty for scene 1)
+        const tensionBlock = tensionState.scene_count > 0
+          ? this.formatTensionState(tensionState)
+          : "";
+
         const writerPrompt = buildSceneWriterPrompt({
           scenePlan: formatScenePlanForWriter(plan),
           characterProfiles,
           worldContext,
           previousSceneDigest: prevDigest,
           mustHonorBlock: mustHonor,
+          tensionState: tensionBlock,
         });
 
-        const traces: StepTrace[] = [];
-        let bestScene: GeneratedScene | null = null;
+        // Generate and judge a single scene candidate
+        const candidate = await this.generateAndJudgeScene(
+          plan, writerPrompt, cacheablePrefix, mustHonor,
+          project, abortSignal,
+        );
 
-        // Retry loop: generate → check names → judge → retry if needed
-        for (let attempt = 0; attempt <= MAX_SCENE_RETRIES; attempt++) {
-          if (abortSignal?.aborted) throw new DOMException("Aborted", "AbortError");
+        // ── Candidate selection: if vitality is marginal, try a second roll ──
+        let finalScene = candidate.scene;
+        const allTraces = [...candidate.traces];
 
-          const startMs = Date.now();
-          const writerRaw = await this.llm.call("scene_writer", SCENE_WRITER_SYSTEM, writerPrompt, {
-            temperature: 0.85,
-            maxTokens: 6000,
-            jsonSchema: SCENE_WRITER_SCHEMA,
-            truncationMode: "critical",
-            abortSignal,
-            cacheableUserPrefix: cacheablePrefix,
-          });
-          traces.push(this.makeTrace(project.operationId, "scene_writer", startMs, plan.scene_id));
-
-          let vnScene: any;
-          try {
-            vnScene = JSON.parse(writerRaw);
-          } catch {
-            throw new Error(`Failed to parse scene writer output for ${plan.scene_id}`);
-          }
-
-          const readable = this.toReadable(vnScene);
-
-          // ── Name validation (speakers + in-text entities) ──
-          const nameIssues = this.checkNameConsistency(
-            readable.screenplay_text,
-            project.storyBible,
-            plan.scene_id,
-          );
-
-          if (nameIssues.length > 0 && attempt < MAX_SCENE_RETRIES) {
-            console.warn(`[scene-gen] ${plan.scene_id} attempt ${attempt + 1}: name issues found, retrying — ${nameIssues.join("; ")}`);
-            continue; // retry — fresh generation, not revision
-          }
-
-          // ── Scene judge (compliance + vitality) ──
-          const judgeStartMs = Date.now();
-          let judgeResult: { pass: boolean; issues: string[]; repaired: boolean; vitality?: any } = {
-            pass: true, issues: nameIssues, repaired: false,
-          };
-
-          try {
-            const judgePrompt = buildSceneJudgePrompt({
-              scene: readable.screenplay_text,
-              scenePlan: JSON.stringify(plan, null, 2), // judge gets the FULL plan
-              mustHonorBlock: mustHonor,
-            });
-
-            const judgeRaw = await this.llm.call("scene_judge", SCENE_JUDGE_SYSTEM, judgePrompt, {
-              temperature: 0,
-              maxTokens: 2000,
-              jsonSchema: SCENE_JUDGE_SCHEMA,
-              truncationMode: "critical",
-              abortSignal,
-            });
-            traces.push(this.makeTrace(project.operationId, "scene_judge", judgeStartMs, plan.scene_id));
-
-            const judgeOutput = JSON.parse(judgeRaw);
-            const judgeIssueStrings = (judgeOutput.issues ?? []).map(
-              (i: any) => `[${i.category}] ${i.problem}`,
+        if (candidate.scene.judge_result?.vitality && candidate.scene.judge_result.pass) {
+          const vitalityScore = this.countVitalityFlags(candidate.scene.judge_result.vitality);
+          if (vitalityScore < VITALITY_REROLL_THRESHOLD) {
+            console.log(`[scene-gen] ${plan.scene_id}: vitality ${vitalityScore}/5, generating second candidate`);
+            const candidate2 = await this.generateAndJudgeScene(
+              plan, writerPrompt, cacheablePrefix, mustHonor,
+              project, abortSignal,
             );
+            allTraces.push(...candidate2.traces);
 
-            judgeResult = {
-              pass: judgeOutput.pass,
-              issues: [...nameIssues, ...judgeIssueStrings],
-              repaired: false,
-              vitality: judgeOutput.vitality,
-            };
+            const vitality2 = candidate2.scene.judge_result?.vitality
+              ? this.countVitalityFlags(candidate2.scene.judge_result.vitality)
+              : 0;
 
-            // Log vitality summary
-            if (judgeOutput.vitality) {
-              const v = judgeOutput.vitality;
-              const vitalityFlags = [
-                v.has_failed_intention ? "✓fail_intent" : "✗fail_intent",
-                v.has_non_optimal_response ? "✓non_optimal" : "✗non_optimal",
-                v.has_behavioral_turn ? "✓behav_turn" : "✗behav_turn",
-                v.has_asymmetry ? "✓asymmetry" : "✗asymmetry",
-                v.has_discovery ? "✓discovery" : "✗discovery",
-                `overexplain=${v.over_explanation_lines ?? "?"}`,
-              ].join(" ");
-              console.log(`[judge] ${plan.scene_id}: pass=${judgeOutput.pass} | ${vitalityFlags}`);
+            if (vitality2 > vitalityScore) {
+              console.log(`[scene-gen] ${plan.scene_id}: candidate B wins (${vitality2}/5 vs ${vitalityScore}/5)`);
+              finalScene = candidate2.scene;
+            } else {
+              console.log(`[scene-gen] ${plan.scene_id}: candidate A wins (${vitalityScore}/5 vs ${vitality2}/5)`);
             }
-
-            // If judge fails and we have retries left, try again
-            if (!judgeOutput.pass && attempt < MAX_SCENE_RETRIES) {
-              console.warn(`[scene-gen] ${plan.scene_id} attempt ${attempt + 1}: judge failed, retrying`);
-              continue;
-            }
-          } catch (judgeErr: any) {
-            // Judge failure is non-fatal — accept the scene with a warning
-            console.warn(`[scene-gen] ${plan.scene_id}: judge call failed (${judgeErr.message}), accepting scene without judge`);
-            traces.push(this.makeTrace(project.operationId, "scene_judge", judgeStartMs, plan.scene_id));
           }
-
-          bestScene = {
-            scene_id: plan.scene_id,
-            state: "completed",
-            operationId: project.operationId,
-            plan,
-            vn_scene: vnScene,
-            readable,
-            judge_result: judgeResult,
-          };
-          break; // scene accepted
         }
 
-        if (!bestScene) {
-          throw new Error(`Failed to generate acceptable scene for ${plan.scene_id} after ${MAX_SCENE_RETRIES + 1} attempts`);
-        }
-
-        return { scene: bestScene, traces };
+        return { scene: finalScene, traces: allTraces };
       });
 
       // Await all scenes in this batch
@@ -215,6 +164,16 @@ export class SceneGenerationService {
         project.generatedScenes = allScenes;
         project.checkpoint.completedSceneIds.push(scene.scene_id);
         emitSceneComplete(projectId, scene.scene_id, allScenes.length, totalScenes);
+
+        // ── Update cumulative tension state after each accepted scene ──
+        try {
+          tensionState = await this.updateTensionState(
+            tensionState, scene, project.storyBible, abortSignal,
+          );
+          traces.push(this.makeTrace(project.operationId, "tension_update", Date.now(), scene.scene_id));
+        } catch (err: any) {
+          console.warn(`[tension] Failed to update tension state after ${scene.scene_id}: ${err.message}`);
+        }
       }
 
       // Checkpoint after each batch
@@ -222,6 +181,127 @@ export class SceneGenerationService {
     }
 
     return { scenes: allScenes, traces };
+  }
+
+  /**
+   * Generate a single scene candidate: write → name check → judge.
+   * Returns the scene and all traces from the attempt(s).
+   */
+  private async generateAndJudgeScene(
+    plan: any,
+    writerPrompt: string,
+    cacheablePrefix: string,
+    mustHonor: string,
+    project: Step6_SceneGenerating,
+    abortSignal?: AbortSignal,
+  ): Promise<{ scene: GeneratedScene; traces: StepTrace[] }> {
+    const traces: StepTrace[] = [];
+
+    for (let attempt = 0; attempt <= MAX_SCENE_RETRIES; attempt++) {
+      if (abortSignal?.aborted) throw new DOMException("Aborted", "AbortError");
+
+      const startMs = Date.now();
+      const writerRaw = await this.llm.call("scene_writer", SCENE_WRITER_SYSTEM, writerPrompt, {
+        temperature: 0.85,
+        maxTokens: 6000,
+        jsonSchema: SCENE_WRITER_SCHEMA,
+        truncationMode: "critical",
+        abortSignal,
+        cacheableUserPrefix: cacheablePrefix,
+      });
+      traces.push(this.makeTrace(project.operationId, "scene_writer", startMs, plan.scene_id));
+
+      let vnScene: any;
+      try {
+        vnScene = JSON.parse(writerRaw);
+      } catch {
+        throw new Error(`Failed to parse scene writer output for ${plan.scene_id}`);
+      }
+
+      const readable = this.toReadable(vnScene);
+
+      // ── Name validation (speakers + in-text entities) ──
+      const nameIssues = this.checkNameConsistency(
+        readable.screenplay_text, project.storyBible, plan.scene_id,
+      );
+
+      if (nameIssues.length > 0 && attempt < MAX_SCENE_RETRIES) {
+        console.warn(`[scene-gen] ${plan.scene_id} attempt ${attempt + 1}: name issues, retrying`);
+        continue;
+      }
+
+      // ── Scene judge (compliance + vitality) ──
+      const judgeStartMs = Date.now();
+      let judgeResult: { pass: boolean; issues: string[]; repaired: boolean; vitality?: any } = {
+        pass: true, issues: nameIssues, repaired: false,
+      };
+
+      try {
+        const judgePrompt = buildSceneJudgePrompt({
+          scene: readable.screenplay_text,
+          scenePlan: JSON.stringify(plan, null, 2),
+          mustHonorBlock: mustHonor,
+        });
+
+        const judgeRaw = await this.llm.call("scene_judge", SCENE_JUDGE_SYSTEM, judgePrompt, {
+          temperature: 0,
+          maxTokens: 2000,
+          jsonSchema: SCENE_JUDGE_SCHEMA,
+          truncationMode: "critical",
+          abortSignal,
+        });
+        traces.push(this.makeTrace(project.operationId, "scene_judge", judgeStartMs, plan.scene_id));
+
+        const judgeOutput = JSON.parse(judgeRaw);
+        const judgeIssueStrings = (judgeOutput.issues ?? []).map(
+          (i: any) => `[${i.category}] ${i.problem}`,
+        );
+
+        judgeResult = {
+          pass: judgeOutput.pass,
+          issues: [...nameIssues, ...judgeIssueStrings],
+          repaired: false,
+          vitality: judgeOutput.vitality,
+        };
+
+        // Log vitality summary
+        if (judgeOutput.vitality) {
+          const v = judgeOutput.vitality;
+          const flags = [
+            v.has_failed_intention ? "✓fail" : "✗fail",
+            v.has_non_optimal_response ? "✓nonopt" : "✗nonopt",
+            v.has_behavioral_turn ? "✓behav" : "✗behav",
+            v.has_asymmetry ? "✓asym" : "✗asym",
+            v.has_discovery ? "✓disc" : "✗disc",
+            `overexp=${v.over_explanation_lines ?? "?"}`,
+          ].join(" ");
+          console.log(`[judge] ${plan.scene_id}: pass=${judgeOutput.pass} | ${flags}`);
+        }
+
+        if (!judgeOutput.pass && attempt < MAX_SCENE_RETRIES) {
+          console.warn(`[scene-gen] ${plan.scene_id} attempt ${attempt + 1}: judge failed, retrying`);
+          continue;
+        }
+      } catch (judgeErr: any) {
+        console.warn(`[scene-gen] ${plan.scene_id}: judge failed (${judgeErr.message}), accepting without judge`);
+        traces.push(this.makeTrace(project.operationId, "scene_judge", judgeStartMs, plan.scene_id));
+      }
+
+      return {
+        scene: {
+          scene_id: plan.scene_id,
+          state: "completed",
+          operationId: project.operationId,
+          plan,
+          vn_scene: vnScene,
+          readable,
+          judge_result: judgeResult,
+        },
+        traces,
+      };
+    }
+
+    throw new Error(`Failed to generate acceptable scene for ${plan.scene_id} after ${MAX_SCENE_RETRIES + 1} attempts`);
   }
 
   private toReadable(vnScene: any): ReadableScene {
@@ -357,6 +437,123 @@ export class SceneGenerationService {
     }
 
     return issues;
+  }
+
+  /**
+   * Update cumulative tension state after an accepted scene.
+   * Haiku generates the update, then we validate it structurally.
+   * Scene text is canonical — the state is derived and regenerable.
+   */
+  private async updateTensionState(
+    current: TensionState,
+    scene: GeneratedScene,
+    bible: any,
+    abortSignal?: AbortSignal,
+  ): Promise<TensionState> {
+    const prompt = [
+      `You are tracking the cumulative dramatic state of a story in progress.`,
+      `\nCURRENT STATE (after ${current.scene_count} scenes):\n${JSON.stringify(current, null, 2)}`,
+      `\nSCENE JUST COMPLETED (${scene.scene_id} — "${scene.readable.title}"):\n${scene.readable.screenplay_text.slice(0, 2000)}`,
+      `\nCHARACTERS IN STORY:\n${Object.keys(bible.characters ?? {}).join(", ")}`,
+      `\nUpdate the tension state based on what happened in this scene. Be concrete and specific:`,
+      `- relationships: update any relationships that shifted. Use character names as keys (e.g. "Ros-Nadège").`,
+      `- unresolved_threads: add new threads, remove resolved ones. Be specific about what's unresolved.`,
+      `- emotional_temperature: 1-10. Should generally climb across scenes but can dip after aftermath scenes.`,
+      `- register_history: append this scene's dominant register (e.g., "tense_procedural", "warm_communal", "confrontational").`,
+      `- what_the_reader_knows: add any new information the reader learned. Be factual.`,
+      `- what_hasnt_broken_yet: list things that are under pressure but haven't ruptured. This is the most important field — it tells the next scene's writer what pressure is available to release.`,
+      `\nOutput ONLY the updated JSON object. No commentary.`,
+    ].join("\n");
+
+    const raw = await this.llm.call("v2_summarizer", prompt, "", {
+      temperature: 0.2,
+      maxTokens: 1500,
+      abortSignal,
+    });
+
+    let updated: TensionState;
+    try {
+      // Extract JSON from response (may have markdown wrapping)
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error("No JSON found in tension state update");
+      updated = JSON.parse(jsonMatch[0]);
+    } catch {
+      console.warn(`[tension] Failed to parse tension state update, keeping previous state`);
+      return { ...current, scene_count: current.scene_count + 1 };
+    }
+
+    // Validate structure — if Haiku returned garbage, keep the previous state
+    if (!updated.relationships || !updated.what_hasnt_broken_yet || !Array.isArray(updated.unresolved_threads)) {
+      console.warn(`[tension] Tension state update has invalid structure, keeping previous state`);
+      return { ...current, scene_count: current.scene_count + 1 };
+    }
+
+    // Clamp emotional temperature to 1-10
+    updated.emotional_temperature = Math.max(1, Math.min(10, updated.emotional_temperature ?? current.emotional_temperature));
+    updated.scene_count = current.scene_count + 1;
+
+    console.log(`[tension] Updated after ${scene.scene_id}: temp=${updated.emotional_temperature}, threads=${updated.unresolved_threads.length}, unbroken=${updated.what_hasnt_broken_yet.length}`);
+    return updated;
+  }
+
+  /** Format tension state as a context block for the scene writer */
+  private formatTensionState(state: TensionState): string {
+    const lines: string[] = [
+      "=== STORY STATE (cumulative — what has happened so far) ===",
+    ];
+
+    // Relationships
+    const rels = Object.entries(state.relationships);
+    if (rels.length > 0) {
+      lines.push("\nRELATIONSHIP STATE:");
+      for (const [pair, info] of rels) {
+        lines.push(`- ${pair}: ${info.current} (${info.trajectory}). Last shift: ${info.last_shift}`);
+      }
+    }
+
+    // What hasn't broken yet — most important for the writer
+    if (state.what_hasnt_broken_yet.length > 0) {
+      lines.push("\nWHAT HASN'T BROKEN YET (pressure available to release):");
+      for (const item of state.what_hasnt_broken_yet) {
+        lines.push(`- ${item}`);
+      }
+    }
+
+    // Unresolved threads
+    if (state.unresolved_threads.length > 0) {
+      lines.push("\nUNRESOLVED THREADS:");
+      for (const thread of state.unresolved_threads) {
+        lines.push(`- ${thread}`);
+      }
+    }
+
+    // Reader knowledge
+    if (state.what_the_reader_knows.length > 0) {
+      lines.push("\nWHAT THE READER KNOWS:");
+      for (const fact of state.what_the_reader_knows) {
+        lines.push(`- ${fact}`);
+      }
+    }
+
+    // Emotional temperature and register history
+    lines.push(`\nEMOTIONAL TEMPERATURE: ${state.emotional_temperature}/10`);
+    if (state.register_history.length > 0) {
+      lines.push(`REGISTER HISTORY: ${state.register_history.join(" → ")}`);
+    }
+
+    return lines.join("\n");
+  }
+
+  /** Count how many of the 5 boolean vitality flags are true */
+  private countVitalityFlags(vitality: any): number {
+    if (!vitality) return 0;
+    return [
+      vitality.has_failed_intention,
+      vitality.has_non_optimal_response,
+      vitality.has_behavioral_turn,
+      vitality.has_asymmetry,
+      vitality.has_discovery,
+    ].filter(Boolean).length;
   }
 
   private makeTrace(operationId: any, role: string, startMs: number, sceneId: string): StepTrace {
