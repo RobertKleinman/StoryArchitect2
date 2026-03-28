@@ -15,6 +15,11 @@ RULES:
 - Respect all MUST HONOR constraints — never contradict confirmed facts
 - Draw on any cultural research provided for specificity and authenticity
 
+NAMES:
+- Character names must draw from diverse real-world cultural/linguistic traditions. Do NOT default to the LLM name register: short, vaguely Northern European names like Kael, Thane, Voss, Elara, Maren, Sorin, Preva. These are recognizably AI-generated.
+- Mix cultural origins across the cast (African, East Asian, South Asian, Arabic, Latin American, Mediterranean, Slavic, etc.). Mix phonetic structures: some short, some long, different consonant/vowel patterns.
+- If the user's seed already names characters, keep those names. Only generate diverse names for characters you are creating.
+
 OUTPUT FORMAT: JSON matching the provided schema.`;
 
 export function buildPremiseWriterPrompt(args: {

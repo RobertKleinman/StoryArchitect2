@@ -75,8 +75,11 @@ WHAT NOT TO DO:
 // FRAGMENT: BANNED PHRASES
 // Used in: ALL module prompts (clarifier, builder, judge, polisher)
 // Purpose: Single source of truth for overused/generic phrases to reject
+// NOTE: Scene writer prompt uses the full anti-slop system from shared/antiSlop.ts.
+//       This fragment covers non-scene modules (premise, bible, etc.)
 // ─────────────────────────────────────────────────────────────────
-export const SHARED_BANNED_PHRASES = `"in a world where", "nothing is what it seems", "web of lies", "tension escalates", "dark secrets", "dangerous game", "everything changes", "must navigate", "finds themselves", "uncover the truth", "race against time", "underground scene", "power dynamics"`;
+export const SHARED_BANNED_PHRASES = `"in a world where", "nothing is what it seems", "web of lies", "tension escalates", "dark secrets", "dangerous game", "everything changes", "must navigate", "finds themselves", "uncover the truth", "race against time", "underground scene", "power dynamics", "delve", "tapestry", "kaleidoscope", "myriad", "plethora", "multifaceted", "paradigm", "holistic", "synergy", "quintessential", "testament to", "it's worth noting", "furthermore", "moreover", "nonetheless", "pivotal", "paramount", "unprecedented", "labyrinthine", "gossamer", "ethereal"`;
+
 
 // ─────────────────────────────────────────────────────────────────
 // FRAGMENT: NO CHARACTER NAMES

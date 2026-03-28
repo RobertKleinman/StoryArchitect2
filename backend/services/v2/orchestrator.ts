@@ -255,7 +255,7 @@ export class Orchestrator {
       culturalInsights: current.culturalInsights,
       failedAt: current.step,
       error,
-      recoverySnapshot: JSON.stringify({ step: current.step }),
+      recoverySnapshot: JSON.stringify(current),
     };
     await this.store.transition(projectId, next);
     clearAbort(projectId as string);
@@ -280,6 +280,34 @@ export class Orchestrator {
     await this.store.transition(projectId, next);
     clearAbort(projectId as string);
     return next;
+  }
+
+  // ── Retry from failure ───────────────────────────────────────
+
+  async retryFromFailure(
+    projectId: ProjectId,
+    current: StepFailed,
+  ): Promise<ProjectState> {
+    // Restore the state the project was in when it failed
+    let restored: ProjectState;
+    try {
+      restored = JSON.parse(current.recoverySnapshot) as ProjectState;
+    } catch {
+      throw new Error("Cannot retry: recovery snapshot is invalid");
+    }
+
+    // Ensure the restored state has the right projectId and metadata
+    restored.projectId = current.projectId;
+    restored.createdAt = current.createdAt;
+    restored.updatedAt = new Date().toISOString();
+    restored.traces = current.traces;
+    restored.psychologyLedger = current.psychologyLedger;
+    restored.constraintLedger = current.constraintLedger;
+    restored.culturalInsights = current.culturalInsights;
+
+    // Save directly (bypass transition validation — we're restoring)
+    await this.store.save(restored);
+    return restored;
   }
 
   // ── Checkpoint helpers ──────────────────────────────────────────

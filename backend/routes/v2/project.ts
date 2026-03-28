@@ -32,12 +32,19 @@ function getLLM(): LLMClient {
   if (!llm) {
     const override = process.env.V2_MODEL_OVERRIDE;
     if (override) {
-      console.log(`[v2] Model override active: all roles → ${override}`);
-      const v2Config: any = {};
-      const roles = ["intake", "premise_writer", "premise_judge", "bible_writer",
-        "bible_judge", "scene_planner", "scene_writer", "scene_judge",
-        "v2_cultural_researcher", "v2_summarizer"];
-      for (const role of roles) v2Config[role] = override;
+      console.log(`[v2] Model override active: creative roles → ${override}`);
+      const v2Config: any = {
+        intake: override,
+        premise_writer: override,
+        premise_judge: override,
+        bible_writer: override,
+        bible_judge: override,
+        scene_planner: override,
+        scene_writer: override,
+        scene_judge: override,
+        v2_cultural_researcher: "gemini-3-flash-preview",  // keep fast
+        v2_summarizer: "claude-haiku-4-5-20251001",         // keep cheap
+      };
       llm = new LLMClient(undefined, v2Config);
     } else {
       llm = new LLMClient();
@@ -75,6 +82,22 @@ router.delete("/:projectId", async (req: Request, res: Response) => {
     await orchestrator.deleteProject(projectId);
     cleanupEmitter(req.params.projectId);
     res.json({ deleted: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/:projectId/retry", async (req: Request, res: Response) => {
+  try {
+    const projectId = createProjectId(req.params.projectId);
+    const project = await orchestrator.getProject(projectId);
+    if (!project) return res.status(404).json({ error: "Project not found" });
+    if (project.step !== "failed") {
+      return res.status(400).json({ error: `Cannot retry: project is in step '${project.step}', not 'failed'` });
+    }
+
+    const restored = await orchestrator.retryFromFailure(projectId, project as any);
+    res.json({ restored: true, step: restored.step, failedAt: (project as any).failedAt });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

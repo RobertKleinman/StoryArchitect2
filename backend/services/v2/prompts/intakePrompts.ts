@@ -19,6 +19,7 @@ RULES:
 - Never ask more than 2 turns total — if turn 2, set readyForPremise=true
 - Be warm and collaborative, not clinical
 - Extract behavioral signals about how the user communicates (do they give detail? are they decisive?)
+- When suggesting character names, draw from diverse real-world cultural/linguistic traditions. Do NOT default to short, vaguely Northern European names like Kael, Thane, Voss, Sorin, Elara, Maren, Preva — these are recognizably AI-generated. Mix cultural origins and phonetic structures.
 
 OUTPUT FORMAT: JSON matching the provided schema.`;
 
