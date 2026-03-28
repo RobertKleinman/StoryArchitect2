@@ -221,13 +221,18 @@ export class SceneGenerationService {
       const readable = this.toReadable(vnScene);
 
       // ── Name validation (speakers + in-text entities) ──
-      const nameIssues = this.checkNameConsistency(
+      const { hardIssues, softIssues } = this.checkNameConsistency(
         readable.screenplay_text, project.storyBible, plan.scene_id,
       );
+      const nameIssues = [...hardIssues, ...softIssues];
 
-      if (nameIssues.length > 0 && attempt < MAX_SCENE_RETRIES) {
-        console.warn(`[scene-gen] ${plan.scene_id} attempt ${attempt + 1}: name issues, retrying`);
+      // Only retry on hard issues (speaker hallucination). Soft issues (in-text entities) are warnings.
+      if (hardIssues.length > 0 && attempt < MAX_SCENE_RETRIES) {
+        console.warn(`[scene-gen] ${plan.scene_id} attempt ${attempt + 1}: speaker name issues, retrying`);
         continue;
+      }
+      if (softIssues.length > 0) {
+        console.warn(`[scene-gen] ${plan.scene_id}: in-text entity warnings (non-blocking): ${softIssues.join("; ")}`);
       }
 
       // ── Scene judge (compliance + vitality) ──
@@ -329,16 +334,16 @@ export class SceneGenerationService {
 
   /**
    * Check generated scene text for name contamination.
-   * Validates both speaker names AND in-text named entity references
-   * against the bible's canonical character/entity list.
-   * Returns issues array (empty if clean).
+   * Validates both speaker names AND in-text named entity references.
+   * Returns split results: hardIssues (speaker — trigger retry) vs softIssues (in-text — warn only).
    */
   private checkNameConsistency(
     sceneText: string,
     bible: any,
     sceneId: string,
-  ): string[] {
-    const issues: string[] = [];
+  ): { hardIssues: string[]; softIssues: string[] } {
+    const hardIssues: string[] = [];
+    const softIssues: string[] = [];
 
     // Build the set of all known names (full names, first names, nicknames)
     const knownNames = new Set(Object.keys(bible.characters ?? {}));
@@ -396,7 +401,7 @@ export class SceneGenerationService {
       const isKnown = allKnownTokens.has(speaker) ||
         [...allKnownTokens].some(k => k.includes(speaker) || speaker.includes(k));
       if (!isKnown) {
-        issues.push(`[${sceneId}] Unknown speaker "${speaker}" — possible name hallucination`);
+        hardIssues.push(`[${sceneId}] Unknown speaker "${speaker}" — possible name hallucination`);
         console.warn(`[name-check] ${sceneId}: Unknown speaker "${speaker}"`);
       }
     }
@@ -432,11 +437,10 @@ export class SceneGenerationService {
     }
 
     for (const entity of suspectEntities) {
-      issues.push(`[${sceneId}] Suspect entity "${entity}" in text — not in canonical names`);
-      console.warn(`[name-check] ${sceneId}: Suspect in-text entity "${entity}"`);
+      softIssues.push(`[${sceneId}] Suspect entity "${entity}" in text — not in canonical names`);
     }
 
-    return issues;
+    return { hardIssues, softIssues };
   }
 
   /**
