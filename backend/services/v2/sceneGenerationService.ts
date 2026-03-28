@@ -469,11 +469,11 @@ export class SceneGenerationService {
       `\nOutput ONLY the updated JSON object. No commentary.`,
     ].join("\n");
 
-    const raw = await this.llm.call("v2_summarizer", prompt, "", {
-      temperature: 0.2,
-      maxTokens: 1500,
-      abortSignal,
-    });
+    const raw = await this.llm.call("v2_summarizer",
+      "You track cumulative dramatic state across scenes. Output ONLY a JSON object. No commentary.",
+      prompt,
+      { temperature: 0.2, maxTokens: 1500, abortSignal },
+    );
 
     let updated: TensionState;
     try {
