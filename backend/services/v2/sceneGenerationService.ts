@@ -14,13 +14,14 @@ import type { GeneratedScene } from "../../../shared/types/artifacts";
 import type { ReadableScene } from "../../../shared/types/scene";
 import { LLMClient } from "../llmClient";
 import { buildMustHonorBlock } from "../mustHonorBlock";
-import { SCENE_WRITER_SYSTEM, buildSceneWriterPrompt, formatScenePlanForWriter } from "./prompts/scenePrompts";
-import { SCENE_WRITER_SCHEMA } from "./schemas/sceneSchemas";
+import { SCENE_WRITER_SYSTEM, SCENE_JUDGE_SYSTEM, buildSceneWriterPrompt, buildSceneJudgePrompt, formatScenePlanForWriter } from "./prompts/scenePrompts";
+import { SCENE_WRITER_SCHEMA, SCENE_JUDGE_SCHEMA } from "./schemas/sceneSchemas";
 import { compressForScene, previousSceneDigest, buildCanonicalNames } from "./contextCompressor";
 import { emitProgress, emitSceneComplete } from "./progressEmitter";
 import { getAbortSignal } from "./orchestrator";
 
 const DEFAULT_BATCH_SIZE = 3;
+const MAX_SCENE_RETRIES = 2;  // retry on name hallucination or judge failure
 
 export class SceneGenerationService {
   constructor(private llm: LLMClient) {}
@@ -87,56 +88,129 @@ export class SceneGenerationService {
           mustHonorBlock: mustHonor,
         });
 
-        const startMs = Date.now();
-        const writerRaw = await this.llm.call("scene_writer", SCENE_WRITER_SYSTEM, writerPrompt, {
-          temperature: 0.85,
-          maxTokens: 6000,
-          jsonSchema: SCENE_WRITER_SCHEMA,
-          abortSignal,
-          cacheableUserPrefix: cacheablePrefix,
-        });
-        const trace = this.makeTrace(project.operationId, "scene_writer", startMs, plan.scene_id);
+        const traces: StepTrace[] = [];
+        let bestScene: GeneratedScene | null = null;
 
-        let vnScene: any;
-        try {
-          vnScene = JSON.parse(writerRaw);
-        } catch {
-          throw new Error(`Failed to parse scene writer output for ${plan.scene_id}`);
+        // Retry loop: generate → check names → judge → retry if needed
+        for (let attempt = 0; attempt <= MAX_SCENE_RETRIES; attempt++) {
+          if (abortSignal?.aborted) throw new DOMException("Aborted", "AbortError");
+
+          const startMs = Date.now();
+          const writerRaw = await this.llm.call("scene_writer", SCENE_WRITER_SYSTEM, writerPrompt, {
+            temperature: 0.85,
+            maxTokens: 6000,
+            jsonSchema: SCENE_WRITER_SCHEMA,
+            truncationMode: "critical",
+            abortSignal,
+            cacheableUserPrefix: cacheablePrefix,
+          });
+          traces.push(this.makeTrace(project.operationId, "scene_writer", startMs, plan.scene_id));
+
+          let vnScene: any;
+          try {
+            vnScene = JSON.parse(writerRaw);
+          } catch {
+            throw new Error(`Failed to parse scene writer output for ${plan.scene_id}`);
+          }
+
+          const readable = this.toReadable(vnScene);
+
+          // ── Name validation (speakers + in-text entities) ──
+          const nameIssues = this.checkNameConsistency(
+            readable.screenplay_text,
+            project.storyBible,
+            plan.scene_id,
+          );
+
+          if (nameIssues.length > 0 && attempt < MAX_SCENE_RETRIES) {
+            console.warn(`[scene-gen] ${plan.scene_id} attempt ${attempt + 1}: name issues found, retrying — ${nameIssues.join("; ")}`);
+            continue; // retry — fresh generation, not revision
+          }
+
+          // ── Scene judge (compliance + vitality) ──
+          const judgeStartMs = Date.now();
+          let judgeResult: { pass: boolean; issues: string[]; repaired: boolean; vitality?: any } = {
+            pass: true, issues: nameIssues, repaired: false,
+          };
+
+          try {
+            const judgePrompt = buildSceneJudgePrompt({
+              scene: readable.screenplay_text,
+              scenePlan: JSON.stringify(plan, null, 2), // judge gets the FULL plan
+              mustHonorBlock: mustHonor,
+            });
+
+            const judgeRaw = await this.llm.call("scene_judge", SCENE_JUDGE_SYSTEM, judgePrompt, {
+              temperature: 0,
+              maxTokens: 2000,
+              jsonSchema: SCENE_JUDGE_SCHEMA,
+              truncationMode: "critical",
+              abortSignal,
+            });
+            traces.push(this.makeTrace(project.operationId, "scene_judge", judgeStartMs, plan.scene_id));
+
+            const judgeOutput = JSON.parse(judgeRaw);
+            const judgeIssueStrings = (judgeOutput.issues ?? []).map(
+              (i: any) => `[${i.category}] ${i.problem}`,
+            );
+
+            judgeResult = {
+              pass: judgeOutput.pass,
+              issues: [...nameIssues, ...judgeIssueStrings],
+              repaired: false,
+              vitality: judgeOutput.vitality,
+            };
+
+            // Log vitality summary
+            if (judgeOutput.vitality) {
+              const v = judgeOutput.vitality;
+              const vitalityFlags = [
+                v.has_failed_intention ? "✓fail_intent" : "✗fail_intent",
+                v.has_non_optimal_response ? "✓non_optimal" : "✗non_optimal",
+                v.has_behavioral_turn ? "✓behav_turn" : "✗behav_turn",
+                v.has_asymmetry ? "✓asymmetry" : "✗asymmetry",
+                v.has_discovery ? "✓discovery" : "✗discovery",
+                `overexplain=${v.over_explanation_lines ?? "?"}`,
+              ].join(" ");
+              console.log(`[judge] ${plan.scene_id}: pass=${judgeOutput.pass} | ${vitalityFlags}`);
+            }
+
+            // If judge fails and we have retries left, try again
+            if (!judgeOutput.pass && attempt < MAX_SCENE_RETRIES) {
+              console.warn(`[scene-gen] ${plan.scene_id} attempt ${attempt + 1}: judge failed, retrying`);
+              continue;
+            }
+          } catch (judgeErr: any) {
+            // Judge failure is non-fatal — accept the scene with a warning
+            console.warn(`[scene-gen] ${plan.scene_id}: judge call failed (${judgeErr.message}), accepting scene without judge`);
+            traces.push(this.makeTrace(project.operationId, "scene_judge", judgeStartMs, plan.scene_id));
+          }
+
+          bestScene = {
+            scene_id: plan.scene_id,
+            state: "completed",
+            operationId: project.operationId,
+            plan,
+            vn_scene: vnScene,
+            readable,
+            judge_result: judgeResult,
+          };
+          break; // scene accepted
         }
 
-        const readable = this.toReadable(vnScene);
+        if (!bestScene) {
+          throw new Error(`Failed to generate acceptable scene for ${plan.scene_id} after ${MAX_SCENE_RETRIES + 1} attempts`);
+        }
 
-        // Check for name contamination (hallucinated character names)
-        const nameIssues = this.checkNameConsistency(
-          readable.screenplay_text,
-          project.storyBible,
-          plan.scene_id,
-        );
-
-        const generatedScene: GeneratedScene = {
-          scene_id: plan.scene_id,
-          state: "completed",
-          operationId: project.operationId,
-          plan,
-          vn_scene: vnScene,
-          readable,
-          ...(nameIssues.length > 0 ? {
-            judge_result: {
-              pass: true, // don't block, just flag
-              issues: nameIssues,
-              repaired: false,
-            },
-          } : {}),
-        };
-
-        return { scene: generatedScene, trace };
+        return { scene: bestScene, traces };
       });
 
       // Await all scenes in this batch
       const batchResults = await Promise.all(batchPromises);
 
-      for (const { scene, trace } of batchResults) {
-        traces.push(trace);
+      for (const result of batchResults) {
+        traces.push(...result.traces);
+        const scene = result.scene;
         allScenes.push(scene);
         project.generatedScenes = allScenes;
         project.checkpoint.completedSceneIds.push(scene.scene_id);
@@ -175,7 +249,8 @@ export class SceneGenerationService {
 
   /**
    * Check generated scene text for name contamination.
-   * Compares speaker names in the VN output against the bible's canonical character list.
+   * Validates both speaker names AND in-text named entity references
+   * against the bible's canonical character/entity list.
    * Returns issues array (empty if clean).
    */
   private checkNameConsistency(
@@ -184,22 +259,49 @@ export class SceneGenerationService {
     sceneId: string,
   ): string[] {
     const issues: string[] = [];
-    const knownNames = new Set(Object.keys(bible.characters ?? {}));
 
-    // Also collect first names / short names from the known characters
-    const knownFirstNames = new Set<string>();
+    // Build the set of all known names (full names, first names, nicknames)
+    const knownNames = new Set(Object.keys(bible.characters ?? {}));
+    const allKnownTokens = new Set<string>();
+
     for (const name of knownNames) {
+      allKnownTokens.add(name);
       const parts = name.split(/\s+/);
       if (parts.length > 1) {
-        knownFirstNames.add(parts[0]); // First name
-        // Also add nickname patterns like "Ros" for "Rosario 'Ros' Veltri"
+        allKnownTokens.add(parts[0]); // First name
         const nickMatch = name.match(/'([^']+)'/);
-        if (nickMatch) knownFirstNames.add(nickMatch[1]);
+        if (nickMatch) allKnownTokens.add(nickMatch[1]);
       }
-      knownFirstNames.add(name); // Full name too
     }
 
-    // Extract speaker names from the scene (lines starting with "NAME [" or "NAME:")
+    // Also collect names mentioned in character descriptions (offscreen characters)
+    // These are extracted by buildCanonicalNames and should be treated as known
+    for (const profile of Object.values(bible.characters ?? {})) {
+      const desc = (profile as any).description ?? "";
+      const relPatterns = desc.match(
+        /(?:wife|husband|spouse|partner|daughter|son|sister|brother|mother|father|colleague|friend)\s+([A-ZÀ-Ö][a-zà-ö]+(?:\s+[A-ZÀ-Ö][a-zà-ö-]+)*)/g,
+      );
+      if (relPatterns) {
+        for (const match of relPatterns) {
+          const extractedName = match.replace(/^(?:wife|husband|spouse|partner|daughter|son|sister|brother|mother|father|colleague|friend)\s+/, "");
+          allKnownTokens.add(extractedName);
+          // Also add first name only
+          const first = extractedName.split(/\s+/)[0];
+          if (first) allKnownTokens.add(first);
+        }
+      }
+    }
+
+    // Also collect from relationships
+    for (const rel of (bible.relationships ?? [])) {
+      for (const name of (rel.between ?? [])) {
+        allKnownTokens.add(name);
+        const parts = name.split(/\s+/);
+        if (parts.length > 1) allKnownTokens.add(parts[0]);
+      }
+    }
+
+    // ── Check 1: Speaker names ──
     const speakerPattern = /^([A-ZÀ-Ö][A-ZÀ-Öa-zà-ö\s'-]+?)(?:\s*\[|:)/gm;
     const speakers = new Set<string>();
     let match;
@@ -210,15 +312,48 @@ export class SceneGenerationService {
       }
     }
 
-    // Check each speaker against known names
     for (const speaker of speakers) {
-      const isKnown = knownNames.has(speaker) ||
-        knownFirstNames.has(speaker) ||
-        [...knownNames].some(k => k.includes(speaker) || speaker.includes(k));
+      const isKnown = allKnownTokens.has(speaker) ||
+        [...allKnownTokens].some(k => k.includes(speaker) || speaker.includes(k));
       if (!isKnown) {
-        issues.push(`[${sceneId}] Unknown speaker "${speaker}" not in bible. Possible name hallucination.`);
+        issues.push(`[${sceneId}] Unknown speaker "${speaker}" — possible name hallucination`);
         console.warn(`[name-check] ${sceneId}: Unknown speaker "${speaker}"`);
       }
+    }
+
+    // ── Check 2: In-text entity references ──
+    // Look for capitalized proper names in dialogue/narration that aren't in our known set.
+    // Only flag names that appear as if they're character references (not place names or common words).
+    const commonWords = new Set([
+      "The", "She", "Her", "His", "He", "But", "And", "Not", "When", "Then", "What", "How",
+      "This", "That", "There", "Here", "They", "Does", "Did", "Was", "Are", "Will", "Can",
+      "All", "One", "Two", "Just", "Now", "Still", "Even", "Also", "Very", "Too", "Yet",
+      "Session", "Commander", "Doctor", "Captain", "Ensign", "Sir", "God", "Tuesday",
+      "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "Monday", "January",
+      "February", "March", "April", "May", "June", "July", "August", "September",
+      "October", "November", "December", "Christmas", "Easter",
+    ]);
+
+    // Match patterns that look like character name references in narration/dialogue
+    // e.g., "Priya said", "told Elena", "asked Marc about"
+    const entityPattern = /(?:told|asked|said|called|named|about|with|for|from|to|and|of)\s+([A-ZÀ-Ö][a-zà-ö]{2,}(?:\s+[A-ZÀ-Ö][a-zà-ö-]+)?)/g;
+    const suspectEntities = new Set<string>();
+    while ((match = entityPattern.exec(sceneText)) !== null) {
+      const entity = match[1].trim();
+      if (!commonWords.has(entity) && !allKnownTokens.has(entity)) {
+        // Check if it's a partial match (e.g., "Édouard" matching "Édouard Fontaine")
+        const isPartialMatch = [...allKnownTokens].some(k =>
+          k.includes(entity) || entity.includes(k),
+        );
+        if (!isPartialMatch) {
+          suspectEntities.add(entity);
+        }
+      }
+    }
+
+    for (const entity of suspectEntities) {
+      issues.push(`[${sceneId}] Suspect entity "${entity}" in text — not in canonical names`);
+      console.warn(`[name-check] ${sceneId}: Suspect in-text entity "${entity}"`);
     }
 
     return issues;

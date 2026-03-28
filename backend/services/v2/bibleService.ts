@@ -103,7 +103,7 @@ export class BibleService {
       const startMs = Date.now();
       const raw = await this.llm.call("bible_writer", PLOT_WRITER_SYSTEM,
         buildPlotPrompt({ premise: premiseStr, worldSection: worldForPlot, characterSection: charsForPlot, mustHonorBlock: mustHonor }),
-        { temperature: 0.8, maxTokens: 4000, jsonSchema: PLOT_WRITER_SCHEMA, abortSignal },
+        { temperature: 0.8, maxTokens: 8000, jsonSchema: PLOT_WRITER_SCHEMA, abortSignal },
       );
       traces.push(this.makeTrace(project.operationId, "bible_writer", startMs, "plot"));
       plotData = JSON.parse(raw);
@@ -113,30 +113,87 @@ export class BibleService {
       if (onCheckpoint) await onCheckpoint(project);
     }
 
-    // ── Sub-step 4: Judge (non-blocking) ─────────────────────────
-    // Bible judge runs in background — doesn't block scene planning.
-    // Results logged for diagnostics but don't gate the pipeline.
+    // ── Sub-step 4: Judge (blocking gate) ─────────────────────────
+    // Bible judge evaluates consistency AND dramatic quality.
+    // If it fails, plot is regenerated with judge feedback (max 2 retries).
     if (!completed.includes("judge")) {
-      completed.push("judge"); // Mark done immediately — don't wait
-      // Fire-and-forget: log judge results for debugging
-      this.llm.call("bible_judge", BIBLE_JUDGE_SYSTEM,
-        buildBibleJudgePrompt({
-          worldSection: this.compressWorldForPlot(worldData),
-          characterSection: this.compressCharsForPlot(charData),
-          plotSection: JSON.stringify(plotData),
-          mustHonorBlock: mustHonor,
-        }),
-        { temperature: 0.3, maxTokens: 1000, jsonSchema: BIBLE_JUDGE_SCHEMA },
-      ).then(raw => {
-        try {
-          const result = JSON.parse(raw);
-          if (!result.pass) {
-            console.warn("[v2] Bible judge flagged issues:", JSON.stringify(result.consistency_issues ?? []).slice(0, 500));
-          }
-        } catch { /* ignore parse failures in background */ }
-      }).catch(err => {
-        console.warn("[v2] Bible judge background call failed:", err.message);
+      emitProgress(projectId, {
+        totalSteps: 5, completedSteps: 3,
+        currentStep: "Judging quality...",
+        startedAt: new Date().toISOString(),
       });
+
+      const MAX_JUDGE_RETRIES = 2;
+      for (let attempt = 0; attempt <= MAX_JUDGE_RETRIES; attempt++) {
+        const startMs = Date.now();
+        const judgeRaw = await this.llm.call("bible_judge", BIBLE_JUDGE_SYSTEM,
+          buildBibleJudgePrompt({
+            worldSection: this.compressWorldForPlot(worldData),
+            characterSection: this.compressCharsForPlot(charData),
+            plotSection: JSON.stringify(plotData),
+            mustHonorBlock: mustHonor,
+          }),
+          { temperature: 0.3, maxTokens: 2000, jsonSchema: BIBLE_JUDGE_SCHEMA, abortSignal },
+        );
+        traces.push(this.makeTrace(project.operationId, "bible_judge", startMs, "judge"));
+
+        try {
+          const judgeResult = JSON.parse(judgeRaw);
+
+          // Collect critical/major issues that warrant regeneration
+          const criticalIssues = [
+            ...(judgeResult.consistency_issues ?? []).filter((i: any) => i.severity === "critical"),
+            ...(judgeResult.quality_issues ?? []).filter((i: any) => i.severity === "critical" || i.severity === "major"),
+          ];
+
+          if (judgeResult.pass || criticalIssues.length === 0 || attempt === MAX_JUDGE_RETRIES) {
+            if (criticalIssues.length > 0) {
+              console.warn(`[v2] Bible judge failed but max retries reached (${attempt}). Issues:`,
+                JSON.stringify(criticalIssues.map((i: any) => i.issue)).slice(0, 500));
+            }
+            break; // Accept output (either passed or exhausted retries)
+          }
+
+          // Regenerate plot with judge feedback
+          console.log(`[v2] Bible judge failed (attempt ${attempt + 1}/${MAX_JUDGE_RETRIES + 1}). Regenerating plot...`);
+          const feedback = criticalIssues.map((i: any) => `- [${i.severity}] ${i.issue}: ${i.fix_instruction}`).join("\n");
+
+          emitProgress(projectId, {
+            totalSteps: 5, completedSteps: 2,
+            currentStep: `Revising plot (attempt ${attempt + 2})...`,
+            startedAt: new Date().toISOString(),
+          });
+
+          // Remove plot from completed to force regeneration
+          const plotIdx = completed.indexOf("plot");
+          if (plotIdx !== -1) completed.splice(plotIdx, 1);
+
+          const worldForPlot = this.compressWorldForPlot(worldData);
+          const charsForPlot = this.compressCharsForPlot(charData);
+          const regenStartMs = Date.now();
+          const plotPrompt = buildPlotPrompt({
+            premise: premiseStr, worldSection: worldForPlot,
+            characterSection: charsForPlot, mustHonorBlock: mustHonor,
+          });
+          const augmentedPrompt = plotPrompt + `\n\nPREVIOUS ATTEMPT FAILED QUALITY REVIEW. Fix these issues:\n${feedback}`;
+
+          const regenRaw = await this.llm.call("bible_writer", PLOT_WRITER_SYSTEM, augmentedPrompt,
+            { temperature: 0.8, maxTokens: 8000, jsonSchema: PLOT_WRITER_SCHEMA, abortSignal },
+          );
+          traces.push(this.makeTrace(project.operationId, "bible_writer", regenStartMs, "plot"));
+          plotData = JSON.parse(regenRaw);
+
+          completed.push("plot");
+          project.checkpoint.plotData = plotData;
+          if (onCheckpoint) await onCheckpoint(project);
+        } catch {
+          console.warn("[v2] Bible judge parse failed, accepting output as-is");
+          break;
+        }
+      }
+
+      completed.push("judge");
+      if (onCheckpoint) await onCheckpoint(project);
     }
 
     // ── Sub-step 5: Scene Plan ───────────────────────────────────
@@ -148,12 +205,36 @@ export class BibleService {
         startedAt: new Date().toISOString(),
       });
 
-      // Compress bible for scene planner (relevant highlights, not full JSON)
+      // Step-back prompt: force architectural thinking before scene distribution
       const bibleCompressed = this.compressBibleForPlanner(worldData, charData, plotData);
+      let architecturalContext = "";
+      try {
+        const stepBackStartMs = Date.now();
+        const stepBackRaw = await this.llm.call("scene_planner", `You are a story architect. Answer these questions briefly and precisely — one sentence each. Do not plan scenes yet. Just think about the story's shape.`, [
+          `STORY BIBLE:\n${bibleCompressed}`,
+          `\nAnswer these questions:`,
+          `1. What is the ONE dramatic question this story must answer by the end?`,
+          `2. What is the point of no return — the moment where the protagonist cannot go back to who they were?`,
+          `3. Which relationship is the engine of the story? Where must that relationship be at the midpoint versus the climax?`,
+          `4. What is the one scene the reader will remember a week later? What makes it unforgettable — a revelation, a betrayal, a silence, a choice?`,
+          `5. Where should the story's emotional register BREAK — the moment that is tonally different from everything around it?`,
+        ].join("\n"), {
+          temperature: 0.5,
+          maxTokens: 800,
+          abortSignal,
+        });
+        traces.push(this.makeTrace(project.operationId, "scene_planner", stepBackStartMs, "step_back"));
+        architecturalContext = `\nSTORY ARCHITECTURE (think about these while planning):\n${stepBackRaw}\n`;
+        console.log(`[v2] Step-back architectural context: ${stepBackRaw.slice(0, 200)}...`);
+      } catch (err: any) {
+        // Non-fatal — scene planner can work without it
+        console.warn(`[v2] Step-back prompt failed (${err.message}), proceeding without architectural context`);
+      }
+
       const startMs = Date.now();
       const raw = await this.llm.call("scene_planner", SCENE_PLANNER_SYSTEM,
-        buildScenePlannerPrompt({ bibleCompressed, mustHonorBlock: mustHonor }),
-        { temperature: 0.7, maxTokens: 3000, jsonSchema: SCENE_PLANNER_SCHEMA, abortSignal },
+        buildScenePlannerPrompt({ bibleCompressed, mustHonorBlock: mustHonor }) + architecturalContext,
+        { temperature: 0.7, maxTokens: 6000, jsonSchema: SCENE_PLANNER_SCHEMA, abortSignal },
       );
       traces.push(this.makeTrace(project.operationId, "scene_planner", startMs, "scene_plan"));
       scenePlanData = JSON.parse(raw);
@@ -210,6 +291,7 @@ export class BibleService {
         mystery_hooks: plotData?.mystery_hooks ?? [],
         climax: plotData?.climax ?? { beat: "", why_now: "", core_conflict_collision: "" },
         resolution: plotData?.resolution ?? { new_normal: "", emotional_landing: "", ending_energy: "" },
+        dirty_hands: plotData?.dirty_hands ?? undefined,
         addiction_engine: plotData?.addiction_engine ?? "",
       },
     };
