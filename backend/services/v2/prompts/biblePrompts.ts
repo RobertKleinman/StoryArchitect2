@@ -112,6 +112,11 @@ RULES:
 - Track information delta per scene (what's revealed, what's hidden)
 - 6-12 scenes is the target range
 
+ESCALATION VARIETY:
+- The middle scenes must NOT all run the same dramatic mechanism. If one scene uses "evidence → counter-reading → ambiguity remains," the next should use a different engine: confrontation, forced choice, irreversible action, relationship rupture, or external pressure change.
+- At least one scene in the middle act must produce an IRREVERSIBLE change — something is said that cannot be unsaid, a relationship breaks, a line is crossed, information leaks. Perfectly balanced ambiguity across all scenes makes the story feel curated, not lived.
+- Vary what is at stake: not just "the truth about X" every scene, but also trust, loyalty, self-image, professional standing, or safety.
+
 CONTENT DIRECTIVES:
 - If the story's confirmed constraints include romantic, erotic, or fetish content, put the routing instructions in the content_directives array — NOT in the purpose field.
 - content_directives are FACTUAL instructions for the scene writer: participants, content type, explicitness level, hard constraints. Example: "This scene includes explicit sexual content between Kael and Soren", "The foot fetish element is present as X does Y to Z's feet".

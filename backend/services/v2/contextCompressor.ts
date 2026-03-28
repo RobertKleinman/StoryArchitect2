@@ -131,6 +131,74 @@ function compressWorldForScene(
 }
 
 /**
+ * Build a canonical names block for the scene writer.
+ *
+ * Lists ALL named entities in the story — not just characters present —
+ * to prevent the writer from hallucinating alternative names at high temperature.
+ * Dead/offscreen characters referenced in profiles are extracted too.
+ */
+export function buildCanonicalNames(bible: StoryBibleArtifact): string {
+  const lines: string[] = ["CANONICAL NAMES (use these exact names — do not invent alternatives):"];
+
+  // All bible characters
+  for (const [name, profile] of Object.entries(bible.characters)) {
+    lines.push(`- ${name}: ${profile.role}. ${profile.description.slice(0, 120)}`);
+  }
+
+  // Relationship partners (catches mentioned-but-not-present characters)
+  for (const rel of bible.relationships) {
+    for (const name of rel.between) {
+      if (!bible.characters[name]) {
+        lines.push(`- ${name}: mentioned in relationships`);
+      }
+    }
+  }
+
+  // Extract proper names from character descriptions that might be offscreen characters
+  // (e.g., dead spouses, former colleagues). Heuristic: look for capitalized words
+  // that appear after possessive/relational markers.
+  const allBibleNames = new Set(Object.keys(bible.characters));
+  const mentionedNames = new Set<string>();
+
+  for (const profile of Object.values(bible.characters)) {
+    // Match patterns like "her wife Elena", "husband Édouard", "daughter Marta"
+    const namePatterns = profile.description.match(
+      /(?:wife|husband|spouse|partner|daughter|son|sister|brother|mother|father|colleague|friend|mentor)\s+([A-ZÀ-Ö][a-zà-ö]+(?:\s+[A-ZÀ-Ö][a-zà-ö-]+)*)/g,
+    );
+    if (namePatterns) {
+      for (const match of namePatterns) {
+        const name = match.replace(/^(?:wife|husband|spouse|partner|daughter|son|sister|brother|mother|father|colleague|friend|mentor)\s+/, "");
+        if (!allBibleNames.has(name) && !mentionedNames.has(name)) {
+          mentionedNames.add(name);
+          const relWord = match.split(/\s+/)[0];
+          const owner = profile.name;
+          lines.push(`- ${name}: ${owner}'s ${relWord} (offscreen/deceased — use this exact name)`);
+        }
+      }
+    }
+  }
+
+  // Also scan plot beats for proper names
+  if (bible.plot?.tension_chain) {
+    for (const beat of bible.plot.tension_chain) {
+      const beatNames = beat.beat?.match(/\b([A-ZÀ-Ö][a-zà-ö]+(?:\s+[A-ZÀ-Ö][a-zà-ö-]+)*)\b/g) ?? [];
+      for (const name of beatNames) {
+        if (!allBibleNames.has(name) && !mentionedNames.has(name) && name.length > 2) {
+          // Skip common words that happen to be capitalized
+          const skipWords = new Set(["The", "She", "Her", "His", "But", "And", "Not", "When", "Then", "What", "How", "Session", "Ros", "After", "Does", "During", "Over"]);
+          if (!skipWords.has(name)) {
+            mentionedNames.add(name);
+            lines.push(`- ${name}: mentioned in plot`);
+          }
+        }
+      }
+    }
+  }
+
+  return lines.join("\n");
+}
+
+/**
  * Extract only the characters, locations, and world rules relevant to a specific scene.
  * (Legacy function — still used by scene judge and other consumers that need raw profiles.)
  */

@@ -16,7 +16,7 @@ import { LLMClient } from "../llmClient";
 import { buildMustHonorBlock } from "../mustHonorBlock";
 import { SCENE_WRITER_SYSTEM, buildSceneWriterPrompt, formatScenePlanForWriter } from "./prompts/scenePrompts";
 import { SCENE_WRITER_SCHEMA } from "./schemas/sceneSchemas";
-import { compressForScene, previousSceneDigest } from "./contextCompressor";
+import { compressForScene, previousSceneDigest, buildCanonicalNames } from "./contextCompressor";
 import { emitProgress, emitSceneComplete } from "./progressEmitter";
 import { getAbortSignal } from "./orchestrator";
 
@@ -45,11 +45,13 @@ export class SceneGenerationService {
     // Build cacheable prefix: shared context across all scene calls
     // This gets cached by the Anthropic API so scenes 2-9 skip re-processing it
     const mustHonor = buildMustHonorBlock(project.constraintLedger);
+    const canonicalNames = buildCanonicalNames(project.storyBible);
     const cacheablePrefix = [
       `STORY BIBLE CONTEXT (shared across all scenes):`,
       `World: ${project.storyBible.world?.world_thesis ?? ""}`,
       `Locations: ${project.storyBible.world?.arena?.locations?.map((l: any) => l.name).join(", ") ?? ""}`,
       `Tone: ${project.storyBible.world?.scope?.tone_rule ?? ""}`,
+      `\n${canonicalNames}`,
       mustHonor ? `\n${mustHonor}` : "",
     ].filter(Boolean).join("\n");
 
@@ -104,6 +106,13 @@ export class SceneGenerationService {
 
         const readable = this.toReadable(vnScene);
 
+        // Check for name contamination (hallucinated character names)
+        const nameIssues = this.checkNameConsistency(
+          readable.screenplay_text,
+          project.storyBible,
+          plan.scene_id,
+        );
+
         const generatedScene: GeneratedScene = {
           scene_id: plan.scene_id,
           state: "completed",
@@ -111,6 +120,13 @@ export class SceneGenerationService {
           plan,
           vn_scene: vnScene,
           readable,
+          ...(nameIssues.length > 0 ? {
+            judge_result: {
+              pass: true, // don't block, just flag
+              issues: nameIssues,
+              repaired: false,
+            },
+          } : {}),
         };
 
         return { scene: generatedScene, trace };
@@ -155,6 +171,57 @@ export class SceneGenerationService {
       screenplay_text: text,
       word_count: text.split(/\s+/).length,
     };
+  }
+
+  /**
+   * Check generated scene text for name contamination.
+   * Compares speaker names in the VN output against the bible's canonical character list.
+   * Returns issues array (empty if clean).
+   */
+  private checkNameConsistency(
+    sceneText: string,
+    bible: any,
+    sceneId: string,
+  ): string[] {
+    const issues: string[] = [];
+    const knownNames = new Set(Object.keys(bible.characters ?? {}));
+
+    // Also collect first names / short names from the known characters
+    const knownFirstNames = new Set<string>();
+    for (const name of knownNames) {
+      const parts = name.split(/\s+/);
+      if (parts.length > 1) {
+        knownFirstNames.add(parts[0]); // First name
+        // Also add nickname patterns like "Ros" for "Rosario 'Ros' Veltri"
+        const nickMatch = name.match(/'([^']+)'/);
+        if (nickMatch) knownFirstNames.add(nickMatch[1]);
+      }
+      knownFirstNames.add(name); // Full name too
+    }
+
+    // Extract speaker names from the scene (lines starting with "NAME [" or "NAME:")
+    const speakerPattern = /^([A-ZÀ-Ö][A-ZÀ-Öa-zà-ö\s'-]+?)(?:\s*\[|:)/gm;
+    const speakers = new Set<string>();
+    let match;
+    while ((match = speakerPattern.exec(sceneText)) !== null) {
+      const speaker = match[1].trim();
+      if (speaker !== "NARRATION" && speaker !== "INTERNAL") {
+        speakers.add(speaker);
+      }
+    }
+
+    // Check each speaker against known names
+    for (const speaker of speakers) {
+      const isKnown = knownNames.has(speaker) ||
+        knownFirstNames.has(speaker) ||
+        [...knownNames].some(k => k.includes(speaker) || speaker.includes(k));
+      if (!isKnown) {
+        issues.push(`[${sceneId}] Unknown speaker "${speaker}" not in bible. Possible name hallucination.`);
+        console.warn(`[name-check] ${sceneId}: Unknown speaker "${speaker}"`);
+      }
+    }
+
+    return issues;
   }
 
   private makeTrace(operationId: any, role: string, startMs: number, sceneId: string): StepTrace {
