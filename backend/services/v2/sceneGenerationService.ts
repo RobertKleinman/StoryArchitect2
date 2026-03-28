@@ -14,7 +14,7 @@ import type { GeneratedScene } from "../../../shared/types/artifacts";
 import type { ReadableScene } from "../../../shared/types/scene";
 import { LLMClient } from "../llmClient";
 import { buildMustHonorBlock } from "../mustHonorBlock";
-import { SCENE_WRITER_SYSTEM, buildSceneWriterPrompt } from "./prompts/scenePrompts";
+import { SCENE_WRITER_SYSTEM, buildSceneWriterPrompt, formatScenePlanForWriter } from "./prompts/scenePrompts";
 import { SCENE_WRITER_SCHEMA } from "./schemas/sceneSchemas";
 import { compressForScene, previousSceneDigest } from "./contextCompressor";
 import { emitProgress, emitSceneComplete } from "./progressEmitter";
@@ -78,7 +78,7 @@ export class SceneGenerationService {
         );
 
         const writerPrompt = buildSceneWriterPrompt({
-          scenePlan: JSON.stringify(plan, null, 2),
+          scenePlan: formatScenePlanForWriter(plan),
           characterProfiles,
           worldContext,
           previousSceneDigest: prevDigest,

@@ -40,7 +40,7 @@ export const SCENE_JUDGE_SCHEMA = {
         items: {
           type: "object",
           properties: {
-            category: { type: "string", description: "voice, pacing, objective, continuity, constraint" },
+            category: { type: "string", description: "voice, pacing, objective, continuity, constraint, surprise, over_explanation, subtext, volatility, friction, discovery" },
             problem: { type: "string" },
             fix_instruction: { type: "string" },
           },
@@ -48,7 +48,21 @@ export const SCENE_JUDGE_SCHEMA = {
           additionalProperties: false,
         },
       },
+      vitality: {
+        type: "object",
+        description: "Vitality assessment — does the scene feel alive?",
+        properties: {
+          has_failed_intention: { type: "boolean", description: "At least one character tried something that didn't land as intended" },
+          has_non_optimal_response: { type: "boolean", description: "At least one response was not the most rational/expected" },
+          has_behavioral_turn: { type: "boolean", description: "At least one shift happened through action/gesture/silence, not speech" },
+          has_asymmetry: { type: "boolean", description: "Conversations had power imbalance, misreading, or cornering" },
+          has_discovery: { type: "boolean", description: "Scene contains a moment that feels emergent, not pre-scripted" },
+          over_explanation_lines: { type: "number", description: "Count of lines that sound like scene analysis rather than drama" },
+        },
+        required: ["has_failed_intention", "has_non_optimal_response", "has_behavioral_turn", "has_asymmetry", "has_discovery", "over_explanation_lines"],
+        additionalProperties: false,
+      },
     },
-    required: ["pass", "issues"],
+    required: ["pass", "issues", "vitality"],
     additionalProperties: false,
 };

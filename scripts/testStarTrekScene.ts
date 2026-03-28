@@ -1,13 +1,14 @@
 /**
- * Iterative single-scene test runner.
+ * Test runner for Star Trek scenes — uses the 2026-03-27 pipeline run.
  *
- * Generates one scene using the production code path, outputs readable text.
- * Re-run after prompt changes to compare.
+ * Generates one scene using the new instability/pressure-packet approach.
+ * Compare output against the original scenes in the run directory.
  *
  * Usage:
- *   npx tsx scripts/testScene.ts              # default: S03
- *   npx tsx scripts/testScene.ts S06          # specific scene
- *   npx tsx scripts/testScene.ts S03 --tag v1 # tag the output for comparison
+ *   npx tsx scripts/testStarTrekScene.ts S01          # Adaeze/SABLE
+ *   npx tsx scripts/testStarTrekScene.ts S04           # Adaeze/Tomás
+ *   npx tsx scripts/testStarTrekScene.ts S02           # Adaeze/Priya
+ *   npx tsx scripts/testStarTrekScene.ts S01 --tag v2  # tag for comparison
  */
 
 import dotenv from "dotenv";
@@ -29,18 +30,16 @@ import type { ScenePlan, ReadableScene } from "../shared/types/scene";
 
 // ── Parse args ──
 const args = process.argv.slice(2);
-const sceneId = args.find(a => a.startsWith("S")) ?? "S03";
+const sceneId = args.find(a => a.startsWith("S")) ?? "S01";
 const tagIdx = args.indexOf("--tag");
-const tag = tagIdx >= 0 ? args[tagIdx + 1] : null;
+const tag = tagIdx >= 0 ? args[tagIdx + 1] : "instability";
 
-// ── Load test data ──
-const exportPath = path.resolve(__dirname, "../data/v2-runs/full_export.json");
-const oldScenesPath = path.resolve(__dirname, "../data/v2-runs/rewrite_scenes.json");
-const outputDir = path.resolve(__dirname, "../data/v2-runs/scene-iterations");
+// ── Load Star Trek data ──
+const runDir = path.resolve(__dirname, "../data/v2-runs/2026-03-27T02-39-29-794Z");
+const exportPath = path.join(runDir, "full_export.json");
+const outputDir = path.resolve(__dirname, "../data/v2-runs/instability-test");
 
 const exportData = JSON.parse(fs.readFileSync(exportPath, "utf-8"));
-const oldScenesData = JSON.parse(fs.readFileSync(oldScenesPath, "utf-8")).scenes;
-
 const bible: StoryBibleArtifact = exportData.storyBible;
 const allPlans: ScenePlan[] = exportData.scenePlan.scenes;
 const constraintLedger = exportData.constraintLedger ?? [];
@@ -52,7 +51,7 @@ if (planIndex < 0) {
 }
 const plan = allPlans[planIndex];
 
-// ── Build fake "completed scenes" from old data for continuity ──
+// ── Build prior scenes from the original run for continuity ──
 function toReadable(vnScene: any): ReadableScene {
   const lines: string[] = [];
   for (const line of (vnScene.lines ?? [])) {
@@ -76,17 +75,18 @@ function toReadable(vnScene: any): ReadableScene {
   };
 }
 
-// Use old scenes as "prior context" for continuity
 const priorScenes: GeneratedScene[] = [];
 for (let i = 0; i < planIndex; i++) {
-  if (oldScenesData[i]) {
+  const sceneFile = path.join(runDir, `scene_${allPlans[i].scene_id}.json`);
+  if (fs.existsSync(sceneFile)) {
+    const vnScene = JSON.parse(fs.readFileSync(sceneFile, "utf-8"));
     priorScenes.push({
       scene_id: allPlans[i].scene_id,
       state: "completed",
       operationId: "prior",
       plan: allPlans[i],
-      vn_scene: oldScenesData[i],
-      readable: toReadable(oldScenesData[i]),
+      vn_scene: vnScene,
+      readable: toReadable(vnScene),
     });
   }
 }
@@ -101,19 +101,30 @@ async function main() {
   const { characterProfiles, worldContext } = compressForScene(bible, plan);
   const prevDigest = previousSceneDigest(priorScenes);
 
+  // Use the new formatted plan (situation + background pressure)
+  const formattedPlan = formatScenePlanForWriter(plan);
+
   const writerPrompt = buildSceneWriterPrompt({
-    scenePlan: formatScenePlanForWriter(plan),
+    scenePlan: formattedPlan,
     characterProfiles,
     worldContext,
     previousSceneDigest: prevDigest,
     mustHonorBlock: mustHonor,
   });
 
-  console.log(`\nGenerating ${sceneId}: ${plan.title}`);
+  console.log(`\n${"=".repeat(60)}`);
+  console.log(`INSTABILITY TEST: ${sceneId} — ${plan.title}`);
+  console.log(`${"=".repeat(60)}`);
   console.log(`  POV: ${plan.pov_character}`);
   console.log(`  Characters: ${plan.characters_present.join(", ")}`);
   console.log(`  Pacing: ${plan.pacing_type}`);
   console.log(`  Prior scenes for continuity: ${priorScenes.length}`);
+  console.log();
+
+  // Log the formatted plan so we can inspect it
+  const planLogFile = path.join(outputDir, `${sceneId}_formatted_plan.txt`);
+  fs.writeFileSync(planLogFile, formattedPlan, "utf-8");
+  console.log(`Formatted plan saved: ${planLogFile}`);
   console.log();
 
   const startMs = Date.now();
@@ -136,33 +147,33 @@ async function main() {
   const readable = toReadable(vnScene);
 
   // ── Output ──
-  const suffix = tag ? `_${tag}` : "";
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-  const outFile = path.join(outputDir, `${sceneId}${suffix}_${timestamp}.txt`);
+  const outFile = path.join(outputDir, `${sceneId}_${tag}_${timestamp}.txt`);
 
   const output = [
     `SCENE: ${sceneId} — ${plan.title}`,
     `Generated: ${new Date().toISOString()}`,
     `Duration: ${(durationMs / 1000).toFixed(1)}s`,
     `Words: ${readable.word_count}`,
-    tag ? `Tag: ${tag}` : "",
+    `Tag: ${tag}`,
+    `Approach: instability + background pressure (not raw JSON plan)`,
     "=".repeat(80),
     "",
     readable.screenplay_text,
     "",
     "=".repeat(80),
-    "PLAN (for reference):",
-    JSON.stringify(plan, null, 2),
-  ].filter(Boolean).join("\n");
+    "FORMATTED PLAN (what the writer received):",
+    formattedPlan,
+  ].join("\n");
 
   fs.writeFileSync(outFile, output, "utf-8");
 
-  // Also write a "latest" file for quick access
+  // Latest file for quick access
   const latestFile = path.join(outputDir, `${sceneId}_latest.txt`);
   fs.writeFileSync(latestFile, output, "utf-8");
 
-  // Write raw JSON too for programmatic comparison
-  const jsonFile = path.join(outputDir, `${sceneId}${suffix}_${timestamp}.json`);
+  // Raw JSON
+  const jsonFile = path.join(outputDir, `${sceneId}_${tag}_${timestamp}.json`);
   fs.writeFileSync(jsonFile, JSON.stringify(vnScene, null, 2), "utf-8");
 
   console.log(readable.screenplay_text);
@@ -170,7 +181,6 @@ async function main() {
   console.log(`${"=".repeat(60)}`);
   console.log(`${readable.word_count} words, ${(durationMs / 1000).toFixed(1)}s`);
   console.log(`Saved: ${outFile}`);
-  console.log(`Latest: ${latestFile}`);
 }
 
 main().catch((err) => {
