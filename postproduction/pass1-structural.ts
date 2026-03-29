@@ -8,6 +8,9 @@
  * - Empty/near-empty scenes, duplicate lines, normalization collisions
  */
 
+import {
+  normalizeSpecialSpeaker,
+} from "./types";
 import type {
   PipelineOutput,
   VNScene,
@@ -97,7 +100,7 @@ export function runStructuralScan(input: PipelineOutput): {
 
     // Check: zero dialogue (all narration/internal)
     const dialogueLines = vnScene.lines.filter(l =>
-      l.speaker !== "NARRATION" && l.speaker !== "INTERNAL" && l.speaker !== "narration"
+      !normalizeSpecialSpeaker(l.speaker)
     );
     if (dialogueLines.length === 0 && vnScene.lines.length > 0) {
       issues.push({
@@ -135,8 +138,7 @@ export function runStructuralScan(input: PipelineOutput): {
       }
 
       // Speaker validation
-      if (line.speaker !== "NARRATION" && line.speaker !== "INTERNAL" && line.speaker !== "narration") {
-        const speakerLower = line.speaker.toLowerCase();
+      if (!normalizeSpecialSpeaker(line.speaker)) {
         const resolved = resolvesSpeaker(line.speaker, characterNames, speakerNormMap);
         if (!resolved) {
           issues.push({
@@ -151,7 +153,8 @@ export function runStructuralScan(input: PipelineOutput): {
       }
 
       // Consecutive narration blocks
-      if (line.speaker === "NARRATION" || line.speaker === "narration") {
+      const specialSpeaker = normalizeSpecialSpeaker(line.speaker);
+      if (specialSpeaker === "NARRATION" || specialSpeaker === "narration") {
         consecutiveNarration++;
         if (consecutiveNarration > MAX_CONSECUTIVE_NARRATION) {
           issues.push({
@@ -184,7 +187,7 @@ export function runStructuralScan(input: PipelineOutput): {
     // Check characters_present vs actual speakers
     const actualSpeakers = new Set(
       vnScene.lines
-        .filter(l => l.speaker !== "NARRATION" && l.speaker !== "INTERNAL" && l.speaker !== "narration")
+        .filter(l => !normalizeSpecialSpeaker(l.speaker))
         .map(l => l.speaker.toUpperCase())
     );
     for (const speaker of actualSpeakers) {

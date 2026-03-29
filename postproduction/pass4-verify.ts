@@ -2,7 +2,9 @@
  * PASS 4+5 — ANTI-SLOP RESCAN + POST-FIX VERIFICATION
  * ═════════════════════════════════════════════════════
  * Pass 4: Run existing anti-slop scanner on fixed scenes (no LLM)
- * Pass 5: Haiku verification on changed scenes + neighbors against continuity ledger
+ * Pass 5: Haiku verification — compares before/after diffs against
+ *         neighbors and continuity ledger. Only flags NEW contradictions
+ *         introduced by the edits, not pre-existing issues.
  */
 
 import "dotenv/config";
@@ -22,7 +24,8 @@ const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 // ── Main ──
 
 export async function runVerification(
-  scenes: IdentifiedScene[],
+  editedScenes: IdentifiedScene[],
+  originalScenes: IdentifiedScene[],
   editResults: SceneEditResult[],
   ledger: ContinuityLedger,
 ): Promise<VerificationResult[]> {
@@ -31,16 +34,43 @@ export async function runVerification(
     editResults.filter(r => r.status === "fixed").map(r => r.scene_id)
   );
 
-  for (const scene of scenes) {
+  for (const scene of editedScenes) {
     if (!fixedSceneIds.has(scene.scene_id)) continue;
 
     // Pass 4: Anti-slop rescan
     const sceneText = scene.lines.map(l => l.text).join("\n");
     const slopReport = scanForSlop(sceneText);
 
-    // Pass 5: Continuity verification (Haiku call)
-    const neighbors = getNeighborScenes(scenes, scene.scene_id);
-    const contradictions = await verifyContinuity(scene, neighbors, ledger);
+    // Pass 5: Continuity verification — compare before/after
+    const originalScene = originalScenes.find(s => s.scene_id === scene.scene_id);
+    if (!originalScene) {
+      results.push({
+        scene_id: scene.scene_id,
+        passed: slopReport.pass,
+        new_contradictions: [],
+        slop_score: slopReport.score,
+        slop_passed: slopReport.pass,
+      });
+      continue;
+    }
+
+    // Build diff summary
+    const diffSummary = buildDiffSummary(originalScene, scene);
+
+    if (diffSummary.length === 0) {
+      // No actual changes — skip LLM verification
+      results.push({
+        scene_id: scene.scene_id,
+        passed: slopReport.pass,
+        new_contradictions: [],
+        slop_score: slopReport.score,
+        slop_passed: slopReport.pass,
+      });
+      continue;
+    }
+
+    const neighbors = getNeighborScenes(editedScenes, scene.scene_id);
+    const contradictions = await verifyContinuity(scene.scene_id, diffSummary, neighbors, ledger);
 
     results.push({
       scene_id: scene.scene_id,
@@ -54,34 +84,83 @@ export async function runVerification(
   return results;
 }
 
+// ── Diff Summary ──
+
+interface LineDiffEntry {
+  line_id: string;
+  type: "changed" | "added" | "removed";
+  old_text?: string;
+  new_text?: string;
+  speaker: string;
+}
+
+function buildDiffSummary(original: IdentifiedScene, edited: IdentifiedScene): LineDiffEntry[] {
+  const diffs: LineDiffEntry[] = [];
+  const originalById = new Map(original.lines.map(l => [l._lid, l]));
+  const editedById = new Map(edited.lines.map(l => [l._lid, l]));
+
+  // Find changed and removed lines
+  for (const [lid, origLine] of originalById) {
+    const editedLine = editedById.get(lid);
+    if (!editedLine) {
+      diffs.push({ line_id: lid, type: "removed", old_text: origLine.text, speaker: origLine.speaker });
+    } else if (origLine.text !== editedLine.text) {
+      diffs.push({ line_id: lid, type: "changed", old_text: origLine.text, new_text: editedLine.text, speaker: editedLine.speaker });
+    }
+  }
+
+  // Find added lines
+  for (const [lid, editedLine] of editedById) {
+    if (!originalById.has(lid)) {
+      diffs.push({ line_id: lid, type: "added", new_text: editedLine.text, speaker: editedLine.speaker });
+    }
+  }
+
+  return diffs;
+}
+
 // ── Pass 5: Continuity Verification ──
 
 async function verifyContinuity(
-  scene: IdentifiedScene,
+  sceneId: string,
+  diffs: LineDiffEntry[],
   neighbors: IdentifiedScene[],
   ledger: ContinuityLedger,
 ): Promise<string[]> {
   if (!ANTHROPIC_API_KEY) return [];
 
-  const sceneText = formatSceneCompact(scene);
+  const diffText = diffs.map(d => {
+    if (d.type === "changed") return `CHANGED [${d.line_id}] ${d.speaker}: "${d.old_text}" → "${d.new_text}"`;
+    if (d.type === "added") return `ADDED [${d.line_id}] ${d.speaker}: "${d.new_text}"`;
+    return `REMOVED [${d.line_id}] ${d.speaker}: "${d.old_text}"`;
+  }).join("\n");
+
   const neighborText = neighbors.map(n => formatSceneCompact(n)).join("\n\n");
   const ledgerText = formatLedger(ledger);
 
-  const systemPrompt = `You verify that a recently edited visual novel scene is still consistent with its neighboring scenes and established story facts. Return ONLY new contradictions introduced by the edit. If everything is consistent, return an empty array.`;
+  const systemPrompt = `You verify that recent EDITS to a visual novel scene did not introduce NEW contradictions with neighboring scenes or established story facts.
 
-  const userPrompt = `## ESTABLISHED FACTS (continuity ledger)
+CRITICAL RULES:
+- You are ONLY checking whether the CHANGES introduced problems. The original scene may have had pre-existing issues — ignore those.
+- Compare the OLD text → NEW text for each changed line. Did the new text contradict something in the neighbors or the ledger?
+- If an ADDED line introduces a fact that conflicts with established facts, flag it.
+- If a REMOVED line was referenced by a neighbor, flag it.
+- If the changes are consistent with the story, return an empty array.
+- Do NOT flag pre-existing issues that were already in the original text.`;
+
+  const userPrompt = `## ESTABLISHED FACTS
 ${ledgerText}
 
-## EDITED SCENE: ${scene.scene_id}
-${sceneText}
+## EDITS MADE TO ${sceneId}
+${diffText}
 
-## NEIGHBORING SCENES
+## NEIGHBORING SCENES (for reference)
 ${neighborText}
 
 ---
 
 Return JSON only:
-{ "contradictions": ["string description of each new contradiction"] }`;
+{ "contradictions": ["description of each NEW contradiction introduced by the edits, if any"] }`;
 
   try {
     const response = await callAnthropic(systemPrompt, userPrompt, VERIFY_MODEL, 0.2, 1000);

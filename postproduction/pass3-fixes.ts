@@ -187,7 +187,7 @@ Return JSON only:
 }`;
 
   try {
-    const response = await callAnthropic(systemPrompt, userPrompt, MODEL, 0.5, 4000);
+    const response = await callAnthropic(systemPrompt, userPrompt, MODEL, 0.5, 8000);
     const jsonMatch = response.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return { status: "unfixed", diffs_applied: 0, diffs_rejected: 0 };
 

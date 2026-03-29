@@ -284,3 +284,20 @@ export interface VNPackage {
   }>;
   scenes: VNPackageScene[];
 }
+
+// ── Utilities ──
+
+/** Special speakers that are not character names */
+const SPECIAL_SPEAKERS = new Set(["NARRATION", "narration", "INTERNAL"]);
+
+/**
+ * Normalize speaker variants like "INTERNAL (WITNESS)" → "INTERNAL".
+ * Returns the canonical special speaker name, or null if it's a character name.
+ */
+export function normalizeSpecialSpeaker(speaker: string): string | null {
+  if (SPECIAL_SPEAKERS.has(speaker)) return speaker;
+  // Handle parenthetical qualifiers: "INTERNAL (WITNESS)" → "INTERNAL"
+  const base = speaker.split(/\s*\(/)[0].trim();
+  if (SPECIAL_SPEAKERS.has(base)) return base;
+  return null;
+}

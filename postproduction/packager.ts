@@ -10,6 +10,9 @@
  * - Emits versioned manifest with stable IDs, warnings, package status
  */
 
+import {
+  normalizeSpecialSpeaker,
+} from "./types";
 import type {
   PipelineOutput,
   IdentifiedScene,
@@ -161,9 +164,12 @@ export function runPackager(
     const lines: VNPackageLine[] = [];
 
     for (const line of scene.lines) {
-      // Normalize speaker
+      // Normalize speaker — handle special speakers first
       let speaker = line.speaker;
-      if (speaker !== "NARRATION" && speaker !== "INTERNAL" && speaker !== "narration") {
+      const specialSpeaker = normalizeSpecialSpeaker(speaker);
+      if (specialSpeaker) {
+        speaker = specialSpeaker;
+      } else {
         const resolved = speakerMap.get(speaker) ?? speakerMap.get(speaker.toUpperCase());
         if (resolved) {
           speaker = resolved;
@@ -222,7 +228,7 @@ export function runPackager(
       setting,
       characters_present: scene.characters_present,
       lines,
-      transition_out: scene.transition_out ?? "cut",
+      transition_out: scene.transition_out || "cut",
     });
 
     totalLines += lines.length;

@@ -168,6 +168,7 @@ async function main() {
       log("PASS 4+5", `Verifying ${fixedCount} fixed scenes (anti-slop + continuity)...`);
       verificationResults = await runVerification(
         editedScenes,
+        scenes, // original pre-edit scenes for before/after comparison
         editResults,
         editorialReport.continuity_ledger,
       );

@@ -41,12 +41,12 @@ export async function runContinuityRead(
   const userPrompt = buildUserPrompt(seed, characterBrief, screenplay);
 
   // Run primary (Sonnet) — always
-  const primaryPromise = callAnthropic(systemPrompt, userPrompt, PRIMARY_MODEL, 0.3, 6000);
+  const primaryPromise = callAnthropic(systemPrompt, userPrompt, PRIMARY_MODEL, 0.3, 16000);
 
   // Run secondary (GPT) — in parallel if enabled and key available
   let secondaryPromise: Promise<string | null> = Promise.resolve(null);
   if (SECONDARY_ENABLED && OPENAI_API_KEY) {
-    secondaryPromise = callOpenAI(systemPrompt, userPrompt, SECONDARY_MODEL, 0.3, 6000)
+    secondaryPromise = callOpenAI(systemPrompt, userPrompt, SECONDARY_MODEL, 0.3, 16000)
       .catch(err => {
         console.warn(`[PASS2] Secondary model (${SECONDARY_MODEL}) failed:`, err.message ?? err);
         return null;
@@ -425,7 +425,7 @@ async function callOpenAI(
     body: JSON.stringify({
       model,
       temperature,
-      max_tokens: maxTokens,
+      max_completion_tokens: maxTokens,
       messages: [
         { role: "system", content: system },
         { role: "user", content: user },
