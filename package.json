@@ -16,7 +16,9 @@
     "pipeline": "tsx scripts/pipeline-runner.ts",
     "pipeline:hook": "tsx scripts/pipeline-runner.ts --only hook",
     "pipeline:quick": "tsx scripts/pipeline-runner.ts --through character --turns 2 --skip-images",
-    "pipeline:resume": "tsx scripts/pipeline-runner.ts --resume"
+    "pipeline:resume": "tsx scripts/pipeline-runner.ts --resume",
+    "postprod": "tsx postproduction/run.ts",
+    "postprod:quick": "tsx postproduction/run.ts --skip-llm"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.57.0",
