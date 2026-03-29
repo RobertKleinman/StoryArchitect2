@@ -14,6 +14,8 @@
  *   npx tsx scripts/pipeline-runner.ts --turns 3                # Max 3 clarifier turns per module
  *   npx tsx scripts/pipeline-runner.ts --skip-review            # Skip LLM evaluation
  *   npx tsx scripts/pipeline-runner.ts --skip-images            # Skip character image module
+ *   npx tsx scripts/pipeline-runner.ts --resume                 # Resume latest failed/interrupted run
+ *   npx tsx scripts/pipeline-runner.ts --resume <run-id>        # Resume specific run by ID
  *
  * Requires: backend running on localhost:3001 (or set BASE_URL env var)
  */
@@ -70,6 +72,19 @@ interface PipelineReport {
   totalDurationMs: number;
 }
 
+interface Checkpoint {
+  runId: string;
+  seed: string;
+  projectIds: Record<string, string>;
+  completedModules: string[];
+  moduleResults: ModuleResult[];
+  skipReview: boolean;
+  skipImages: boolean;
+  maxTurns: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ── Arg parsing ──
 
 function parseArgs(): {
@@ -79,6 +94,7 @@ function parseArgs(): {
   maxTurns: number;
   skipReview: boolean;
   skipImages: boolean;
+  resume?: string | true;
 } {
   const args = process.argv.slice(2);
   const result: any = { maxTurns: MAX_TURNS_DEFAULT, skipReview: false, skipImages: false };
@@ -91,6 +107,16 @@ function parseArgs(): {
       case "--turns": result.maxTurns = parseInt(args[++i], 10); break;
       case "--skip-review": result.skipReview = true; break;
       case "--skip-images": result.skipImages = true; break;
+      case "--resume": {
+        const next = args[i + 1];
+        if (next && !next.startsWith("--")) {
+          result.resume = next;
+          i++;
+        } else {
+          result.resume = true; // resume latest
+        }
+        break;
+      }
     }
   }
   return result;
@@ -165,11 +191,12 @@ RULES:
 - Sometimes type free text to steer in an unexpected direction
 - Keep assumptions sometimes, change them sometimes — be realistic
 - Be concise — your choice should be 1-2 sentences max for free text
+- IMPORTANT: Use the EXACT option ID as shown (e.g. "o1", "o2", "o3" — NOT "A", "B", "C")
 
 Respond in JSON:
 {
   "choice_type": "option" | "free_text" | "surprise_me",
-  "option_id": "A" | "B" | "C" | "D" | "E" | null,
+  "option_id": "<exact option id from the list, e.g. o1, o2, o3>" | null,
   "free_text": "..." | null,
   "assumption_responses": [{ "assumptionId": "a1", "action": "keep" | "alternative" | "freeform", "newValue": "..." }] | [],
   "reasoning": "Why I made this choice (1 sentence)"
@@ -467,6 +494,7 @@ async function runClarifyGenerateLockModule(
     try {
       clarifyResult = await post(`/${apiPath}/clarify`, {
         projectId,
+        ...upstreamRefs,
         userSelection: sim.selection,
         assumptionResponses: sim.assumptionResponses.length > 0 ? sim.assumptionResponses : undefined,
       });
@@ -586,6 +614,72 @@ async function runSceneModule(
   return { module: "scene", projectId, turns: 0, clarifierTurns: turnLogs, generateResult, lockResult, review, errors, durationMs: Date.now() - start };
 }
 
+// ── Checkpoint persistence ──
+
+const CHECKPOINT_DIR = "./data/pipeline-checkpoints";
+
+async function saveCheckpoint(checkpoint: Checkpoint): Promise<void> {
+  const { mkdir, writeFile } = await import("fs/promises");
+  await mkdir(CHECKPOINT_DIR, { recursive: true });
+  checkpoint.updatedAt = new Date().toISOString();
+  await writeFile(
+    `${CHECKPOINT_DIR}/${checkpoint.runId}.json`,
+    JSON.stringify(checkpoint, null, 2),
+    "utf-8",
+  );
+}
+
+async function loadCheckpoint(idOrLatest: string | true): Promise<Checkpoint | null> {
+  const { readdir, readFile } = await import("fs/promises");
+
+  if (idOrLatest === true) {
+    // Find latest checkpoint
+    let files: string[];
+    try {
+      files = await readdir(CHECKPOINT_DIR);
+    } catch {
+      return null;
+    }
+    const jsonFiles = files.filter(f => f.endsWith(".json")).sort();
+    if (jsonFiles.length === 0) return null;
+    const latest = jsonFiles[jsonFiles.length - 1];
+    const raw = await readFile(`${CHECKPOINT_DIR}/${latest}`, "utf-8");
+    return JSON.parse(raw) as Checkpoint;
+  }
+
+  // Load specific checkpoint
+  try {
+    const raw = await readFile(`${CHECKPOINT_DIR}/${idOrLatest}.json`, "utf-8");
+    return JSON.parse(raw) as Checkpoint;
+  } catch {
+    return null;
+  }
+}
+
+async function findIncompleteCheckpointForSeed(seed: string, moduleCount: number): Promise<Checkpoint | null> {
+  const { readdir, readFile } = await import("fs/promises");
+  let files: string[];
+  try {
+    files = await readdir(CHECKPOINT_DIR);
+  } catch {
+    return null;
+  }
+  // Search newest first
+  const jsonFiles = files.filter(f => f.endsWith(".json")).sort().reverse();
+  for (const file of jsonFiles) {
+    try {
+      const raw = await readFile(`${CHECKPOINT_DIR}/${file}`, "utf-8");
+      const cp = JSON.parse(raw) as Checkpoint;
+      if (cp.seed === seed && cp.completedModules.length > 0 && cp.completedModules.length < moduleCount) {
+        return cp;
+      }
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
 // ── Seed generation ──
 
 const SAMPLE_SEEDS = [
@@ -660,13 +754,70 @@ function generateReport(report: PipelineReport): string {
   return lines.join("\n");
 }
 
+// ── Module execution helper ──
+
+function runModuleByName(
+  moduleName: string,
+  projectIds: Record<string, string>,
+  modulesToRun: string[],
+  args: { maxTurns: number; skipReview: boolean; seed: string },
+): Promise<ModuleResult> {
+  const { seed } = args;
+  switch (moduleName) {
+    case "hook":
+      return runHookModule(projectIds.hook, seed, args.maxTurns, args.skipReview);
+    case "character":
+      return runClarifyGenerateLockModule(
+        "character", "character", projectIds.character,
+        { hookProjectId: projectIds.hook },
+        args.maxTurns, args.skipReview, seed, "characterSeed",
+      );
+    case "character_image":
+      return runClarifyGenerateLockModule(
+        "character_image", "character-image", projectIds.character_image,
+        { characterProjectId: projectIds.character },
+        args.maxTurns, args.skipReview, seed, "visualSeed",
+      );
+    case "world":
+      return runClarifyGenerateLockModule(
+        "world", "world", projectIds.world,
+        {
+          hookProjectId: projectIds.hook,
+          characterProjectId: projectIds.character,
+          ...(modulesToRun.includes("character_image") ? { characterImageProjectId: projectIds.character_image } : {}),
+        },
+        args.maxTurns, args.skipReview, seed, "worldSeed",
+      );
+    case "plot":
+      return runClarifyGenerateLockModule(
+        "plot", "plot", projectIds.plot,
+        {
+          hookProjectId: projectIds.hook,
+          characterProjectId: projectIds.character,
+          worldProjectId: projectIds.world,
+          ...(modulesToRun.includes("character_image") ? { characterImageProjectId: projectIds.character_image } : {}),
+        },
+        args.maxTurns, args.skipReview, seed, "plotSeed",
+      );
+    case "scene":
+      return runSceneModule(projectIds.scene, projectIds.plot, args.skipReview, seed);
+    default:
+      throw new Error(`Unknown module: ${moduleName}`);
+  }
+}
+
+function isModuleFatal(result: ModuleResult): boolean {
+  return result.errors.some(e => e.startsWith("Fatal") || e.includes("Generate:") || e.includes("Lock:"));
+}
+
 // ── Main ──
 
 async function main() {
   const args = parseArgs();
-  const seed = args.seed ?? randomSeed();
 
   const MODULE_ORDER = ["hook", "character", "character_image", "world", "plot", "scene"];
+
+  const seed = args.seed ?? randomSeed();
 
   // Determine which modules to run
   let modulesToRun: string[];
@@ -683,14 +834,49 @@ async function main() {
     modulesToRun = modulesToRun.filter(m => m !== "character_image");
   }
 
-  console.log("\n" + "═".repeat(60));
-  console.log("  PIPELINE RUNNER");
-  console.log("═".repeat(60));
-  console.log(`Seed: ${seed}`);
-  console.log(`Modules: ${modulesToRun.join(" → ")}`);
-  console.log(`Max turns per module: ${args.maxTurns}`);
-  console.log(`Review: ${args.skipReview ? "SKIPPED" : "ON"}`);
-  console.log("═".repeat(60) + "\n");
+  // ── Resume from checkpoint (explicit or auto-detected) ──
+  let checkpoint: Checkpoint | null = null;
+  if (args.resume) {
+    checkpoint = await loadCheckpoint(args.resume);
+    if (!checkpoint) {
+      console.error("\n❌ No checkpoint found to resume from.\n");
+      process.exit(1);
+    }
+  } else {
+    // Auto-detect: if the same seed has an incomplete checkpoint, resume it
+    checkpoint = await findIncompleteCheckpointForSeed(seed, modulesToRun.length);
+  }
+
+  if (checkpoint) {
+    // Apply checkpoint's skipImages if it differs
+    if (checkpoint.skipImages) {
+      modulesToRun = modulesToRun.filter(m => m !== "character_image");
+    }
+    const nextModule = modulesToRun.find(m => !checkpoint!.completedModules.includes(m)) ?? "all done";
+    console.log("\n" + "═".repeat(60));
+    console.log("  PIPELINE RUNNER — RESUMING");
+    console.log("═".repeat(60));
+    console.log(`Run ID: ${checkpoint.runId}`);
+    console.log(`Seed: ${checkpoint.seed}`);
+    console.log(`Completed: ${checkpoint.completedModules.join(" → ") || "(none)"}`);
+    console.log(`Resuming from: ${nextModule}`);
+    console.log("═".repeat(60) + "\n");
+  }
+
+  const effectiveSeed = checkpoint?.seed ?? seed;
+  const ts = checkpoint?.runId ?? Date.now().toString(36);
+
+  if (!checkpoint) {
+    console.log("\n" + "═".repeat(60));
+    console.log("  PIPELINE RUNNER");
+    console.log("═".repeat(60));
+    console.log(`Run ID: ${ts}`);
+    console.log(`Seed: ${effectiveSeed}`);
+    console.log(`Modules: ${modulesToRun.join(" → ")}`);
+    console.log(`Max turns per module: ${args.maxTurns}`);
+    console.log(`Review: ${args.skipReview ? "SKIPPED" : "ON"}`);
+    console.log("═".repeat(60) + "\n");
+  }
 
   // Check backend is running
   try {
@@ -700,19 +886,10 @@ async function main() {
     process.exit(1);
   }
 
-  const report: PipelineReport = {
-    seed,
-    startedAt: new Date().toISOString(),
-    completedAt: "",
-    modules: [],
-    totalDurationMs: 0,
-  };
-
   const pipelineStart = Date.now();
-  const ts = Date.now().toString(36);
 
-  // Track project IDs across modules
-  const projectIds: Record<string, string> = {
+  // Reuse project IDs from checkpoint or generate new ones
+  const projectIds: Record<string, string> = checkpoint?.projectIds ?? {
     hook: `pr_${ts}_hook`,
     character: `pr_${ts}_char`,
     character_image: `pr_${ts}_img`,
@@ -721,7 +898,34 @@ async function main() {
     scene: `pr_${ts}_scene`,
   };
 
+  const completedModules = new Set(checkpoint?.completedModules ?? []);
+  const allModuleResults: ModuleResult[] = [...(checkpoint?.moduleResults ?? [])];
+
+  // Initialize checkpoint for new runs
+  if (!checkpoint) {
+    checkpoint = {
+      runId: ts,
+      seed: effectiveSeed,
+      projectIds,
+      completedModules: [],
+      moduleResults: [],
+      skipReview: args.skipReview,
+      skipImages: args.skipImages,
+      maxTurns: args.maxTurns,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    await saveCheckpoint(checkpoint);
+    log("pipeline", `Checkpoint created: ${ts}`);
+  }
+
   for (const moduleName of modulesToRun) {
+    // Skip already-completed modules
+    if (completedModules.has(moduleName)) {
+      log(moduleName, "Already completed (from checkpoint) — skipping");
+      continue;
+    }
+
     console.log(`\n${"▸".repeat(40)}`);
     console.log(`  MODULE: ${moduleName.toUpperCase()}`);
     console.log(`${"▸".repeat(40)}\n`);
@@ -729,62 +933,11 @@ async function main() {
     let result: ModuleResult;
 
     try {
-      switch (moduleName) {
-        case "hook":
-          result = await runHookModule(projectIds.hook, seed, args.maxTurns, args.skipReview);
-          break;
-
-        case "character":
-          result = await runClarifyGenerateLockModule(
-            "character", "character", projectIds.character,
-            { hookProjectId: projectIds.hook },
-            args.maxTurns, args.skipReview, seed, "characterSeed",
-          );
-          break;
-
-        case "character_image":
-          result = await runClarifyGenerateLockModule(
-            "character_image", "character-image", projectIds.character_image,
-            { characterProjectId: projectIds.character },
-            args.maxTurns, args.skipReview, seed, "visualSeed",
-          );
-          break;
-
-        case "world":
-          result = await runClarifyGenerateLockModule(
-            "world", "world", projectIds.world,
-            {
-              hookProjectId: projectIds.hook,
-              characterProjectId: projectIds.character,
-              ...(modulesToRun.includes("character_image") ? { characterImageProjectId: projectIds.character_image } : {}),
-            },
-            args.maxTurns, args.skipReview, seed, "worldSeed",
-          );
-          break;
-
-        case "plot":
-          result = await runClarifyGenerateLockModule(
-            "plot", "plot", projectIds.plot,
-            {
-              hookProjectId: projectIds.hook,
-              characterProjectId: projectIds.character,
-              worldProjectId: projectIds.world,
-              ...(modulesToRun.includes("character_image") ? { characterImageProjectId: projectIds.character_image } : {}),
-            },
-            args.maxTurns, args.skipReview, seed, "plotSeed",
-          );
-          break;
-
-        case "scene":
-          result = await runSceneModule(
-            projectIds.scene, projectIds.plot, args.skipReview, seed,
-          );
-          break;
-
-        default:
-          log(moduleName, `Unknown module — skipping`);
-          continue;
-      }
+      result = await runModuleByName(moduleName, projectIds, modulesToRun, {
+        maxTurns: checkpoint.maxTurns,
+        skipReview: checkpoint.skipReview,
+        seed: effectiveSeed,
+      });
     } catch (err: any) {
       log(moduleName, `FATAL: ${err.message}`);
       result = {
@@ -799,26 +952,41 @@ async function main() {
       };
     }
 
-    report.modules.push(result);
+    allModuleResults.push(result);
 
-    // If module failed fatally, stop the pipeline
-    if (result.errors.some(e => e.startsWith("Fatal") || e.includes("Generate:") || e.includes("Lock:"))) {
-      log("pipeline", `Module ${moduleName} failed — stopping pipeline`);
+    if (isModuleFatal(result)) {
+      // Save checkpoint so we can resume from here
+      checkpoint.moduleResults = allModuleResults.filter(m => !isModuleFatal(m));
+      await saveCheckpoint(checkpoint);
+      log("pipeline", `Module ${moduleName} failed — checkpoint saved (run with --resume to continue)`);
       break;
     }
+
+    // Module succeeded — update checkpoint
+    completedModules.add(moduleName);
+    checkpoint.completedModules = Array.from(completedModules);
+    checkpoint.moduleResults = allModuleResults;
+    await saveCheckpoint(checkpoint);
+    log("pipeline", `Checkpoint updated — ${moduleName} complete`);
   }
 
-  report.completedAt = new Date().toISOString();
-  report.totalDurationMs = Date.now() - pipelineStart;
+  // ── Build report ──
+  const report: PipelineReport = {
+    seed: effectiveSeed,
+    startedAt: checkpoint.createdAt,
+    completedAt: new Date().toISOString(),
+    modules: allModuleResults,
+    totalDurationMs: Date.now() - pipelineStart,
+  };
 
   // Overall review
-  if (!args.skipReview && report.modules.length > 1) {
+  if (!checkpoint.skipReview && report.modules.filter(m => m.review).length > 1) {
     log("pipeline", "Running overall review...");
     const moduleScores = report.modules
       .filter(m => m.review)
       .map(m => `${m.module}: ${m.review!.overallScore}/10`);
 
-    const overallPrompt = `Pipeline ran ${report.modules.length} modules. Scores: ${moduleScores.join(", ")}. Seed: "${seed}".
+    const overallPrompt = `Pipeline ran ${report.modules.length} modules. Scores: ${moduleScores.join(", ")}. Seed: "${effectiveSeed}".
 
 Key findings from module reviews:
 ${report.modules.filter(m => m.review).map(m => `${m.module}: strengths=${m.review!.strengths.join("; ")} weaknesses=${m.review!.weaknesses.join("; ")}`).join("\n")}
