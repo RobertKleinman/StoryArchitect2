@@ -358,7 +358,13 @@ export class BibleService {
     if (world) {
       parts.push("WORLD:");
       parts.push(`  Thesis: ${world.world_thesis}`);
-      parts.push(`  Locations: ${world.arena?.locations?.map((l: any) => l.name).join(", ")}`);
+      parts.push("  LOCATIONS:");
+      for (const loc of (world.arena?.locations ?? [])) {
+        parts.push(`    ${loc.name}: ${(loc.description ?? "").slice(0, 80)}`);
+        if (loc.affordances?.length) {
+          parts.push(`      Affordances: ${loc.affordances.join("; ")}`);
+        }
+      }
       parts.push(`  Rules: ${world.rules?.map((r: any) => r.rule).join("; ")}`);
     }
 

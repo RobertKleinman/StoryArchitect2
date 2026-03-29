@@ -144,7 +144,8 @@ VITALITY CHECKS:
 9. Subtext density: Are characters saying one thing and meaning another? Is behavior contradicting words? Scenes with no subtext are flat.
 10. Emotional volatility: Does the emotional register vary, or is it uniform mid-intensity throughout? Look for spikes — sharp anger, awkward silence, inappropriate humor, irrational reactions.
 11. Friction: Is there at least one failed intention, one non-optimal response, and one behavioral (non-verbal) turn? If all intentions succeed and all conversations are perfectly matched, the scene is too clean.
-12. Discovery: Did the scene find anything that was not already stated in the plan? A moment, a detail, a character reaction that feels like it emerged from the writing rather than being pre-scripted.
+12. Privileged legibility: Does any non-POV character display reactions, dialogue, or understanding that could not plausibly come from observable behavior in this scene? If a non-POV character responds to something the POV character has only thought, or if their reaction presupposes knowledge of another character's interior state, flag it. Non-POV characters should be readable only from the outside.
+13. Discovery: Did the scene find anything that was not already stated in the plan? A moment, a detail, a character reaction that feels like it emerged from the writing rather than being pre-scripted.
 
 SCORING:
 - A scene can PASS compliance and FAIL vitality. That is still a failure — flag it.

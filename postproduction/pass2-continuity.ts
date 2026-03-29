@@ -314,6 +314,7 @@ Your job is to find FIXABLE problems only. You will flag:
 1. SEED COMPLIANCE — things the original seed/brief asked for that are missing, weak, or displaced into metaphor when they should be direct
 2. CONTINUITY ERRORS — factual contradictions within a single scene (a character says X in line 10 but the opposite in line 20, a setting detail changes mid-scene)
 3. VOICE DRIFT — a character speaking in a way that contradicts their established voice pattern
+4. OVER-EXPLANATION — lines where narration, internal thought, or dialogue explains the scene's meaning rather than dramatizing it. Flag lines that sound like literary analysis, scene summaries, or emotional captions. Examples: "The silence between them was the most honest thing either of them had said", "She realized in that moment that trust was being offered", or any narration that tells the reader what to feel about what just happened. The fix for over-explanation is usually DELETION — the preceding action/dialogue already carried the meaning. Only flag a line as over-explanation if the same information is already recoverable from action, dialogue, or context in the surrounding lines.
 
 You must also produce a CONTINUITY LEDGER — a compact record of key facts, character emotional states, promises/setups, and relationship states.
 
@@ -342,7 +343,7 @@ Respond in JSON only. Use this exact schema:
 {
   "fixable_findings": [
     {
-      "category": "seed_compliance" | "continuity_error" | "voice_drift",
+      "category": "seed_compliance" | "continuity_error" | "voice_drift" | "over_explanation",
       "severity": "major" | "minor",
       "scene_id": "string (exact scene_id)",
       "line_id": "string (exact _lid)",

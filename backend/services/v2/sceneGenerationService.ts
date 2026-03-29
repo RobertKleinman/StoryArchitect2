@@ -548,16 +548,34 @@ export class SceneGenerationService {
     return lines.join("\n");
   }
 
-  /** Count how many of the 5 boolean vitality flags are true */
+  /**
+   * Count effective vitality score from judge output.
+   * Handles both legacy boolean flags and new quality-graded format.
+   * Penalizes high over-explanation even when boolean flags pass.
+   */
   private countVitalityFlags(vitality: any): number {
     if (!vitality) return 0;
-    return [
-      vitality.has_failed_intention,
-      vitality.has_non_optimal_response,
-      vitality.has_behavioral_turn,
-      vitality.has_asymmetry,
-      vitality.has_discovery,
-    ].filter(Boolean).length;
+
+    // Handle both legacy (boolean) and graded (object with quality) formats
+    const isGenuine = (flag: any): boolean => {
+      if (typeof flag === "boolean") return flag;
+      return flag?.present && flag?.quality === "genuine";
+    };
+
+    let score = [
+      vitality.failed_intention ?? vitality.has_failed_intention,
+      vitality.non_optimal_response ?? vitality.has_non_optimal_response,
+      vitality.behavioral_turn ?? vitality.has_behavioral_turn,
+      vitality.asymmetry ?? vitality.has_asymmetry,
+      vitality.discovery ?? vitality.has_discovery,
+    ].filter(isGenuine).length;
+
+    // Penalize over-explanation: 4+ lines costs 1 flag, 7+ costs 2
+    const overExp = vitality.over_explanation_lines ?? 0;
+    if (overExp >= 7) score -= 2;
+    else if (overExp >= 4) score -= 1;
+
+    return Math.max(0, score);
   }
 
   private makeTrace(operationId: any, role: string, startMs: number, sceneId: string): StepTrace {

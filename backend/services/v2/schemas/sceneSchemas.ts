@@ -40,7 +40,7 @@ export const SCENE_JUDGE_SCHEMA = {
         items: {
           type: "object",
           properties: {
-            category: { type: "string", description: "voice, pacing, objective, continuity, constraint, surprise, over_explanation, subtext, volatility, friction, discovery" },
+            category: { type: "string", description: "voice, pacing, objective, continuity, constraint, surprise, over_explanation, subtext, volatility, friction, discovery, privileged_legibility" },
             problem: { type: "string" },
             fix_instruction: { type: "string" },
           },
@@ -50,16 +50,66 @@ export const SCENE_JUDGE_SCHEMA = {
       },
       vitality: {
         type: "object",
-        description: "Vitality assessment — does the scene feel alive?",
+        description: "Vitality assessment — does the scene feel alive? Each flag requires evidence (quote the specific moment) and quality grading.",
         properties: {
-          has_failed_intention: { type: "boolean", description: "At least one character tried something that didn't land as intended" },
-          has_non_optimal_response: { type: "boolean", description: "At least one response was not the most rational/expected" },
-          has_behavioral_turn: { type: "boolean", description: "At least one shift happened through action/gesture/silence, not speech" },
-          has_asymmetry: { type: "boolean", description: "Conversations had power imbalance, misreading, or cornering" },
-          has_discovery: { type: "boolean", description: "Scene contains a moment that feels emergent, not pre-scripted" },
+          failed_intention: {
+            type: "object",
+            description: "A character tried a strategy that didn't land as intended",
+            properties: {
+              present: { type: "boolean" },
+              evidence: { type: "string", description: "Quote or describe the specific moment where the intention failed" },
+              quality: { type: "string", enum: ["genuine", "mechanical", "absent"], description: "genuine = emerges from character logic; mechanical = present but feels forced/token" },
+            },
+            required: ["present", "evidence", "quality"],
+            additionalProperties: false,
+          },
+          non_optimal_response: {
+            type: "object",
+            description: "A character responded in a way that was NOT the most rational or expected",
+            properties: {
+              present: { type: "boolean" },
+              evidence: { type: "string", description: "Quote or describe the non-optimal response" },
+              quality: { type: "string", enum: ["genuine", "mechanical", "absent"] },
+            },
+            required: ["present", "evidence", "quality"],
+            additionalProperties: false,
+          },
+          behavioral_turn: {
+            type: "object",
+            description: "A power shift happened through action/gesture/silence, not speech",
+            properties: {
+              present: { type: "boolean" },
+              evidence: { type: "string", description: "Quote or describe the behavioral turn" },
+              quality: { type: "string", enum: ["genuine", "mechanical", "absent"] },
+            },
+            required: ["present", "evidence", "quality"],
+            additionalProperties: false,
+          },
+          asymmetry: {
+            type: "object",
+            description: "Conversations had power imbalance, misreading, or cornering — not just slightly unequal speaking time",
+            properties: {
+              present: { type: "boolean" },
+              evidence: { type: "string", description: "Quote or describe the asymmetric moment" },
+              quality: { type: "string", enum: ["genuine", "mechanical", "absent"] },
+            },
+            required: ["present", "evidence", "quality"],
+            additionalProperties: false,
+          },
+          discovery: {
+            type: "object",
+            description: "Scene contains a moment that feels emergent, not pre-scripted — something the plan didn't explicitly call for",
+            properties: {
+              present: { type: "boolean" },
+              evidence: { type: "string", description: "Quote or describe the discovery moment" },
+              quality: { type: "string", enum: ["genuine", "mechanical", "absent"] },
+            },
+            required: ["present", "evidence", "quality"],
+            additionalProperties: false,
+          },
           over_explanation_lines: { type: "number", description: "Count of lines that sound like scene analysis rather than drama" },
         },
-        required: ["has_failed_intention", "has_non_optimal_response", "has_behavioral_turn", "has_asymmetry", "has_discovery", "over_explanation_lines"],
+        required: ["failed_intention", "non_optimal_response", "behavioral_turn", "asymmetry", "discovery", "over_explanation_lines"],
         additionalProperties: false,
       },
     },

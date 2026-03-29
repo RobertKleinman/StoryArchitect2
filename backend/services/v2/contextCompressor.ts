@@ -55,18 +55,26 @@ export function buildPlayableBrief(
     }
   }
 
-  // ── Characters present (profiles + behavioral subtext) ──
+  // ── Characters present (POV gets full psychology, non-POV gets external only) ──
   lines.push("");
   lines.push("CHARACTERS IN THIS SCENE:");
+  const povCharName = scenePlan.pov_character;
   for (const charName of scenePlan.characters_present) {
     const profile = bible.characters[charName];
     if (profile) {
-      lines.push(`\n${profile.name} (${profile.role}):`);
+      const isPOV = charName === povCharName;
+      lines.push(`\n${profile.name} (${profile.role})${isPOV ? " [POV CHARACTER]" : ""}:`);
       lines.push(`  Description: ${profile.description}`);
       lines.push(`  Voice: ${profile.psychological_profile.voice_pattern}`);
-      lines.push(`  Want: ${profile.psychological_profile.want}`);
-      lines.push(`  Under stress: ${profile.psychological_profile.stress_style}`);
-      lines.push(`  Break point: ${profile.psychological_profile.break_point}`);
+      if (isPOV) {
+        // POV character: full interior access
+        lines.push(`  Want: ${profile.psychological_profile.want}`);
+        lines.push(`  Under stress: ${profile.psychological_profile.stress_style}`);
+        lines.push(`  Break point: ${profile.psychological_profile.break_point}`);
+      } else {
+        // Non-POV character: external behavior only
+        lines.push(`  [Write ${profile.name}'s actions and dialogue from what ${povCharName} can observe — not from their interior. You do not know what they want, feel, or intend. Show only what a camera and microphone would capture.]`);
+      }
     }
   }
 
