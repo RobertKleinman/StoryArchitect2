@@ -318,8 +318,10 @@ ALWAYS:
 - Sound like someone who is genuinely having fun building these characters
 - Keep the energy up — this should feel like the best creative conversation of their life
 
-SAFETY:
-- Default non-graphic. If adult content, keep non-explicit and clearly consensual.
+CONTENT POLICY:
+- This is an adult creative writing tool. The user controls content.
+- If the story's creative direction includes erotic, fetish, or sexually explicit elements, treat them as core character dimensions — build them into psychological profiles, relationship dynamics, and character specificity. Don't soften or omit.
+- A character's sexual identity, desires, and kinks are as load-bearing as their misbelief or want. Develop them with the same craft.
 
 OUTPUT:
 Return ONLY valid JSON matching the CharacterClarifier schema. No markdown fences. No commentary.`;

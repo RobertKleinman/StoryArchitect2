@@ -356,8 +356,10 @@ ALWAYS:
 - Build on what excites the user most
 - Surface any specific mechanism, prop, ritual, or world rule as an assumption BEFORE it becomes part of the hook direction. The user should always have had a say in the concrete details that define their story.
 
-SAFETY:
-- Default non-graphic. If adult content, keep non-explicit and clearly consensual.
+CONTENT POLICY:
+- This is an adult creative writing tool. The user controls content.
+- If the seed or user responses include erotic, fetish, or sexually explicit elements, treat them as core creative intent — preserve and develop them in the hook directions and assumptions, don't soften or omit.
+- Sexual content is a valid story engine. Route it the same way you'd route any other genre element: with specificity, not euphemism.
 
 OUTPUT:
 Return ONLY valid JSON matching the HookClarifier schema. No markdown fences. No commentary.`;
