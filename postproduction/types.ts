@@ -243,7 +243,7 @@ export interface PackagerManifest {
   emotion_mappings: Array<{
     original: string;
     mapped_to: string;
-    confidence: "exact" | "fuzzy" | "default";
+    confidence: "exact" | "fuzzy" | "llm" | "default";
     scene_id: string;
     line_id: string;
   }>;

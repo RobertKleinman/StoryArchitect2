@@ -11,23 +11,34 @@
  *   npx tsx postproduction/run.ts <input> --force            # Package even with unfixed scenes
  *   npx tsx postproduction/run.ts <input> --skip-llm         # Structural scan + packager only (no LLM)
  *   npx tsx postproduction/run.ts <input> --editor-only      # Run editor without packaging
+ *   npx tsx postproduction/run.ts --repackage <snapshot>     # Re-run packager from saved editor snapshot (no LLM)
  */
 
 import "dotenv/config";
-import { mkdir, writeFile, readdir } from "fs/promises";
+import { mkdir, writeFile, readFile, readdir } from "fs/promises";
 import { loadFromCombinedJSON, loadFromSceneExport } from "./loader";
 import { runStructuralScan } from "./pass1-structural";
 import { runContinuityRead } from "./pass2-continuity";
 import { runTargetedFixes } from "./pass3-fixes";
 import { runVerification } from "./pass4-verify";
 import { runPackager } from "./packager";
-import type { EditorOutput, SceneEditResult } from "./types";
+import { mapEmotionsWithLLM } from "./emotion-mapper";
+import type { EditorOutput, SceneEditResult, PipelineOutput, IdentifiedScene } from "./types";
+
+/** Everything the packager needs, saved after the editor completes */
+interface EditorSnapshot {
+  input: PipelineOutput;
+  editedScenes: IdentifiedScene[];
+  editResults: SceneEditResult[];
+  savedAt: string;
+}
 
 // ── Arg parsing ──
 
 interface Args {
   inputPath?: string;
   runId?: string;
+  repackagePath?: string;
   force: boolean;
   skipLlm: boolean;
   editorOnly: boolean;
@@ -40,6 +51,7 @@ function parseArgs(): Args {
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
       case "--run-id": result.runId = args[++i]; break;
+      case "--repackage": result.repackagePath = args[++i]; break;
       case "--force": result.force = true; break;
       case "--skip-llm": result.skipLlm = true; break;
       case "--editor-only": result.editorOnly = true; break;
@@ -98,6 +110,34 @@ async function main() {
   console.log("\n" + "═".repeat(60));
   console.log("  POSTPRODUCTION");
   console.log("═".repeat(60));
+
+  // ── Repackage mode: load snapshot and skip straight to packager ──
+  if (args.repackagePath) {
+    log("REPACKAGE", `Loading snapshot: ${args.repackagePath}`);
+    const snapshot: EditorSnapshot = JSON.parse(await readFile(args.repackagePath, "utf-8"));
+    log("REPACKAGE", `${snapshot.editedScenes.length} edited scenes from ${snapshot.savedAt}`);
+
+    // Map emotions via LLM
+    const allEmotions = snapshot.editedScenes.flatMap(s => s.lines.map(l => l.emotion).filter(Boolean) as string[]);
+    const emotionCache = await mapEmotionsWithLLM(allEmotions);
+
+    log("PACKAGER", "Packaging for VNBuilder...");
+    const { pkg, manifest } = runPackager(snapshot.input, snapshot.editedScenes, snapshot.editResults, {
+      forceUnfixed: args.force,
+      emotionCache,
+    });
+    log("PACKAGER", `Status: ${manifest.package_status} | ${manifest.errors.length} errors, ${manifest.warnings.length} warnings`);
+
+    const ts = Date.now().toString(36);
+    await saveOutput(`vn-export-${ts}`, pkg);
+    await saveOutput(`vn-manifest-${ts}`, manifest);
+
+    console.log("\n" + "═".repeat(60));
+    console.log("  REPACKAGE COMPLETE");
+    console.log("═".repeat(60));
+    if (manifest.package_status === "failed") process.exit(1);
+    return;
+  }
 
   // Load input
   const inputPath = await resolveInputPath(args);
@@ -205,23 +245,37 @@ async function main() {
     },
   };
 
+  // ── Save editor snapshot (crash-safe: packager can re-run without LLM) ──
+  const ts = Date.now().toString(36);
+  const snapshot: EditorSnapshot = {
+    input,
+    editedScenes,
+    editResults,
+    savedAt: new Date().toISOString(),
+  };
+  await saveOutput(`editor-snapshot-${ts}`, snapshot);
+  log("SAVE", `Editor snapshot saved — use --repackage to re-run packager without LLM`);
+
   if (args.editorOnly) {
     log("DONE", "Editor-only mode — skipping packager");
-    await saveOutput("editor", editorOutput);
     printSummary(editorOutput, null, null, Date.now() - startTime);
     return;
   }
+
+  // ── Emotion mapping (1 cheap LLM call, cached) ──
+  const allEmotions = editedScenes.flatMap(s => s.lines.map(l => l.emotion).filter(Boolean) as string[]);
+  const emotionCache = await mapEmotionsWithLLM(allEmotions);
 
   // ── Packager ──
   log("PACKAGER", "Packaging for VNBuilder...");
   const { pkg, manifest } = runPackager(input, editedScenes, editResults, {
     forceUnfixed: args.force,
+    emotionCache,
   });
 
   log("PACKAGER", `Status: ${manifest.package_status} | ${manifest.errors.length} errors, ${manifest.warnings.length} warnings`);
 
-  // Save outputs
-  const ts = Date.now().toString(36);
+  // Save outputs (reuse ts from snapshot)
   await saveOutput(`vn-export-${ts}`, pkg);
   await saveOutput(`vn-manifest-${ts}`, manifest);
   await saveOutput(`editor-report-${ts}`, {

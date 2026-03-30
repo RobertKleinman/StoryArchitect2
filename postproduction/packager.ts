@@ -1,7 +1,7 @@
 /**
  * PACKAGER
  * ════════
- * Zero LLM calls. Pure transformation.
+ * Pure transformation (optionally uses pre-computed LLM emotion cache).
  * - Extracts only what VNBuilder uses
  * - Maps freeform emotions to VNBuilder's 8 expressions
  * - Normalizes speaker names
@@ -68,9 +68,12 @@ const FUZZY_EMOTION_RULES: Array<{ pattern: string; expression: VNExpression }> 
   { pattern: "quiet", expression: "calm" },
 ];
 
-function mapEmotion(emotion: string | null | undefined): {
+function mapEmotion(
+  emotion: string | null | undefined,
+  llmCache?: Record<string, string>,
+): {
   mapped: VNExpression;
-  confidence: "exact" | "fuzzy" | "default";
+  confidence: "exact" | "fuzzy" | "llm" | "default";
   original: string | null;
 } {
   if (!emotion) return { mapped: "neutral", confidence: "default", original: null };
@@ -95,6 +98,11 @@ function mapEmotion(emotion: string | null | undefined): {
     }
   }
 
+  // LLM cache lookup
+  if (llmCache && llmCache[lower]) {
+    return { mapped: llmCache[lower] as VNExpression, confidence: "llm", original: emotion };
+  }
+
   // Default
   return { mapped: "neutral", confidence: "default", original: emotion };
 }
@@ -105,7 +113,7 @@ export function runPackager(
   input: PipelineOutput,
   scenes: IdentifiedScene[],
   editResults: SceneEditResult[],
-  options: { forceUnfixed?: boolean } = {},
+  options: { forceUnfixed?: boolean; emotionCache?: Record<string, string> } = {},
 ): { pkg: VNPackage | null; manifest: PackagerManifest } {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -191,7 +199,7 @@ export function runPackager(
       }
 
       // Map emotion
-      const { mapped, confidence, original } = mapEmotion(line.emotion);
+      const { mapped, confidence, original } = mapEmotion(line.emotion, options.emotionCache);
       if (confidence === "default" && original) {
         warnings.push(`Unmapped emotion "${original}" → neutral (scene ${scene.scene_id}, line ${line._lid})`);
       }
@@ -202,6 +210,12 @@ export function runPackager(
         scene_id: scene.scene_id,
         line_id: line._lid,
       });
+
+      // Skip lines with empty text — stage-direction-only artifacts VNBuilder can't render
+      if (!line.text || line.text.trim() === "") {
+        warnings.push(`Scene ${scene.scene_id}, line ${line._lid}: empty text — skipped`);
+        continue;
+      }
 
       lines.push({
         speaker,
@@ -241,14 +255,7 @@ export function runPackager(
     }
   }
 
-  // Validate: no empty text
-  for (const s of packagedScenes) {
-    for (const l of s.lines) {
-      if (!l.text || l.text.trim() === "") {
-        errors.push(`Scene ${s.scene_id}: empty text in line`);
-      }
-    }
-  }
+  // Empty-text lines are filtered during packaging (skipped with warning)
 
   // Determine package status
   let packageStatus: PackageStatus;
