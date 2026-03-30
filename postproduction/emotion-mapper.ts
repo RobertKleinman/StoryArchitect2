@@ -15,6 +15,37 @@ type VNExpression = typeof VN_EXPRESSIONS[number];
 
 const CACHE_PATH = "./data/postproduction/emotion-cache.json";
 
+/**
+ * Last-resort inference for emotions that the LLM mapped to "neutral" but probably shouldn't be.
+ * Uses keyword matching on the emotion string itself to find a better fit.
+ */
+function inferNonNeutralExpression(emotion: string): VNExpression | null {
+  const e = emotion.toLowerCase();
+
+  // Warm family
+  if (/warm|tender|intimate|gentle|affection|yearn|fond|soft|vulnerab|ache|longing/.test(e)) return "warm";
+
+  // Tense family
+  if (/tense|anxi|guard|wary|alert|edge|apprehen|uneasy|nervous|dread|fear|vigilant|brace/.test(e)) return "tense";
+
+  // Sad family
+  if (/sad|grief|hollow|resign|melanchol|sorrow|loss|mourn|despair|empty|numb|exhaust/.test(e)) return "sad";
+
+  // Angry family
+  if (/angry|bitter|frustr|resent|hostil|fury|rage|irritat|contempt|disgust/.test(e)) return "angry";
+
+  // Calm family
+  if (/calm|peace|serene|settled|accept|content|still|quiet|composed/.test(e)) return "calm";
+
+  // Formal family
+  if (/formal|precise|clinical|procedur|measure|deliber|offici|detach/.test(e)) return "formal";
+
+  // Amused family
+  if (/amus|wry|iron|sardonic|dry|humor/.test(e)) return "amused";
+
+  return null;
+}
+
 /** Load cached mappings (or empty object if no cache) */
 async function loadCache(): Promise<Record<string, VNExpression>> {
   try {
@@ -69,12 +100,19 @@ export async function mapEmotionsWithLLM(
 
 Rules:
 - Every emotion MUST map to exactly one of the 8 expressions
-- When in doubt between two, pick the more expressive one (not neutral)
-- "controlled_X" / "compressed_X" → map based on the X part
+- "neutral" should ONLY be used for genuinely neutral moments — scene-setting, flat exposition, zero emotional content. If ANY emotional content is present, use a more specific expression.
+- When in doubt between "neutral" and anything else, ALWAYS pick the non-neutral option
+- When in doubt between two non-neutral options, pick the more expressive one
+- "controlled_X" / "compressed_X" / "masked_X" → map based on the X part (the underlying emotion, not the mask)
 - "cold_X" usually → tense or angry
 - "precise_X" / "clinical_X" / "procedural_X" → formal
-- "grief" / "hollow" / "desperate" → sad
-- "fury" / "rage" / "hostility" → angry
+- "grief" / "hollow" / "desperate" / "resigned" → sad
+- "fury" / "rage" / "hostility" / "bitter" → angry
+- "vulnerable" / "tender" / "intimate" / "affectionate" / "yearning" → warm
+- "anxious" / "guarded" / "wary" / "on_edge" / "apprehensive" → tense
+- "dry" / "sardonic" / "wry" / "ironic" → amused
+- Compound emotions like "angry but controlled" → map to the dominant emotion (angry), not the control (formal)
+- If the emotion describes a physical state without emotion (e.g., "still", "quiet"), consider the likely emotional context — stillness from fear is tense, stillness from calm is calm
 - Respond ONLY with a JSON object mapping each emotion to its expression. No other text.`,
       messages: [{
         role: "user",
@@ -100,14 +138,29 @@ Rules:
 
   // Validate and merge into cache
   let added = 0;
+  let neutralOverrides = 0;
   for (const [emotion, expression] of Object.entries(mappings)) {
     const lower = emotion.toLowerCase().trim();
     if ((VN_EXPRESSIONS as readonly string[]).includes(expression)) {
-      cache[lower] = expression as VNExpression;
+      // Override neutral for emotions that clearly aren't neutral
+      // The LLM sometimes defaults to neutral for ambiguous compound emotions
+      let finalExpression = expression as VNExpression;
+      if (finalExpression === "neutral" && lower !== "neutral" && lower !== "none" && lower !== "flat") {
+        // Try to infer a better mapping from the emotion text itself
+        const inferredFromText = inferNonNeutralExpression(lower);
+        if (inferredFromText) {
+          finalExpression = inferredFromText;
+          neutralOverrides++;
+        }
+      }
+      cache[lower] = finalExpression;
       added++;
     } else {
       console.warn(`[emotion-mapper] Invalid expression "${expression}" for "${emotion}" — skipping`);
     }
+  }
+  if (neutralOverrides > 0) {
+    console.log(`[emotion-mapper] Overrode ${neutralOverrides} neutral mappings with more expressive alternatives`);
   }
 
   await saveCache(cache);

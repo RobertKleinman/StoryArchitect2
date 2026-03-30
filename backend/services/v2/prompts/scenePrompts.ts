@@ -83,6 +83,12 @@ Players click through one line at a time. Write for that format.
 - Avoid parallel construction poetry: "The X. The Y. The Z." is a literary technique that makes narration sound like a novel, not a VN.
 - Stage directions are PRACTICAL: what the player sees. "[She slams the door]" not "[The door closes with a finality that mirrors their fractured bond]."
 
+EMOTION TAGS:
+- Every line has an "emotion" field. Use it to describe the character's ACTUAL emotional state, not "neutral."
+- "neutral" should ONLY be used for genuinely emotionless scene-setting narration (e.g., describing a room).
+- For DIALOGUE and INTERNAL lines, ALWAYS use a specific emotion: tense, warm, sad, angry, calm, amused, formal — or a compound like "controlled_anger", "masked_tenderness", "quiet_dread."
+- When a character is masking their emotion, name the underlying emotion, not the mask. A character who is calm on the surface but terrified underneath should be tagged "tense" or "controlled_fear", not "calm" or "neutral."
+
 PUNCTUATION:
 - Em-dashes (—) are a spice, not a staple. Use no more than 4-5 per scene. Use periods, commas, ellipses, or just stop the sentence. If you've used an em-dash in the last 3 lines, use something else.
 - Narration CANNOT observe emotions, warmth, or internal states. "His expression didn't change" is fine. "The warmth in his voice increased" is not — narration can only report what a camera would see/hear.

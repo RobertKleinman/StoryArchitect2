@@ -34,6 +34,8 @@ interface TensionState {
   what_the_reader_knows: string[];
   what_hasnt_broken_yet: string[];
   scene_count: number;
+  /** Phrases/motifs used across scenes — fed as negative constraints to prevent repetition */
+  used_phrases: string[];
 }
 
 export class SceneGenerationService {
@@ -78,6 +80,7 @@ export class SceneGenerationService {
       what_the_reader_knows: [],
       what_hasnt_broken_yet: [],
       scene_count: 0,
+      used_phrases: [],
     };
 
     // Process in batches
@@ -173,6 +176,17 @@ export class SceneGenerationService {
           traces.push(this.makeTrace(project.operationId, "tension_update", Date.now(), scene.scene_id));
         } catch (err: any) {
           console.warn(`[tension] Failed to update tension state after ${scene.scene_id}: ${err.message}`);
+        }
+
+        // ── Extract and accumulate distinctive phrases (deterministic, no LLM) ──
+        const newPhrases = this.extractDistinctivePhrases(scene);
+        if (newPhrases.length > 0) {
+          tensionState.used_phrases = [...(tensionState.used_phrases ?? []), ...newPhrases];
+          // Keep only the last 60 phrases to avoid bloating the context
+          if (tensionState.used_phrases.length > 60) {
+            tensionState.used_phrases = tensionState.used_phrases.slice(-60);
+          }
+          console.log(`[repetition] Extracted ${newPhrases.length} phrases from ${scene.scene_id} (${tensionState.used_phrases.length} total tracked)`);
         }
       }
 
@@ -545,6 +559,17 @@ export class SceneGenerationService {
       lines.push(`REGISTER HISTORY: ${state.register_history.join(" → ")}`);
     }
 
+    // Repetition avoidance — phrases already used in previous scenes
+    if (state.used_phrases && state.used_phrases.length > 0) {
+      lines.push("\nPHRASES ALREADY USED IN PREVIOUS SCENES (find different language for similar ideas):");
+      // Show the most recent 30 to avoid context bloat
+      const recent = state.used_phrases.slice(-30);
+      for (const phrase of recent) {
+        lines.push(`- "${phrase}"`);
+      }
+      lines.push("A deliberate callback to an earlier scene is fine if it's spaced 4+ scenes apart and used once. But do NOT reuse the same short phrases or motifs scene after scene.");
+    }
+
     return lines.join("\n");
   }
 
@@ -576,6 +601,53 @@ export class SceneGenerationService {
     else if (overExp >= 4) score -= 1;
 
     return Math.max(0, score);
+  }
+
+  /**
+   * Deterministically extract distinctive phrases from a scene's dialogue and internal lines.
+   * These get accumulated across scenes and fed as negative constraints to prevent repetition.
+   *
+   * Extracts: short punchy lines (<8 words) that are likely motifs/refrains,
+   * and distinctive multi-word phrases that appear in internal monologue.
+   */
+  private extractDistinctivePhrases(scene: GeneratedScene): string[] {
+    const lines = scene.vn_scene?.lines ?? [];
+    const phrases: string[] = [];
+    const seen = new Set<string>();
+
+    for (const line of lines) {
+      const speaker = (line.speaker ?? "").toUpperCase();
+      const text = (line.text ?? "").trim();
+      if (!text) continue;
+
+      // Extract short punchy internal/dialogue lines as potential motifs
+      // (e.g., "There it is.", "Stop.", "I think.")
+      if ((speaker === "INTERNAL" || !["NARRATION"].includes(speaker)) && text.split(/\s+/).length <= 8) {
+        const normalized = text.toLowerCase().replace(/[.!?,;:'"—\-]+$/g, "").trim();
+        if (normalized.length >= 4 && !seen.has(normalized)) {
+          seen.add(normalized);
+          phrases.push(text);
+        }
+      }
+
+      // Extract distinctive multi-word phrases from internal monologue
+      // Look for repeated structural patterns: "something in my X", "the X of Y"
+      if (speaker === "INTERNAL") {
+        // Capture phrases 3-6 words long that feel like motifs
+        const matches = text.match(/(?:there (?:it )?is|something in (?:my|his|her) \w+|the \w+ (?:of|in|at) \w+|I (?:don't|didn't|can't) know)/gi);
+        if (matches) {
+          for (const m of matches) {
+            const norm = m.toLowerCase().trim();
+            if (!seen.has(norm)) {
+              seen.add(norm);
+              phrases.push(m);
+            }
+          }
+        }
+      }
+    }
+
+    return phrases;
   }
 
   private makeTrace(operationId: any, role: string, startMs: number, sceneId: string): StepTrace {

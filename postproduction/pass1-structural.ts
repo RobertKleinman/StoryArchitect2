@@ -26,6 +26,7 @@ import { extractVNScene } from "./loader";
 
 const MAX_LINE_CHARS = 200;
 const MAX_CONSECUTIVE_NARRATION = 5;
+const MAX_CONSECUTIVE_INTERNAL = 3;
 const MIN_SCENE_LINES = 3;
 
 // ── Main ──
@@ -114,6 +115,7 @@ export function runStructuralScan(input: PipelineOutput): {
 
     // Per-line checks
     let consecutiveNarration = 0;
+    let consecutiveInternal = 0;
     let prevLineText = "";
 
     for (const line of identifiedScene.lines) {
@@ -156,6 +158,7 @@ export function runStructuralScan(input: PipelineOutput): {
       const specialSpeaker = normalizeSpecialSpeaker(line.speaker);
       if (specialSpeaker === "NARRATION" || specialSpeaker === "narration") {
         consecutiveNarration++;
+        consecutiveInternal = 0;
         if (consecutiveNarration > MAX_CONSECUTIVE_NARRATION) {
           issues.push({
             category: "vn_compatibility",
@@ -166,8 +169,22 @@ export function runStructuralScan(input: PipelineOutput): {
             auto_fixable: true,
           });
         }
+      } else if (specialSpeaker === "INTERNAL" || specialSpeaker === "internal") {
+        consecutiveInternal++;
+        consecutiveNarration = 0;
+        if (consecutiveInternal > MAX_CONSECUTIVE_INTERNAL) {
+          issues.push({
+            category: "vn_compatibility",
+            severity: "warning",
+            scene_id: sid,
+            line_id: lid,
+            message: `${consecutiveInternal} consecutive INTERNAL lines — internal monologue overload, break with action or dialogue`,
+            auto_fixable: true,
+          });
+        }
       } else {
         consecutiveNarration = 0;
+        consecutiveInternal = 0;
       }
 
       // Duplicate consecutive lines
@@ -202,6 +219,52 @@ export function runStructuralScan(input: PipelineOutput): {
           message: `Speaker "${speaker}" speaks but is not in characters_present`,
           auto_fixable: false,
         });
+      }
+    }
+
+    // Check for speaker-to-line mismatch: dialogue dominated by one speaker
+    // when multiple characters are present (potential attribution bug like Dris/Idris)
+    if (vnScene.characters_present.length >= 2) {
+      const speakerLineCounts = new Map<string, number>();
+      for (const line of vnScene.lines) {
+        if (normalizeSpecialSpeaker(line.speaker)) continue;
+        const key = line.speaker.toUpperCase();
+        speakerLineCounts.set(key, (speakerLineCounts.get(key) ?? 0) + 1);
+      }
+      const presentButSilent = vnScene.characters_present.filter(cp => {
+        const upper = cp.toUpperCase();
+        // Check if this character spoke at all (by full name or partial match)
+        for (const [speaker] of speakerLineCounts) {
+          if (speaker.includes(upper) || upper.includes(speaker.split(/[\s—\-]+/)[0])) return false;
+        }
+        return true;
+      });
+      for (const silent of presentButSilent) {
+        issues.push({
+          category: "reference_mismatch",
+          severity: "warning",
+          scene_id: sid,
+          message: `"${silent}" is in characters_present but has zero dialogue lines — possible speaker attribution error`,
+          auto_fixable: false,
+        });
+      }
+
+      // Check for name-similarity collisions among characters_present
+      const presentNames = vnScene.characters_present.map(n => n.toLowerCase());
+      for (let i = 0; i < presentNames.length; i++) {
+        for (let j = i + 1; j < presentNames.length; j++) {
+          const a = presentNames[i], b = presentNames[j];
+          // Check if one name is a substring of another (Dris/Idris problem)
+          if (a.includes(b) || b.includes(a)) {
+            issues.push({
+              category: "reference_mismatch",
+              severity: "warning",
+              scene_id: sid,
+              message: `Name collision risk: "${vnScene.characters_present[i]}" and "${vnScene.characters_present[j]}" — one name contains the other, may cause LLM attribution errors`,
+              auto_fixable: false,
+            });
+          }
+        }
       }
     }
   }
