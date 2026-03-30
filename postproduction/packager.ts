@@ -193,7 +193,8 @@ export function runPackager(
             }
           }
           if (!found) {
-            errors.push(`Scene ${scene.scene_id}, line ${line._lid}: unresolved speaker "${speaker}"`);
+            // Treat as incidental character — keep speaker name, warn instead of fail
+            warnings.push(`Scene ${scene.scene_id}, line ${line._lid}: unresolved speaker "${speaker}" — not in storyBible, kept as-is`);
           }
         }
       }

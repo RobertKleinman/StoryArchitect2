@@ -6,6 +6,7 @@ import { WorldWorkshop } from "./WorldWorkshop";
 import { PlotWorkshop } from "./PlotWorkshop";
 import { SceneWorkshop } from "./SceneWorkshop";
 import { ModelSettings } from "./ModelSettings";
+import { PipelineWorkshop } from "./PipelineWorkshop";
 
 type Module = "hook" | "character" | "character_image" | "world" | "plot" | "scene";
 
@@ -17,6 +18,9 @@ export function emitModuleStatus(module: Module, status: "locked" | "active" | "
 }
 
 export function App() {
+  const [mode, setMode] = useState<"v1" | "v2">(
+    () => (localStorage.getItem("app-mode") as "v1" | "v2") || "v2",
+  );
   const [activeModule, setActiveModule] = useState<Module>("hook");
   const [showSettings, setShowSettings] = useState(false);
   const [moduleStatus, setModuleStatus] = useState<Record<Module, "locked" | "active" | "idle">>({
@@ -41,8 +45,31 @@ export function App() {
     return null;
   };
 
+  function switchMode(m: "v1" | "v2") {
+    setMode(m);
+    localStorage.setItem("app-mode", m);
+  }
+
   return (
     <div className="app-shell">
+      <div className="mode-toggle">
+        <button
+          className={`mode-btn${mode === "v2" ? " mode-btn-active" : ""}`}
+          onClick={() => switchMode("v2")}
+        >
+          Pipeline
+        </button>
+        <button
+          className={`mode-btn${mode === "v1" ? " mode-btn-active" : ""}`}
+          onClick={() => switchMode("v1")}
+        >
+          Classic Workshops
+        </button>
+      </div>
+
+      {mode === "v2" && <PipelineWorkshop />}
+
+      {mode === "v1" && <>
       <nav className="module-nav">
         <button
           type="button"
@@ -105,6 +132,7 @@ export function App() {
       {activeModule === "scene" && <SceneWorkshop />}
 
       {showSettings && <ModelSettings onClose={() => setShowSettings(false)} />}
+      </>}
     </div>
   );
 }
