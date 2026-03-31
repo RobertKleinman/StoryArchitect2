@@ -72,21 +72,53 @@ async function main() {
   report.push("## 2. Character Archetypes");
   report.push("");
 
-  const allArchetypes = fingerprints.flatMap(fp => fp.character_archetypes);
-  const roleWords = allArchetypes.flatMap(a => {
-    const rolePart = a.split(":")[0]?.trim().toLowerCase() ?? "";
-    return rolePart.split(/[\s/]+/).filter(w => w.length > 2);
-  });
-  const roleWordCounts = countOccurrences(roleWords);
-  const commonRoles = Object.entries(roleWordCounts)
+  const stopWords = new Set(["whose", "with", "that", "this", "from", "been", "have", "into",
+    "their", "them", "they", "than", "what", "when", "where", "which", "while", "after", "before",
+    "about", "between", "through", "under", "over", "year", "years", "late", "early"]);
+
+  // Strip generic role labels, analyze the actual character descriptions
+  const genericRoles = new Set(["protagonist", "antagonist", "supporting", "catalyst", "ally", "foil",
+    "love", "interest", "comic", "relief", "authority", "mentor", "threshold", "figure", "adjacent",
+    "institutional", "instrument", "unreliable", "confidant", "facilitator", "counterweight",
+    "complication", "echo", "contact", "the"]);
+
+  const descriptionWords = fingerprints.flatMap(fp =>
+    fp.character_archetypes.flatMap(a => {
+      // Take the description part after the colon
+      const desc = a.split(":").slice(1).join(":").trim().toLowerCase();
+      return desc.split(/[\s,—\-]+/)
+        .filter(w => w.length > 3 && !genericRoles.has(w) && !stopWords.has(w));
+    })
+  );
+  const descWordCounts = countOccurrences(descriptionWords);
+  const commonDescWords = Object.entries(descWordCounts)
     .filter(([, c]) => c >= 2)
     .sort((a, b) => b[1] - a[1]);
 
-  if (commonRoles.length > 0) {
-    report.push("**Most common role words:**");
-    for (const [word, count] of commonRoles.slice(0, 15)) {
+  if (commonDescWords.length > 0) {
+    report.push("**Most common character description words (LLM character templates):**");
+    for (const [word, count] of commonDescWords.slice(0, 20)) {
       report.push(`- "${word}" — ${count} occurrences`);
     }
+  }
+
+  // Look for "X hides/masks Y" patterns — classic LLM character formula
+  report.push("");
+  report.push("**Character formula patterns (\"X hides/masks Y\"):**");
+  const formulaPatterns: string[] = [];
+  for (const fp of fingerprints) {
+    for (const arch of fp.character_archetypes) {
+      const desc = arch.split(":").slice(1).join(":").trim();
+      const maskMatch = desc.match(/(hides|masks|conceals|beneath|behind|under).{5,50}/i);
+      if (maskMatch) {
+        formulaPatterns.push(`"...${maskMatch[0].slice(0, 60)}" (${fp.id.slice(0, 15)})`);
+      }
+    }
+  }
+  if (formulaPatterns.length > 0) {
+    for (const p of formulaPatterns) report.push(`- ${p}`);
+  } else {
+    report.push("None detected.");
   }
 
   report.push("");
