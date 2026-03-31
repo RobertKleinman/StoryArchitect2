@@ -44,7 +44,15 @@ export class SceneGenerationService {
   async generate(
     project: Step6_SceneGenerating,
     onCheckpoint?: (project: Step6_SceneGenerating) => Promise<void>,
-    options?: { batchSize?: number },
+    options?: {
+      batchSize?: number;
+      /** Override the scene writer model (e.g., "gemini-2.5-flash" for fast mode, "grok-4" for erotica) */
+      writerModel?: string;
+      /** Skip the scene judge entirely — accept writer output as-is */
+      skipJudge?: boolean;
+      /** Skip tension state tracking between scenes (enables parallel generation) */
+      skipTension?: boolean;
+    },
   ): Promise<{ scenes: GeneratedScene[]; traces: StepTrace[] }> {
     const batchSize = options?.batchSize ?? DEFAULT_BATCH_SIZE;
     const projectId = project.projectId as string;
@@ -124,20 +132,20 @@ export class SceneGenerationService {
         // Generate and judge a single scene candidate
         const candidate = await this.generateAndJudgeScene(
           plan, writerPrompt, cacheablePrefix, mustHonor,
-          project, abortSignal,
+          project, abortSignal, options?.writerModel, options?.skipJudge,
         );
 
         // ── Candidate selection: if vitality is marginal, try a second roll ──
         let finalScene = candidate.scene;
         const allTraces = [...candidate.traces];
 
-        if (candidate.scene.judge_result?.vitality && candidate.scene.judge_result.pass) {
+        if (!options?.skipJudge && candidate.scene.judge_result?.vitality && candidate.scene.judge_result.pass) {
           const vitalityScore = this.countVitalityFlags(candidate.scene.judge_result.vitality);
           if (vitalityScore < VITALITY_REROLL_THRESHOLD) {
             console.log(`[scene-gen] ${plan.scene_id}: vitality ${vitalityScore}/5, generating second candidate`);
             const candidate2 = await this.generateAndJudgeScene(
               plan, writerPrompt, cacheablePrefix, mustHonor,
-              project, abortSignal,
+              project, abortSignal, options?.writerModel, options?.skipJudge,
             );
             allTraces.push(...candidate2.traces);
 
@@ -169,13 +177,15 @@ export class SceneGenerationService {
         emitSceneComplete(projectId, scene.scene_id, allScenes.length, totalScenes);
 
         // ── Update cumulative tension state after each accepted scene ──
-        try {
-          tensionState = await this.updateTensionState(
-            tensionState, scene, project.storyBible, abortSignal,
-          );
-          traces.push(this.makeTrace(project.operationId, "tension_update", Date.now(), scene.scene_id));
-        } catch (err: any) {
-          console.warn(`[tension] Failed to update tension state after ${scene.scene_id}: ${err.message}`);
+        if (!options?.skipTension) {
+          try {
+            tensionState = await this.updateTensionState(
+              tensionState, scene, project.storyBible, abortSignal,
+            );
+            traces.push(this.makeTrace(project.operationId, "tension_update", Date.now(), scene.scene_id));
+          } catch (err: any) {
+            console.warn(`[tension] Failed to update tension state after ${scene.scene_id}: ${err.message}`);
+          }
         }
 
         // ── Extract and accumulate distinctive phrases (deterministic, no LLM) ──
@@ -208,6 +218,8 @@ export class SceneGenerationService {
     mustHonor: string,
     project: Step6_SceneGenerating,
     abortSignal?: AbortSignal,
+    writerModel?: string,
+    skipJudge?: boolean,
   ): Promise<{ scene: GeneratedScene; traces: StepTrace[] }> {
     const traces: StepTrace[] = [];
 
@@ -222,6 +234,7 @@ export class SceneGenerationService {
         truncationMode: "critical",
         abortSignal,
         cacheableUserPrefix: cacheablePrefix,
+        ...(writerModel ? { modelOverride: writerModel } : {}),
       });
       traces.push(this.makeTrace(project.operationId, "scene_writer", startMs, plan.scene_id));
 
@@ -249,13 +262,13 @@ export class SceneGenerationService {
         console.warn(`[scene-gen] ${plan.scene_id}: in-text entity warnings (non-blocking): ${softIssues.join("; ")}`);
       }
 
-      // ── Scene judge (compliance + vitality) ──
+      // ── Scene judge (compliance + vitality) — skipped in fast mode ──
       const judgeStartMs = Date.now();
       let judgeResult: { pass: boolean; issues: string[]; repaired: boolean; vitality?: any } = {
         pass: true, issues: nameIssues, repaired: false,
       };
 
-      try {
+      if (!skipJudge) try {
         const judgePrompt = buildSceneJudgePrompt({
           scene: readable.screenplay_text,
           scenePlan: JSON.stringify(plan, null, 2),

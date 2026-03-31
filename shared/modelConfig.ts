@@ -260,7 +260,7 @@ export const DEFAULT_V2_MODEL_CONFIG: V2ModelConfig = {
   bible_judge: STRONG,
   scene_planner: STRONG,
   scene_writer: STRONG,
-  scene_judge: STRONG,
+  scene_judge: FAST,               // Haiku — structured evaluation against rubric, doesn't need Sonnet (was: STRONG)
   v2_cultural_researcher: RESEARCH_PRIMARY_CULTURAL,
   v2_summarizer: FAST,
 };
