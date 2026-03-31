@@ -297,7 +297,12 @@ async function main() {
 
 async function saveOutput(name: string, data: any) {
   if (!data) return;
-  const dir = "./data/postproduction";
+  // Route to organized subdirectories
+  const subdir = name.startsWith("vn-export") ? "exports"
+               : name.startsWith("editor-snapshot") ? "snapshots"
+               : name.startsWith("editor-report") || name.startsWith("vn-manifest") ? "reports"
+               : "";
+  const dir = subdir ? `./data/postproduction/${subdir}` : "./data/postproduction";
   await mkdir(dir, { recursive: true });
   const path = `${dir}/${name}.json`;
   await writeFile(path, JSON.stringify(data, null, 2), "utf-8");
