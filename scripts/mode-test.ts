@@ -19,7 +19,7 @@ dotenv.config();
 
 import { readFile, writeFile, mkdir } from "fs/promises";
 import { LLMClient } from "../backend/services/llmClient";
-import { EROTICA_V2_MODEL_CONFIG, FAST_V2_MODEL_CONFIG } from "../shared/modelConfig";
+import { EROTICA_V2_MODEL_CONFIG, EROTICA_FAST_V2_MODEL_CONFIG, FAST_V2_MODEL_CONFIG } from "../shared/modelConfig";
 import { SceneGenerationService } from "../backend/services/v2/sceneGenerationService";
 import { compressForScene, previousSceneDigest, buildCanonicalNames } from "../backend/services/v2/contextCompressor";
 import { buildMustHonorBlock } from "../backend/services/mustHonorBlock";
@@ -47,6 +47,13 @@ const MODES = {
     skipTension: false,
     parallel: false,
   },
+  "erotica-fast": {
+    label: "Erotica Fast (Grok 4.1 NR - cheap uncensored)",
+    writerModel: "grok-4-1-fast-non-reasoning",
+    skipJudge: true,
+    skipTension: true,
+    parallel: true,
+  },
   haiku: {
     label: "Haiku (cheapest possible)",
     writerModel: "claude-haiku-4-5-20251001",
@@ -72,6 +79,7 @@ async function main() {
   // Detect mode
   let modeName: ModeName = "default";
   if (args.includes("--fast")) modeName = "fast";
+  else if (args.includes("--erotica-fast")) modeName = "erotica-fast";
   else if (args.includes("--erotica")) modeName = "erotica";
   else if (args.includes("--haiku")) modeName = "haiku";
   const mode = MODES[modeName];
@@ -82,6 +90,7 @@ async function main() {
   const project = JSON.parse(await readFile(projectPath, "utf-8"));
   // Pass the full model config for erotica/fast modes so ALL roles use the right models
   const v2Config = modeName === "erotica" ? EROTICA_V2_MODEL_CONFIG
+                 : modeName === "erotica-fast" ? EROTICA_FAST_V2_MODEL_CONFIG
                  : modeName === "fast" ? FAST_V2_MODEL_CONFIG
                  : modeName === "haiku" ? FAST_V2_MODEL_CONFIG // haiku uses same parallel structure
                  : undefined;

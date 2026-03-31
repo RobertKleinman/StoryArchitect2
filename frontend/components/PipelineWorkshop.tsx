@@ -40,7 +40,7 @@ export function PipelineWorkshop() {
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<BatchProgress | null>(null);
   const [completedScenes, setCompletedScenes] = useState<string[]>([]);
-  const [selectedMode, setSelectedMode] = useState<"default" | "fast" | "erotica" | "haiku">("default");
+  const [selectedMode, setSelectedMode] = useState<"default" | "fast" | "erotica" | "erotica-fast" | "haiku">("default");
 
   const { lastEvent, connected } = useSSE(projectId);
 
@@ -300,7 +300,8 @@ export function PipelineWorkshop() {
             >
               <option value="default">Default (Sonnet + Haiku)</option>
               <option value="fast">Fast (Gemini Flash - cheap)</option>
-              <option value="erotica">Erotica (Grok - uncensored)</option>
+              <option value="erotica">Erotica (Grok 4 - uncensored)</option>
+              <option value="erotica-fast">Erotica Fast (Grok 4.1 NR - cheap uncensored)</option>
               <option value="haiku">Haiku (cheapest)</option>
             </select>
           </div>
@@ -317,7 +318,7 @@ export function PipelineWorkshop() {
     <div className="pipeline-shell">
       {/* Mode badge */}
       {project.mode && project.mode !== "default" && (
-        <div style={{ padding: "0.3rem 0.8rem", background: project.mode === "erotica" ? "#4a1942" : project.mode === "fast" ? "#1a3a1a" : "#1a2a3a", borderRadius: "4px", fontSize: "0.8rem", textAlign: "center", marginBottom: "0.5rem", color: "#ccc" }}>
+        <div style={{ padding: "0.3rem 0.8rem", background: project.mode === "erotica" ? "#4a1942" : project.mode === "erotica-fast" ? "#3a1942" : project.mode === "fast" ? "#1a3a1a" : "#1a2a3a", borderRadius: "4px", fontSize: "0.8rem", textAlign: "center", marginBottom: "0.5rem", color: "#ccc" }}>
           Mode: <strong>{project.mode}</strong>
         </div>
       )}
