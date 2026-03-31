@@ -10,6 +10,7 @@ import type { PremiseArtifact, StoryBibleArtifact, ScenePlanArtifact, GeneratedS
 export interface CreateProjectRequest {
   seedInput?: string;
   culturalContext?: string;
+  mode?: "default" | "fast" | "erotica" | "haiku";
 }
 
 export interface CreateProjectResponse {

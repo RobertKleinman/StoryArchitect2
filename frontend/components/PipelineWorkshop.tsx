@@ -40,6 +40,7 @@ export function PipelineWorkshop() {
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<BatchProgress | null>(null);
   const [completedScenes, setCompletedScenes] = useState<string[]>([]);
+  const [selectedMode, setSelectedMode] = useState<"default" | "fast" | "erotica" | "haiku">("default");
 
   const { lastEvent, connected } = useSSE(projectId);
 
@@ -139,7 +140,7 @@ export function PipelineWorkshop() {
     setLoading(true);
     setError(null);
     try {
-      const { projectId: id } = await v2Api.createProject({});
+      const { projectId: id } = await v2Api.createProject({ mode: selectedMode });
       localStorage.setItem(STORAGE_KEY, id);
       setProjectId(id);
       const { project: p } = await v2Api.getProject(id);
@@ -290,6 +291,19 @@ export function PipelineWorkshop() {
         <div className="pipeline-welcome">
           <h1>Pipeline v2</h1>
           <p>Create a new project to start generating your visual novel.</p>
+          <div className="mode-selector" style={{ margin: "1rem 0", display: "flex", gap: "0.5rem", alignItems: "center" }}>
+            <label style={{ fontWeight: 500 }}>Mode:</label>
+            <select
+              value={selectedMode}
+              onChange={e => setSelectedMode(e.target.value as any)}
+              style={{ padding: "0.4rem 0.8rem", borderRadius: "4px", border: "1px solid #444", background: "#1a1a2e", color: "#eee" }}
+            >
+              <option value="default">Default (Sonnet + Haiku)</option>
+              <option value="fast">Fast (Gemini Flash - cheap)</option>
+              <option value="erotica">Erotica (Grok - uncensored)</option>
+              <option value="haiku">Haiku (cheapest)</option>
+            </select>
+          </div>
           <button className="primary-btn" onClick={createProject} disabled={loading}>
             {loading ? "Creating..." : "New Project"}
           </button>
@@ -301,6 +315,12 @@ export function PipelineWorkshop() {
 
   return (
     <div className="pipeline-shell">
+      {/* Mode badge */}
+      {project.mode && project.mode !== "default" && (
+        <div style={{ padding: "0.3rem 0.8rem", background: project.mode === "erotica" ? "#4a1942" : project.mode === "fast" ? "#1a3a1a" : "#1a2a3a", borderRadius: "4px", fontSize: "0.8rem", textAlign: "center", marginBottom: "0.5rem", color: "#ccc" }}>
+          Mode: <strong>{project.mode}</strong>
+        </div>
+      )}
       {/* Step indicator sidebar */}
       <div className="step-indicator">
         {STEPS.map((s, i) => {

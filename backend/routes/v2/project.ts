@@ -11,6 +11,7 @@ import { SceneGenerationService } from "../../services/v2/sceneGenerationService
 // PolishService available but not used in default pipeline — quality baked into scene writer prompt
 import { ProjectStoreV2 } from "../../storage/v2/projectStoreV2";
 import { LLMClient } from "../../services/llmClient";
+import { DEFAULT_V2_MODEL_CONFIG, EROTICA_V2_MODEL_CONFIG, FAST_V2_MODEL_CONFIG } from "../../../shared/modelConfig";
 import { emitStepComplete, emitError, cleanupEmitter } from "../../services/v2/progressEmitter";
 import { acquireInflight, releaseInflight, buildInflightKey } from "../../services/inflightGuard";
 import { extractFingerprint, saveFingerprint } from "../../../shared/fingerprint";
@@ -34,10 +35,21 @@ const router = Router();
 const store = new ProjectStoreV2();
 const orchestrator = new Orchestrator(store);
 
-// LLMClient is a singleton — reuse the same instance
-let llm: LLMClient;
-function getLLM(): LLMClient {
-  if (!llm) {
+// LLM clients cached by mode — one instance per mode, created on first use
+const llmCache = new Map<string, LLMClient>();
+function getLLMForMode(mode?: string): LLMClient {
+  const key = mode ?? "default";
+  if (llmCache.has(key)) return llmCache.get(key)!;
+
+  let client: LLMClient;
+  if (key === "erotica") {
+    client = new LLMClient(undefined, EROTICA_V2_MODEL_CONFIG);
+    console.log(`[v2] LLM client created: erotica mode (Grok-4)`);
+  } else if (key === "fast" || key === "haiku") {
+    client = new LLMClient(undefined, FAST_V2_MODEL_CONFIG);
+    console.log(`[v2] LLM client created: fast mode (Gemini Flash)`);
+  } else {
+    // Check legacy env var override
     const override = process.env.V2_MODEL_OVERRIDE;
     if (override) {
       console.log(`[v2] Model override active: creative roles → ${override}`);
@@ -50,15 +62,22 @@ function getLLM(): LLMClient {
         scene_planner: override,
         scene_writer: override,
         scene_judge: override,
-        v2_cultural_researcher: "gemini-3-flash-preview",  // keep fast
-        v2_summarizer: "claude-haiku-4-5-20251001",         // keep cheap
+        v2_cultural_researcher: "gemini-3-flash-preview",
+        v2_summarizer: "claude-haiku-4-5-20251001",
       };
-      llm = new LLMClient(undefined, v2Config);
+      client = new LLMClient(undefined, v2Config);
     } else {
-      llm = new LLMClient();
+      client = new LLMClient();
     }
   }
-  return llm;
+
+  llmCache.set(key, client);
+  return client;
+}
+
+// Backward-compatible wrapper — used by routes that don't have a project yet
+function getLLM(): LLMClient {
+  return getLLMForMode(process.env.V2_MODE ?? "default");
 }
 
 // ── Project CRUD ────────────────────────────────────────────────────
@@ -66,7 +85,7 @@ function getLLM(): LLMClient {
 router.post("/", async (req: Request, res: Response) => {
   try {
     const body = req.body as CreateProjectRequest;
-    const project = await orchestrator.createProject(body.seedInput, body.culturalContext);
+    const project = await orchestrator.createProject(body.seedInput, body.culturalContext, body.mode);
     res.json({ projectId: project.projectId });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -148,7 +167,7 @@ router.post("/:projectId/intake", async (req: Request, res: Response) => {
     if (body.culturalContext) project.culturalContext = body.culturalContext;
     if (body.seedInput && !project.seedInput) project.seedInput = body.seedInput;
 
-    const intake = new IntakeService(getLLM());
+    const intake = new IntakeService(getLLMForMode(project.mode));
     const { response, updatedProject } = await intake.runTurn(
       project, userInput, body.assumptionResponses,
     );
@@ -186,7 +205,7 @@ router.post("/:projectId/generate-premise", async (req: Request, res: Response) 
     // Generate in background
     const controller = registerAbort(req.params.projectId);
     try {
-      const premise = new PremiseService(getLLM());
+      const premise = new PremiseService(getLLMForMode(generating.mode));
       const result = await premise.generate(generating);
 
       generating.traces.push(...result.traces);
@@ -264,7 +283,7 @@ router.post("/:projectId/review-premise", async (req: Request, res: Response) =>
         return res.json({ approved: true, premise: project.premise, reviewRound: project.reviewRound });
       }
 
-      const premise = new PremiseService(getLLM());
+      const premise = new PremiseService(getLLMForMode(project.mode));
       const result = await premise.revise(project, body.changes ?? "", body.inlineEdits);
 
       project.premise = result.premise;
@@ -311,7 +330,7 @@ router.post("/:projectId/generate-bible", async (req: Request, res: Response) =>
 
     const controller = registerAbort(req.params.projectId);
     try {
-      const bible = new BibleService(getLLM());
+      const bible = new BibleService(getLLMForMode(generating.mode));
       const result = await bible.generate(
         generating,
         undefined,
@@ -450,7 +469,7 @@ router.post("/:projectId/generate-scenes", async (req: Request, res: Response) =
 
     const controller = registerAbort(req.params.projectId);
     try {
-      const sceneGen = new SceneGenerationService(getLLM());
+      const sceneGen = new SceneGenerationService(getLLMForMode(generating.mode));
       const result = await sceneGen.generate(
         generating,
         async (updated) => { await store.save(updated); },

@@ -57,7 +57,7 @@ export class Orchestrator {
 
   // ── Project lifecycle ───────────────────────────────────────────
 
-  async createProject(seedInput?: string, culturalContext?: string): Promise<Step1_IdeaGathering> {
+  async createProject(seedInput?: string, culturalContext?: string, mode?: string): Promise<Step1_IdeaGathering> {
     const projectId = createProjectId(`v2_${randomUUID()}`);
     const now = new Date().toISOString();
 
@@ -73,6 +73,7 @@ export class Orchestrator {
       seedInput: seedInput ?? null,
       conversationTurns: [],
       culturalContext,
+      mode: (mode as any) ?? "default",
     };
 
     await this.store.save(project);

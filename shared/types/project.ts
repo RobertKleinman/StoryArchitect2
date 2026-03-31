@@ -116,6 +116,8 @@ export interface SceneCheckpoint {
 
 // ── The project state machine (discriminated union on `step`) ───────
 
+export type GenerationMode = "default" | "fast" | "erotica" | "haiku";
+
 interface ProjectBase {
   projectId: ProjectId;
   createdAt: string;
@@ -124,6 +126,8 @@ interface ProjectBase {
   psychologyLedger: UserPsychologyLedger;
   constraintLedger: ConstraintLedgerEntry[];
   culturalInsights: CreativeInsight[];
+  /** Generation mode — controls which models are used. Defaults to "default" if absent. */
+  mode?: GenerationMode;
 }
 
 // Step 1: User tells us about their story
