@@ -10,6 +10,7 @@ import type { Step4_BibleGenerating, StepTrace, BibleSubStep } from "../../../sh
 import type { StoryBibleArtifact, ScenePlanArtifact, CharacterProfile, CharacterRelationship } from "../../../shared/types/artifacts";
 import { LLMClient } from "../llmClient";
 import { buildMustHonorBlock } from "../mustHonorBlock";
+import { loadFingerprints, buildFreshnessBlock } from "../../../shared/fingerprint";
 import {
   WORLD_WRITER_SYSTEM, CHARACTER_WRITER_SYSTEM, PLOT_WRITER_SYSTEM,
   BIBLE_JUDGE_SYSTEM, SCENE_PLANNER_SYSTEM,
@@ -37,6 +38,11 @@ export class BibleService {
     const mustHonor = buildMustHonorBlock(project.constraintLedger);
     const premiseStr = this.formatPremise(project.premise);
 
+    // Load story fingerprints for freshness injection
+    const fingerprints = await loadFingerprints();
+    const freshnessBlock = buildFreshnessBlock(fingerprints);
+    if (freshnessBlock) console.log(`[bible] Loaded ${fingerprints.length} story fingerprints for freshness constraints`);
+
     // Restore persisted intermediate artifacts from checkpoint (for resume)
     let worldData: any = project.checkpoint.worldData ?? null;
     let charData: any = project.checkpoint.charData ?? null;
@@ -55,7 +61,7 @@ export class BibleService {
       const startMs = Date.now();
       // World is structural (locations, rules, factions) — faster model is fine
       const raw = await this.llm.call("bible_writer", WORLD_WRITER_SYSTEM,
-        buildWorldPrompt({ premise: premiseStr, mustHonorBlock: mustHonor, culturalBrief }),
+        buildWorldPrompt({ premise: premiseStr, mustHonorBlock: mustHonor, culturalBrief, freshnessBlock }),
         { temperature: 0.8, maxTokens: 4000, jsonSchema: WORLD_WRITER_SCHEMA, abortSignal,
           modelOverride: "gemini-3-flash-preview" },
       );
@@ -78,7 +84,7 @@ export class BibleService {
       const worldStr = worldData ? JSON.stringify(worldData, null, 2) : "(world not available)";
       const startMs = Date.now();
       const raw = await this.llm.call("bible_writer", CHARACTER_WRITER_SYSTEM,
-        buildCharacterPrompt({ premise: premiseStr, worldSection: worldStr, mustHonorBlock: mustHonor }),
+        buildCharacterPrompt({ premise: premiseStr, worldSection: worldStr, mustHonorBlock: mustHonor, freshnessBlock }),
         { temperature: 0.8, maxTokens: 5000, jsonSchema: CHARACTER_WRITER_SCHEMA, abortSignal },
       );
       traces.push(this.makeTrace(project.operationId, "bible_writer", startMs, "characters"));

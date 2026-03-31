@@ -137,12 +137,14 @@ export function buildWorldPrompt(args: {
   premise: string;
   mustHonorBlock: string;
   culturalBrief?: string;
+  freshnessBlock?: string;
 }): string {
   const parts = [
     `PREMISE:\n${args.premise}`,
   ];
   if (args.culturalBrief) parts.push(`\nCULTURAL RESEARCH:\n${args.culturalBrief}`);
   if (args.mustHonorBlock) parts.push(`\n${args.mustHonorBlock}`);
+  if (args.freshnessBlock) parts.push(`\n${args.freshnessBlock}`);
   return parts.join("\n");
 }
 
@@ -150,11 +152,13 @@ export function buildCharacterPrompt(args: {
   premise: string;
   worldSection: string;
   mustHonorBlock: string;
+  freshnessBlock?: string;
 }): string {
   return [
     `PREMISE:\n${args.premise}`,
     `\nWORLD:\n${args.worldSection}`,
     args.mustHonorBlock ? `\n${args.mustHonorBlock}` : "",
+    args.freshnessBlock ? `\n${args.freshnessBlock}` : "",
   ].filter(Boolean).join("\n");
 }
 

@@ -13,6 +13,14 @@ import { ProjectStoreV2 } from "../../storage/v2/projectStoreV2";
 import { LLMClient } from "../../services/llmClient";
 import { emitStepComplete, emitError, cleanupEmitter } from "../../services/v2/progressEmitter";
 import { acquireInflight, releaseInflight, buildInflightKey } from "../../services/inflightGuard";
+import { extractFingerprint, saveFingerprint } from "../../../shared/fingerprint";
+
+async function extractAndSaveFingerprint(project: any): Promise<void> {
+  if (!project.storyBible?.characters || !project.scenePlan?.scenes) return; // incomplete project
+  const fp = extractFingerprint(project);
+  await saveFingerprint(fp);
+  console.log(`[fingerprint] Saved fingerprint for ${fp.id}: ${fp.character_names.length} chars, ${fp.scene_count} scenes`);
+}
 import type { ProjectId } from "../../../shared/types/project";
 import { createProjectId } from "../../../shared/types/project";
 import type {
@@ -501,6 +509,12 @@ router.get("/:projectId/export", async (req: Request, res: Response) => {
     const projectId = createProjectId(req.params.projectId);
     const project = await orchestrator.getProject(projectId);
     if (!project) return res.status(404).json({ error: "Project not found" });
+
+    // Auto-fingerprint on export (fire-and-forget, don't block response)
+    extractAndSaveFingerprint(project).catch(err =>
+      console.warn(`[fingerprint] Failed to save: ${err.message}`)
+    );
+
     res.json(project);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
