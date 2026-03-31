@@ -60,6 +60,12 @@ export interface CharacterProfile {
     stress_style: string;           // how they behave under pressure
     break_point: string;            // what pushes them past their limit
     voice_pattern: string;          // distinctive speech/thought patterns
+    speech_card?: {                  // how this character speaks (optional — may not exist for older projects)
+      typical_length: string;       // short/medium/long default sentence length
+      under_pressure: string;       // how speech changes when stressed
+      never_articulates: string;    // emotional wall — what they can't/won't say directly
+      deflection_style: string;     // how they avoid answering
+    };
   };
 
   threshold_statement: string;       // "X will do anything to Y, but never Z"

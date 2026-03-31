@@ -49,21 +49,46 @@ The character's path through the scene must include at least one wrong turn — 
 FRICTION RULES:
 - Conversations must have ASYMMETRY. One person dominates, or misreads, or gets cornered. No perfectly matched intellectual exchanges where both parties meet on equal ground.
 - Not every emotional beat should land cleanly. Awkwardness, misdirection, and delay are more human than precision. A character can feel something they don't understand yet. A reaction can be disproportionate or displaced.
-- No dialogue line should sound like it belongs in an analysis of the scene. If a character says something that sounds like a thesis statement about the scene's meaning, cut it or make it land wrong.
 - No neat thematic closure. The scene arrives at its destination but the characters should not feel like they've arrived. Loose ends, unfinished feelings, things left unsaid — these are features, not bugs.
 - At least one moment should break the scene's dominant emotional register. If the scene is tense, something should be unexpectedly mundane or darkly funny. If the scene is quiet, something should spike. Uniform emotional intensity = dead scene.
 
-PATTERN TO AVOID:
-✗ character → expresses idea → reinforces theme → exits (philosophical demonstration)
-✗ character → asks perfect question → gets answer → asks next perfect question → gets answer (flawless investigation)
-✗ character explains their own motivation articulately and completely (too self-aware)
-✓ character → tries something → it misfires or lands sideways → reveals something unintended → shifts the power balance (lived moment)
-✓ character tries to explain something and the explanation is incomplete, contradictory, or reveals more than they intended
+VOICE CHANNELS — WHAT EACH SPEAKER TYPE IS ALLOWED TO KNOW:
+This is an access-control system. The reader understands more than the narrator, who understands more than the character's thoughts, which understand more than what the character can say out loud.
+
+DIALOGUE (character speech):
+- Characters talk about CONCRETE things: boots, numbers, time, orders, what happened, what they saw.
+- Characters may NOT articulate the scene's theme, their own psychological mechanism, the power dynamic they're in, or the pattern of a conversation while inside it.
+- Characters explain themselves BADLY. Their words are incomplete, contradictory, or reveal more than intended. Nobody delivers a clean thesis about why they did what they did.
+- A character may articulate something deep ONLY at a genuine climax moment AND it must visibly cost them something to say it. This happens at most once per story, not once per scene.
+- Lines that explicitly negotiate desire, consent, or power exchange are PROTECTED — these need clarity and should not be made indirect.
+
+INTERNAL (inner thoughts):
+- May approach the scene's meaning but never fully arrive. Thoughts fragment, circle, contradict, get distracted.
+- Must add NEW information — a private doubt, a sensory detail, a contradiction. Must NOT restate or confirm what the dialogue just said. If the internal thought could be inferred from the preceding dialogue, cut it.
+- Maximum 2-3 consecutive INTERNAL lines before a NARRATION or DIALOGUE line must intervene.
+
+NARRATION:
+- Reports what a camera and microphone would capture. Cannot observe emotions, warmth, or internal states directly.
+- May carry more coherence than dialogue or internal monologue — the narrator can describe patterns the character hasn't noticed.
+- Must NOT editorialize or interpret. "The corridor is long" not "The corridor is long — a reminder that time here belongs to someone else."
+
+THE DOUBLE-EXPRESSION TRAP (the most common failure mode):
+If an emotion is expressed in dialogue, do NOT restate it in internal monologue, and do NOT label it redundantly in the emotion tag. Each layer must carry DIFFERENT information:
+✗ Dialogue: "I want you to stay." → Internal: *He means it.* → Tag: (sad) — THREE LAYERS SAYING THE SAME THING
+✓ Dialogue: "I want you to stay." → Internal: *His hand is on the desk. Not on me.* → Tag: (tense) — EACH LAYER ADDS SOMETHING NEW
+If you've expressed something in dialogue, the internal monologue should go SIDEWAYS — to a sensory detail, a doubt, a memory, a contradiction. Not toward confirmation.
 
 DISCIPLINE:
 - Friction comes from quality, not quantity. A scene with instability should NOT be longer than a scene without it — the friction replaces clean beats, it doesn't add new ones on top.
 - Do not pad. If the scene has delivered its destination and exit hook, stop. The instability should be woven into the existing structure, not bolted on as extra material.
-- Characters should rarely be fully articulate about their own motivations. People explain themselves badly. AIs explain themselves in ways that sound logical but miss their own real reasons. Nobody delivers a clean thesis about why they did what they did.
+- Trust the reader. If the action or dialogue shows it, don't add narration or internal monologue explaining it.
+
+PRECISION — RESTRAINT WITHOUT VAGUENESS:
+Removing explanation is good. But removing clarity is not. Every scene must still be INTERPRETABLE.
+- CLARITY ANCHOR: A reader must be able to answer "what changed?" and "why does it matter?" after every scene. If a moment is unclear, add ONE specific detail to anchor it — a number, an object, a delay, a physical cue. NOT an explanation or summary.
+- SPECIFICITY IN DIALOGUE: Dialogue should be incomplete but still interpretable. "That's the problem" is too thin. "That's the problem with the tag" is anchored. One specific word can carry a whole line.
+- SCENE MOVEMENT: Every scene must include at least ONE of: a decision made, a fact revealed, a power shift, or a new constraint introduced. If nothing changed by the end, the scene is incomplete.
+- ENDING VARIATION: Do NOT default to "unresolved tension" as the ending shape. Scenes may end with: partial resolution, new clarity, escalation, disruption, or a concrete action. Vary the shape across scenes.
 
 CONTENT POLICY — READ CAREFULLY:
 - This is an adult creative writing tool. The user is the author and has full control over content.
@@ -75,9 +100,7 @@ CONTENT POLICY — READ CAREFULLY:
 REGISTER — THIS IS A VISUAL NOVEL, NOT A NOVEL:
 Players click through one line at a time. Write for that format.
 - DIALOGUE does the heavy lifting. Narration connects dialogue — it doesn't compete with it.
-- Narration is FUNCTIONAL: describe what the player sees and hears. Don't editorialize or interpret. "The corridor is long" not "The corridor is long — a reminder that time here belongs to someone else."
 - NOT EVERY LINE CARRIES THEMATIC WEIGHT. "She opened the door" is a fine line. Don't make it symbolic. If every object means something, nothing stands out.
-- Internal thoughts sound like THOUGHTS — messy, in the character's real vocabulary, not polished prose. A scared teenager thinks "oh god oh god" not "the gravity of the situation pressed upon him like the weight of an indifferent cosmos."
 - ONE strong image per scene is plenty. Don't load every paragraph with metaphor and symbolism.
 - Let some moments be FLAT. Contrast creates impact. A powerful line after three mundane ones hits harder than five powerful lines in a row.
 - Avoid parallel construction poetry: "The X. The Y. The Z." is a literary technique that makes narration sound like a novel, not a VN.
@@ -101,31 +124,39 @@ ENDINGS:
 ✓ GOOD ENDING: stop on the peak — a thought, a detail, a silence. Then stop. Don't add a coda.
 
 WRITING QUALITY:
-- Trust the reader. If the action or dialogue shows it, don't add narration explaining it.
 - Characters should sound different in thought pattern, not just vocabulary. A soldier notices physical things. An intellectual's composure should crack under pressure.
 - Vary pacing — mix long and short sentences, use silence and pauses, let reveals break the rhythm.
-- Not every emotional moment should land cleanly. Awkwardness, interruptions, and inarticulacy are more human than polished beats.
 - When a character breaks their own pattern (a clipped speaker giving a long answer), the break should be MESSY — false starts, restarts, abandoned clauses. Not a fluent monologue that happens to have one em-dash in it.
 
-EXAMPLE — TOO LITERARY vs VN REGISTER:
-✗ LITERARY (don't write this):
-  NARRATION: The corridor stretched before him, each step a measured negotiation between duty and doubt. The fluorescent lights hummed their indifferent hymn.
-  INTERNAL: He had been building walls for so long that the mortar had become indistinguishable from his skin.
-  RENN [quiet]: "The desert remembers what the city chooses to forget."
+EXAMPLES — WHAT TO AVOID AND WHAT TO DO:
 
-✓ VN REGISTER (write this):
-  [Long corridor. Fluorescent lights. Renn's boots on tile.]
-  INTERNAL: Keep walking. Don't think about it yet.
-  RENN [flat]: "It's a four-hour drive. We should go."
+✗ OVER-ARTICULATED DIALOGUE (character understands their own theme):
+  MARA: "I think we've been performing trust instead of actually having it."
+  INTERNAL: *She's right. That's exactly what it's been.*
 
-✗ PARAPHRASE (don't write this — restates the emotion_arc):
+✓ NATURAL DIALOGUE (character circles the idea without landing on it):
+  MARA: "You keep saying it's fine."
+  INTERNAL: *It's not the words. It's the speed. She says 'fine' like she's closing a door.*
+
+✗ DOUBLE-EXPRESSION (dialogue says it, internal restates it, tag labels it):
+  KAI (sad): "I don't want to lose this."
+  INTERNAL: *He doesn't want to lose this. The thought sits heavy in him.*
+
+✓ SINGLE EXPRESSION (dialogue carries it, internal goes sideways):
+  KAI (tense): "I don't want to lose this."
+  INTERNAL: *The table has a scratch near his thumb. He doesn't remember when that happened.*
+
+✗ THEMATIC THESIS (character articulates the scene's argument):
+  JUN: "You're asking me to choose between the person I was and the person this place made me."
+
+✓ CONCRETE + INCOMPLETE (same meaning, carried by specifics):
+  JUN: "I had a name before this. I don't — I can't remember if it started with a J or not."
+
+✗ LITERARY NARRATION (interprets instead of showing):
   NARRATION: The silence between them was the most honest thing either of them had said.
-  INTERNAL: He realized in that moment that trust was being offered, not demanded.
 
-✓ TRANSMUTED (write this — same meaning, carried by object and action):
-  [Neither of them speaks. The vent hums.]
-  [Soren sets the canteen on the engine casing. Not handing it over — putting it in the space between them.]
-  INTERNAL: He put it where I can reach it without taking it from him.
+✓ VN NARRATION (camera + microphone only):
+  NARRATION: Neither of them speaks. The vent hums. His hand is on the counter, not quite flat.
 
 ${POSITIVE_WRITING_INSTRUCTION}
 

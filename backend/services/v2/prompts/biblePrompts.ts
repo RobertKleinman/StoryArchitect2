@@ -34,6 +34,14 @@ CHARACTER DEPTH:
 - Antagonists are most compelling when they're personally threatening, not just powerful. Getting under someone's skin about a real vulnerability is scarier than political leverage alone.
 - Allies who are always right aren't characters — they're plot devices. Give supporting characters blind spots or miscalculations that have consequences.
 
+SPEECH CARDS:
+Every character needs a speech_card in their psychological_profile. This defines HOW they speak — not what they say, but the shape of their dialogue:
+- typical_length: their default sentence length (short/medium/long). A military officer speaks in clipped sentences. A nervous academic rambles.
+- under_pressure: how their speech CHANGES when stressed. Fragments? Retreats to formality? Gets louder? Goes completely silent?
+- never_articulates: what they CANNOT or WILL NOT say directly. This is their emotional wall — the thing the reader understands about them before they do.
+- deflection_style: how they avoid answering. Everyone deflects differently — logistics, counter-questions, subject changes, silence, humor.
+These are TENDENCIES, not rigid rules. A character who normally speaks in short sentences can give a long answer at a crucial moment — and the break in pattern should feel significant.
+
 OUTPUT FORMAT: JSON matching the provided schema.`;
 
 export const PLOT_WRITER_SYSTEM = `You are a plot architect for visual novels. Given a premise, world, and characters, create a tension chain of 12-20 causally linked beats that forms an addictive narrative spine.

@@ -225,6 +225,11 @@ export function compressForScene(
       charLines.push(`  Stress: ${profile.psychological_profile.stress_style}`);
       charLines.push(`  Break point: ${profile.psychological_profile.break_point}`);
       charLines.push(`  Threshold: ${profile.threshold_statement}`);
+      // Speech card (may not exist for older projects)
+      const sc = profile.psychological_profile.speech_card;
+      if (sc) {
+        charLines.push(`  Speech: typically ${sc.typical_length} sentences. Under pressure: ${sc.under_pressure}. Will NOT articulate: ${sc.never_articulates}. Deflects by: ${sc.deflection_style}.`);
+      }
     }
   }
 

@@ -84,6 +84,17 @@ export class BibleService {
       traces.push(this.makeTrace(project.operationId, "bible_writer", startMs, "characters"));
       charData = JSON.parse(raw);
 
+      // Check for name collisions (e.g., "Dris" and "Idris" — one containing the other)
+      const charNames: string[] = (charData.characters ?? []).map((c: any) => c.name);
+      for (let i = 0; i < charNames.length; i++) {
+        for (let j = i + 1; j < charNames.length; j++) {
+          const a = charNames[i].toLowerCase(), b = charNames[j].toLowerCase();
+          if (a.includes(b) || b.includes(a)) {
+            console.warn(`[bible] Name collision: "${charNames[i]}" and "${charNames[j]}" — one contains the other. This will cause LLM speaker attribution errors.`);
+          }
+        }
+      }
+
       completed.push("characters");
       project.checkpoint.charData = charData;
       if (onCheckpoint) await onCheckpoint(project);
