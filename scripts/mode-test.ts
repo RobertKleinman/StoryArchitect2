@@ -19,6 +19,7 @@ dotenv.config();
 
 import { readFile, writeFile, mkdir } from "fs/promises";
 import { LLMClient } from "../backend/services/llmClient";
+import { EROTICA_V2_MODEL_CONFIG, FAST_V2_MODEL_CONFIG } from "../shared/modelConfig";
 import { SceneGenerationService } from "../backend/services/v2/sceneGenerationService";
 import { compressForScene, previousSceneDigest, buildCanonicalNames } from "../backend/services/v2/contextCompressor";
 import { buildMustHonorBlock } from "../backend/services/mustHonorBlock";
@@ -79,7 +80,12 @@ async function main() {
   console.log(`Project: ${projectPath}`);
 
   const project = JSON.parse(await readFile(projectPath, "utf-8"));
-  const llm = new LLMClient();
+  // Pass the full model config for erotica/fast modes so ALL roles use the right models
+  const v2Config = modeName === "erotica" ? EROTICA_V2_MODEL_CONFIG
+                 : modeName === "fast" ? FAST_V2_MODEL_CONFIG
+                 : modeName === "haiku" ? FAST_V2_MODEL_CONFIG // haiku uses same parallel structure
+                 : undefined;
+  const llm = new LLMClient(undefined, v2Config);
   const mustHonor = buildMustHonorBlock(project.constraintLedger ?? {});
   const canonicalNames = buildCanonicalNames(project.storyBible);
   const scenePlans = project.scenePlan?.scenes ?? [];

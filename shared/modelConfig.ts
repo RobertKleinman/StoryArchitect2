@@ -264,3 +264,31 @@ export const DEFAULT_V2_MODEL_CONFIG: V2ModelConfig = {
   v2_cultural_researcher: RESEARCH_PRIMARY_CULTURAL,
   v2_summarizer: FAST,
 };
+
+/** All roles use Grok — for erotica/adult content where other models refuse */
+export const EROTICA_V2_MODEL_CONFIG: V2ModelConfig = {
+  intake: "grok-4",
+  premise_writer: "grok-4",
+  premise_judge: "grok-4",
+  bible_writer: "grok-4",
+  bible_judge: "grok-4",
+  scene_planner: "grok-4",
+  scene_writer: "grok-4",
+  scene_judge: "grok-4-fast",
+  v2_cultural_researcher: "grok-4-fast",
+  v2_summarizer: "grok-4-fast",
+};
+
+/** All roles use Gemini Flash — cheapest/fastest for testing */
+export const FAST_V2_MODEL_CONFIG: V2ModelConfig = {
+  intake: "gemini-2.5-flash",
+  premise_writer: "gemini-2.5-flash",
+  premise_judge: "gemini-2.5-flash",
+  bible_writer: "gemini-2.5-flash",
+  bible_judge: "gemini-2.5-flash",
+  scene_planner: "gemini-2.5-flash",
+  scene_writer: "gemini-2.5-flash",
+  scene_judge: "gemini-2.5-flash",
+  v2_cultural_researcher: "gemini-2.5-flash",
+  v2_summarizer: "gemini-2.5-flash",
+};

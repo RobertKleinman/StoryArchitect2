@@ -1,4 +1,4 @@
-import { HookRole, ModelConfig, LLMProvider, detectProvider, V2Role, V2ModelConfig, DEFAULT_V2_MODEL_CONFIG } from "../../shared/modelConfig";
+import { HookRole, ModelConfig, LLMProvider, detectProvider, V2Role, V2ModelConfig, DEFAULT_V2_MODEL_CONFIG, EROTICA_V2_MODEL_CONFIG, FAST_V2_MODEL_CONFIG } from "../../shared/modelConfig";
 import type { LLMProvider as ILLMProvider, ProviderCallOptions } from "./providers/types";
 import { ProviderHttpError } from "./providers/types";
 import { AnthropicProvider } from "./providers/anthropicProvider";
@@ -69,7 +69,13 @@ export class LLMClient {
   private _lastCallProvenance: CallProvenance | null = null;
   constructor(config?: ModelConfig, v2Config?: V2ModelConfig) {
     this.config = config ?? ({} as ModelConfig);
-    this.v2Config = v2Config ?? DEFAULT_V2_MODEL_CONFIG;
+    // Support V2_MODE env var: "erotica" or "fast" to switch all model assignments
+    const modeEnv = process.env.V2_MODE?.toLowerCase();
+    const envConfig = modeEnv === "erotica" ? EROTICA_V2_MODEL_CONFIG
+                    : modeEnv === "fast" ? FAST_V2_MODEL_CONFIG
+                    : undefined;
+    this.v2Config = v2Config ?? envConfig ?? DEFAULT_V2_MODEL_CONFIG;
+    if (envConfig) console.log(`[llm] V2_MODE=${modeEnv} — all roles using ${modeEnv} model config`);
   }
 
   /** Returns provenance metadata from the most recent successful call */

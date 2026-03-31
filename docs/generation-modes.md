@@ -35,14 +35,21 @@ npx tsx scripts/mode-test.ts --fast
 ```bash
 npx tsx scripts/mode-test.ts --erotica
 ```
-- **Writer:** Grok-4 (more permissive with adult/erotic content)
-- **Judge:** Haiku (default)
+- **ALL roles:** Grok-4 (writer, judge, bible, intake — everything)
+- **Judge:** Grok-4-fast
 - **Tension:** Full cross-scene tracking
 - **Postproduction:** Not run by this script (run separately)
 - **Cost:** Depends on Grok pricing
 - **Time:** ~12-15 minutes (sequential)
-- **Use when:** Stories with explicit sexual content where other models refuse or sanitize
+- **Use when:** Stories with explicit sexual content where Sonnet refuses or sanitizes
 - **Tradeoff:** Grok's creative quality may differ from Sonnet's
+- **Why all Grok:** Sonnet refuses explicit content at the premise/intake stage, which cascades — a broken premise means broken everything downstream. Using Grok for ALL roles avoids content refusals at every pipeline stage.
+
+For full pipeline runs (not just scene regeneration), start the backend with:
+```bash
+V2_MODE=erotica npm run dev
+```
+Then use the normal web UI or pipeline runner. All roles will use Grok.
 
 ### Haiku (`--haiku`)
 ```bash
@@ -67,6 +74,21 @@ npx tsx scripts/ab-test-scenes.ts data/pipeline-output/foo.json 0,3,5
 ```
 Regenerates specified scenes with current prompts, outputs side-by-side
 comparison markdown in `data/ab-tests/`.
+
+## Full Pipeline Runs (via web UI or pipeline runner)
+
+The `mode-test.ts` script regenerates scenes from an existing project. For
+a full pipeline run from seed (intake → premise → bible → scenes), you need
+the backend server to use the right models. Set the `V2_MODE` env var:
+
+```bash
+V2_MODE=erotica npm run dev    # All roles use Grok-4
+V2_MODE=fast npm run dev       # All roles use Gemini Flash
+npm run dev                    # Default (Sonnet + Haiku)
+```
+
+Then use the web UI or pipeline runner as normal — the backend will route
+all LLM calls through the mode's model config.
 
 ## Using a Different Project
 
