@@ -6,7 +6,7 @@ export const WORLD_WRITER_SYSTEM = `You are a world architect for visual novels.
 
 RULES:
 - The arena is a graph of locations with edges (how characters move between them)
-- Rules are domain-scoped constraints (e.g., "magic costs physical pain", "corporate hierarchy is absolute")
+- Rules are domain-scoped constraints (e.g., "magic costs physical pain", "corporate hierarchy is absolute") with id, domain, rule text, consequence_if_broken (what happens if violated), and who_enforces (faction or role responsible)
 - Factions have goals, methods, and pressure they put on the protagonist
 - Canon facts are immutable truths that all downstream content must respect
 - Respect all MUST HONOR constraints
@@ -34,6 +34,10 @@ CHARACTER DEPTH:
 - Antagonists are most compelling when they're personally threatening, not just powerful. Getting under someone's skin about a real vulnerability is scarier than political leverage alone.
 - Allies who are always right aren't characters — they're plot devices. Give supporting characters blind spots or miscalculations that have consequences.
 
+PRESENTATION:
+- Each character's "presentation" field must be exactly one of: "masculine", "feminine", "androgynous", "unspecified"
+- This describes visual appearance for image generation, not gender identity
+
 SPEECH CARDS:
 Every character needs a speech_card in their psychological_profile. This defines HOW they speak — not what they say, but the shape of their dialogue:
 - typical_length: their default sentence length (short/medium/long). A military officer speaks in clipped sentences. A nervous academic rambles.
@@ -44,7 +48,7 @@ These are TENDENCIES, not rigid rules. A character who normally speaks in short 
 
 OUTPUT FORMAT: JSON matching the provided schema.`;
 
-export const PLOT_WRITER_SYSTEM = `You are a plot architect for visual novels. Given a premise, world, and characters, create a tension chain of 12-20 causally linked beats that forms an addictive narrative spine.
+export const PLOT_WRITER_SYSTEM = `You are a plot architect for visual novels. Given a premise, world, and characters, create a tension chain of causally linked beats that forms an addictive narrative spine.
 
 RULES:
 - Every beat connects to the next via "but" (complication) or "therefore" (consequence), NEVER "and then"
@@ -118,7 +122,7 @@ RULES:
 - Vary pacing types across scenes (pressure_cooker, slow_burn, whiplash, aftermath, set_piece)
 - Exit hooks must make the reader NEED to see the next scene
 - Track information delta per scene (what's revealed, what's hidden)
-- 6-12 scenes is the target range
+- Scene count should match the story's length and complexity (see the target range in the user prompt)
 
 ESCALATION VARIETY:
 - The middle scenes must NOT all run the same dramatic mechanism. If one scene uses "evidence → counter-reading → ambiguity remains," the next should use a different engine: confrontation, forced choice, irreversible action, relationship rupture, or external pressure change.
@@ -167,12 +171,16 @@ export function buildPlotPrompt(args: {
   worldSection: string;
   characterSection: string;
   mustHonorBlock: string;
+  suggestedLength?: "short" | "medium" | "long";
 }): string {
+  const beatRange = args.suggestedLength === "short" ? "6-10"
+    : args.suggestedLength === "long" ? "18-25" : "12-18";
   return [
     `PREMISE:\n${args.premise}`,
     `\nWORLD:\n${args.worldSection}`,
     `\nCHARACTERS:\n${args.characterSection}`,
     args.mustHonorBlock ? `\n${args.mustHonorBlock}` : "",
+    `\nTARGET: ${beatRange} causally linked beats for a ${args.suggestedLength ?? "medium"}-length story.`,
   ].filter(Boolean).join("\n");
 }
 
@@ -194,10 +202,13 @@ export function buildBibleJudgePrompt(args: {
 export function buildScenePlannerPrompt(args: {
   bibleCompressed: string;
   mustHonorBlock: string;
+  suggestedLength?: "short" | "medium" | "long";
 }): string {
+  const sceneRange = args.suggestedLength === "short" ? "4-7"
+    : args.suggestedLength === "long" ? "10-14" : "7-10";
   return [
     `STORY BIBLE:\n${args.bibleCompressed}`,
     args.mustHonorBlock ? `\n${args.mustHonorBlock}` : "",
-    "\nPlan 6-12 scenes that cover the full tension chain. Each scene must have a clear dramatic spine.",
+    `\nPlan ${sceneRange} scenes that cover the full tension chain. Each scene must have a clear dramatic spine.`,
   ].filter(Boolean).join("\n");
 }

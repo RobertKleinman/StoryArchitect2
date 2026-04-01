@@ -62,11 +62,13 @@ export const WORLD_WRITER_SCHEMA = {
         items: {
           type: "object",
           properties: {
+            id: { type: "string" },
             domain: { type: "string" },
             rule: { type: "string" },
-            consequence: { type: "string" },
+            consequence_if_broken: { type: "string", description: "What happens if someone violates this rule" },
+            who_enforces: { type: "string", description: "Which faction, institution, or role enforces this" },
           },
-          required: ["domain", "rule", "consequence"],
+          required: ["id", "domain", "rule", "consequence_if_broken", "who_enforces"],
           additionalProperties: false,
         },
       },
@@ -118,7 +120,8 @@ export const CHARACTER_WRITER_SCHEMA = {
             name: { type: "string" },
             role: { type: "string" },
             description: { type: "string" },
-            presentation: { type: "string" },
+            presentation: { type: "string", enum: ["masculine", "feminine", "androgynous", "unspecified"],
+              description: "Visual presentation for image generation — not identity or sex" },
             age_range: { type: "string" },
             psychological_profile: {
               type: "object",

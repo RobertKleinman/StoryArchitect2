@@ -37,8 +37,8 @@ function makeInput(overrides?: Partial<PipelineOutput>): PipelineOutput {
     premise: { hook_sentence: "A test story about testing things" },
     storyBible: {
       characters: {
-        Alice: { description: "A test character", role: "Protagonist", presentation: "Short hair" },
-        Bob: { description: "Another character", role: "Supporting", presentation: "Tall" },
+        Alice: { description: "A test character", role: "Protagonist", presentation: "feminine" },
+        Bob: { description: "Another character", role: "Supporting", presentation: "masculine" },
       },
       world: {
         arena: {
@@ -240,7 +240,7 @@ describe("packager: output schema", () => {
     const alice = pkg!.characters["Alice"];
     expect(alice.name).toBe("Alice");
     expect(alice.description).toBe("A test character");
-    expect(alice.presentation).toBe("Short hair");
+    expect(alice.presentation).toBe("feminine");
     expect(alice.role).toBe("Protagonist");
   });
 

@@ -101,6 +101,22 @@ export class BibleService {
         }
       }
 
+      // Normalize presentation values (belt-and-suspenders — schema has enum but LLMs can drift)
+      const PRESENTATION_MAP: Record<string, string> = {
+        male: "masculine", female: "feminine",
+        "non-binary": "androgynous", nonbinary: "androgynous",
+      };
+      for (const c of (charData?.characters ?? [])) {
+        const p = c.presentation?.toLowerCase?.() ?? "";
+        if (PRESENTATION_MAP[p]) {
+          console.warn(`[bible] Normalizing presentation "${c.presentation}" → "${PRESENTATION_MAP[p]}" for ${c.name}`);
+          c.presentation = PRESENTATION_MAP[p];
+        } else if (!["masculine", "feminine", "androgynous", "unspecified"].includes(p)) {
+          console.warn(`[bible] Invalid presentation "${c.presentation}" for ${c.name} — defaulting to "unspecified"`);
+          c.presentation = "unspecified";
+        }
+      }
+
       completed.push("characters");
       project.checkpoint.charData = charData;
       if (onCheckpoint) await onCheckpoint(project);
@@ -119,7 +135,7 @@ export class BibleService {
       const charsForPlot = this.compressCharsForPlot(charData);
       const startMs = Date.now();
       const raw = await this.llm.call("bible_writer", PLOT_WRITER_SYSTEM,
-        buildPlotPrompt({ premise: premiseStr, worldSection: worldForPlot, characterSection: charsForPlot, mustHonorBlock: mustHonor }),
+        buildPlotPrompt({ premise: premiseStr, worldSection: worldForPlot, characterSection: charsForPlot, mustHonorBlock: mustHonor, suggestedLength: project.premise.suggested_length }),
         { temperature: 0.8, maxTokens: 8000, jsonSchema: PLOT_WRITER_SCHEMA, abortSignal },
       );
       traces.push(this.makeTrace(project.operationId, "bible_writer", startMs, "plot"));
@@ -191,6 +207,7 @@ export class BibleService {
           const plotPrompt = buildPlotPrompt({
             premise: premiseStr, worldSection: worldForPlot,
             characterSection: charsForPlot, mustHonorBlock: mustHonor,
+            suggestedLength: project.premise.suggested_length,
           });
           const augmentedPrompt = plotPrompt + `\n\nPREVIOUS ATTEMPT FAILED QUALITY REVIEW. Fix these issues:\n${feedback}`;
 
@@ -250,7 +267,7 @@ export class BibleService {
 
       const startMs = Date.now();
       const raw = await this.llm.call("scene_planner", SCENE_PLANNER_SYSTEM,
-        buildScenePlannerPrompt({ bibleCompressed, mustHonorBlock: mustHonor }) + architecturalContext,
+        buildScenePlannerPrompt({ bibleCompressed, mustHonorBlock: mustHonor, suggestedLength: project.premise.suggested_length }) + architecturalContext,
         { temperature: 0.7, maxTokens: 6000, jsonSchema: SCENE_PLANNER_SCHEMA, abortSignal },
       );
       traces.push(this.makeTrace(project.operationId, "scene_planner", startMs, "scene_plan"));

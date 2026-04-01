@@ -51,7 +51,7 @@ export interface CharacterProfile {
   name: string;
   role: string;
   description: string;
-  presentation: string;
+  presentation: "masculine" | "feminine" | "androgynous" | "unspecified";
   age_range: string;
 
   psychological_profile: {
