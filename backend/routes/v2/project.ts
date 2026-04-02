@@ -38,6 +38,9 @@ const orchestrator = new Orchestrator(store);
 // LLM clients cached by mode — one instance per mode, created on first use
 const llmCache = new Map<string, LLMClient>();
 function getLLMForMode(mode?: string): LLMClient {
+  if (mode === undefined) {
+    console.warn(`[v2] WARNING: getLLMForMode called with undefined mode — defaulting to "default". If this project had a non-default mode, it was lost during a state transition.`);
+  }
   const key = mode ?? "default";
   if (llmCache.has(key)) return llmCache.get(key)!;
 
@@ -209,7 +212,8 @@ router.post("/:projectId/generate-premise", async (req: Request, res: Response) 
     const controller = registerAbort(req.params.projectId);
     try {
       const premise = new PremiseService(getLLMForMode(generating.mode));
-      const result = await premise.generate(generating);
+      const isFastPremise = generating.mode === "fast" || generating.mode === "erotica-fast" || generating.mode === "haiku";
+      const result = await premise.generate(generating, undefined, isFastPremise ? { skipJudge: true } : undefined);
 
       generating.traces.push(...result.traces);
       await orchestrator.transitionToPremiseReview(projectId, generating, result.premise);
@@ -334,10 +338,12 @@ router.post("/:projectId/generate-bible", async (req: Request, res: Response) =>
     const controller = registerAbort(req.params.projectId);
     try {
       const bible = new BibleService(getLLMForMode(generating.mode));
+      const isFastBible = generating.mode === "fast" || generating.mode === "erotica-fast" || generating.mode === "haiku";
       const result = await bible.generate(
         generating,
         undefined,
         async (updated) => { await store.save(updated); },
+        isFastBible ? { skipJudge: true, skipStepBack: true } : undefined,
       );
 
       generating.traces.push(...result.traces);
@@ -473,9 +479,12 @@ router.post("/:projectId/generate-scenes", async (req: Request, res: Response) =
     const controller = registerAbort(req.params.projectId);
     try {
       const sceneGen = new SceneGenerationService(getLLMForMode(generating.mode));
+      // Fast/erotica-fast modes: parallel generation, skip judge & tension tracking
+      const isFastMode = generating.mode === "fast" || generating.mode === "erotica-fast" || generating.mode === "haiku";
       const result = await sceneGen.generate(
         generating,
         async (updated) => { await store.save(updated); },
+        isFastMode ? { batchSize: 4, skipJudge: true, skipTension: true } : undefined,
       );
       generating.traces.push(...result.traces);
 

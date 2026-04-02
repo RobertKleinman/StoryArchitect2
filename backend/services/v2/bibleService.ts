@@ -31,6 +31,7 @@ export class BibleService {
     project: Step4_BibleGenerating,
     culturalBrief?: string,
     onCheckpoint?: (project: Step4_BibleGenerating) => Promise<void>,
+    options?: { skipJudge?: boolean; skipStepBack?: boolean },
   ): Promise<{ storyBible: StoryBibleArtifact; scenePlan: ScenePlanArtifact; traces: StepTrace[] }> {
     const projectId = project.projectId as string;
     const abortSignal = getAbortSignal(projectId);
@@ -59,11 +60,9 @@ export class BibleService {
       });
 
       const startMs = Date.now();
-      // World is structural (locations, rules, factions) — faster model is fine
       const raw = await this.llm.call("bible_writer", WORLD_WRITER_SYSTEM,
         buildWorldPrompt({ premise: premiseStr, mustHonorBlock: mustHonor, culturalBrief, freshnessBlock }),
-        { temperature: 0.8, maxTokens: 4000, jsonSchema: WORLD_WRITER_SCHEMA, abortSignal,
-          modelOverride: "gemini-3-flash-preview" },
+        { temperature: 0.8, maxTokens: 4000, jsonSchema: WORLD_WRITER_SCHEMA, abortSignal },
       );
       traces.push(this.makeTrace(project.operationId, "bible_writer", startMs, "world"));
       worldData = JSON.parse(raw);
@@ -146,10 +145,10 @@ export class BibleService {
       if (onCheckpoint) await onCheckpoint(project);
     }
 
-    // ── Sub-step 4: Judge (blocking gate) ─────────────────────────
+    // ── Sub-step 4: Judge (blocking gate — skipped in fast mode) ──
     // Bible judge evaluates consistency AND dramatic quality.
     // If it fails, plot is regenerated with judge feedback (max 2 retries).
-    if (!completed.includes("judge")) {
+    if (!completed.includes("judge") && !options?.skipJudge) {
       emitProgress(projectId, {
         totalSteps: 5, completedSteps: 3,
         currentStep: "Judging quality...",
@@ -229,6 +228,11 @@ export class BibleService {
       completed.push("judge");
       if (onCheckpoint) await onCheckpoint(project);
     }
+    // If judge was skipped (fast mode), mark it complete so scene plan proceeds
+    if (options?.skipJudge && !completed.includes("judge")) {
+      completed.push("judge");
+      if (onCheckpoint) await onCheckpoint(project);
+    }
 
     // ── Sub-step 5: Scene Plan ───────────────────────────────────
     let scenePlanData: any = null;
@@ -240,29 +244,32 @@ export class BibleService {
       });
 
       // Step-back prompt: force architectural thinking before scene distribution
+      // (skipped in fast mode — saves an LLM call)
       const bibleCompressed = this.compressBibleForPlanner(worldData, charData, plotData);
       let architecturalContext = "";
-      try {
-        const stepBackStartMs = Date.now();
-        const stepBackRaw = await this.llm.call("scene_planner", `You are a story architect. Answer these questions briefly and precisely — one sentence each. Do not plan scenes yet. Just think about the story's shape.`, [
-          `STORY BIBLE:\n${bibleCompressed}`,
-          `\nAnswer these questions:`,
-          `1. What is the ONE dramatic question this story must answer by the end?`,
-          `2. What is the point of no return — the moment where the protagonist cannot go back to who they were?`,
-          `3. Which relationship is the engine of the story? Where must that relationship be at the midpoint versus the climax?`,
-          `4. What is the one scene the reader will remember a week later? What makes it unforgettable — a revelation, a betrayal, a silence, a choice?`,
-          `5. Where should the story's emotional register BREAK — the moment that is tonally different from everything around it?`,
-        ].join("\n"), {
-          temperature: 0.5,
-          maxTokens: 800,
-          abortSignal,
-        });
-        traces.push(this.makeTrace(project.operationId, "scene_planner", stepBackStartMs, "step_back"));
-        architecturalContext = `\nSTORY ARCHITECTURE (think about these while planning):\n${stepBackRaw}\n`;
-        console.log(`[v2] Step-back architectural context: ${stepBackRaw.slice(0, 200)}...`);
-      } catch (err: any) {
-        // Non-fatal — scene planner can work without it
-        console.warn(`[v2] Step-back prompt failed (${err.message}), proceeding without architectural context`);
+      if (!options?.skipStepBack) {
+        try {
+          const stepBackStartMs = Date.now();
+          const stepBackRaw = await this.llm.call("scene_planner", `You are a story architect. Answer these questions briefly and precisely — one sentence each. Do not plan scenes yet. Just think about the story's shape.`, [
+            `STORY BIBLE:\n${bibleCompressed}`,
+            `\nAnswer these questions:`,
+            `1. What is the ONE dramatic question this story must answer by the end?`,
+            `2. What is the point of no return — the moment where the protagonist cannot go back to who they were?`,
+            `3. Which relationship is the engine of the story? Where must that relationship be at the midpoint versus the climax?`,
+            `4. What is the one scene the reader will remember a week later? What makes it unforgettable — a revelation, a betrayal, a silence, a choice?`,
+            `5. Where should the story's emotional register BREAK — the moment that is tonally different from everything around it?`,
+          ].join("\n"), {
+            temperature: 0.5,
+            maxTokens: 800,
+            abortSignal,
+          });
+          traces.push(this.makeTrace(project.operationId, "scene_planner", stepBackStartMs, "step_back"));
+          architecturalContext = `\nSTORY ARCHITECTURE (think about these while planning):\n${stepBackRaw}\n`;
+          console.log(`[v2] Step-back architectural context: ${stepBackRaw.slice(0, 200)}...`);
+        } catch (err: any) {
+          // Non-fatal — scene planner can work without it
+          console.warn(`[v2] Step-back prompt failed (${err.message}), proceeding without architectural context`);
+        }
       }
 
       const startMs = Date.now();

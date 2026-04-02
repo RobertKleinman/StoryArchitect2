@@ -114,20 +114,19 @@ export class Orchestrator {
     return next;
   }
 
+  // All transitions use spread (...current) so that any field on ProjectBase
+  // (like `mode`) is automatically carried forward. This prevents silent field
+  // loss when new base fields are added in the future.
+
   async transitionToPremiseReview(
     projectId: ProjectId,
     current: Step2_PremiseGenerating,
     premise: PremiseArtifact,
   ): Promise<Step3_PremiseReview> {
     const next: Step3_PremiseReview = {
+      ...current,
       step: "premise_review",
-      projectId: current.projectId,
-      createdAt: current.createdAt,
       updatedAt: new Date().toISOString(),
-      traces: current.traces,
-      psychologyLedger: current.psychologyLedger,
-      constraintLedger: current.constraintLedger,
-      culturalInsights: current.culturalInsights,
       premise,
       reviewRound: 0,
       reviewTurns: [],
@@ -145,14 +144,9 @@ export class Orchestrator {
     }
 
     const next: Step4_BibleGenerating = {
+      ...current,
       step: "bible_generating",
-      projectId: current.projectId,
-      createdAt: current.createdAt,
       updatedAt: new Date().toISOString(),
-      traces: current.traces,
-      psychologyLedger: current.psychologyLedger,
-      constraintLedger: current.constraintLedger,
-      culturalInsights: current.culturalInsights,
       operationId: createOperationId(randomUUID()),
       premise: current.premise,
       checkpoint: { completedSubSteps: [] },
@@ -168,14 +162,9 @@ export class Orchestrator {
     scenePlan: ScenePlanArtifact,
   ): Promise<Step5_SceneReview> {
     const next: Step5_SceneReview = {
+      ...current,
       step: "scene_review",
-      projectId: current.projectId,
-      createdAt: current.createdAt,
       updatedAt: new Date().toISOString(),
-      traces: current.traces,
-      psychologyLedger: current.psychologyLedger,
-      constraintLedger: current.constraintLedger,
-      culturalInsights: current.culturalInsights,
       premise: current.premise,
       storyBible,
       scenePlan,
@@ -194,14 +183,9 @@ export class Orchestrator {
     }
 
     const next: Step6_SceneGenerating = {
+      ...current,
       step: "scene_generating",
-      projectId: current.projectId,
-      createdAt: current.createdAt,
       updatedAt: new Date().toISOString(),
-      traces: current.traces,
-      psychologyLedger: current.psychologyLedger,
-      constraintLedger: current.constraintLedger,
-      culturalInsights: current.culturalInsights,
       operationId: createOperationId(randomUUID()),
       premise: current.premise,
       storyBible: { ...current.storyBible, state: "approved" },
@@ -222,17 +206,9 @@ export class Orchestrator {
     scenes: GeneratedScene[],
   ): Promise<StepCompleted> {
     const next: StepCompleted = {
+      ...current,
       step: "completed",
-      projectId: current.projectId,
-      createdAt: current.createdAt,
       updatedAt: new Date().toISOString(),
-      traces: current.traces,
-      psychologyLedger: current.psychologyLedger,
-      constraintLedger: current.constraintLedger,
-      culturalInsights: current.culturalInsights,
-      premise: current.premise,
-      storyBible: current.storyBible,
-      scenePlan: current.scenePlan,
       scenes,
     };
     await this.store.transition(projectId, next);
@@ -246,14 +222,9 @@ export class Orchestrator {
     error: string,
   ): Promise<StepFailed> {
     const next: StepFailed = {
+      ...current,
       step: "failed",
-      projectId: current.projectId,
-      createdAt: current.createdAt,
       updatedAt: new Date().toISOString(),
-      traces: current.traces,
-      psychologyLedger: current.psychologyLedger,
-      constraintLedger: current.constraintLedger,
-      culturalInsights: current.culturalInsights,
       failedAt: current.step,
       error,
       recoverySnapshot: JSON.stringify(current),
@@ -268,14 +239,9 @@ export class Orchestrator {
     current: ProjectState,
   ): Promise<StepAborted> {
     const next: StepAborted = {
+      ...current,
       step: "aborted",
-      projectId: current.projectId,
-      createdAt: current.createdAt,
       updatedAt: new Date().toISOString(),
-      traces: current.traces,
-      psychologyLedger: current.psychologyLedger,
-      constraintLedger: current.constraintLedger,
-      culturalInsights: current.culturalInsights,
       abortedDuring: current.step,
     };
     await this.store.transition(projectId, next);

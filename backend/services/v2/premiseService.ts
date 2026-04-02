@@ -30,6 +30,7 @@ export class PremiseService {
   async generate(
     project: Step2_PremiseGenerating,
     culturalBrief?: string,
+    options?: { skipJudge?: boolean },
   ): Promise<{ premise: PremiseArtifact; traces: StepTrace[] }> {
     const projectId = project.projectId as string;
     const abortSignal = getAbortSignal(projectId);
@@ -70,62 +71,64 @@ export class PremiseService {
       throw new Error(`Failed to parse premise writer output: ${writerRaw.slice(0, 200)}`);
     }
 
-    // ── Judge call ───────────────────────────────────────────────
-    emitProgress(projectId, {
-      totalSteps: 2,
-      completedSteps: 1,
-      currentStep: "Evaluating premise...",
-      startedAt: new Date().toISOString(),
-    });
-
-    const judgePrompt = buildPremiseJudgePrompt({
-      premise: JSON.stringify(premiseData, null, 2),
-      mustHonorBlock: mustHonor,
-    });
-
-    const judgeStartMs = Date.now();
-    const judgeRaw = await this.llm.call("premise_judge", PREMISE_JUDGE_SYSTEM, judgePrompt, {
-      temperature: 0.3,
-      maxTokens: 800,
-      jsonSchema: PREMISE_JUDGE_SCHEMA,
-      abortSignal,
-    });
-    traces.push(this.makeTrace(project.operationId, "premise_judge", judgeStartMs));
-
-    let judgeResult: any;
-    try {
-      judgeResult = JSON.parse(judgeRaw);
-    } catch {
-      // Judge parse failure — accept premise as-is
-      judgeResult = { pass: true, issues: [], constraint_violations: [] };
-    }
-
-    // ── Repair if judge failed ───────────────────────────────────
-    if (!judgeResult.pass && judgeResult.issues?.length > 0) {
-      const repairPrompt = buildPremiseWriterPrompt({
-        seedInput: project.seedInput,
-        conversationTurns: project.conversationTurns,
-        constraintBlock: this.formatConstraints(project.constraintLedger),
-        mustHonorBlock: mustHonor,
-        culturalBrief,
-        psychologyBlock: psychBlock,
-        revisionFeedback: judgeResult.issues.map((i: any) => `${i.field}: ${i.fix_instruction}`).join("\n"),
-        currentPremise: JSON.stringify(premiseData, null, 2),
+    // ── Judge call (skipped in fast mode) ─────────────────────────
+    if (!options?.skipJudge) {
+      emitProgress(projectId, {
+        totalSteps: 2,
+        completedSteps: 1,
+        currentStep: "Evaluating premise...",
+        startedAt: new Date().toISOString(),
       });
 
-      const repairStartMs = Date.now();
-      const repairRaw = await this.llm.call("premise_writer", PREMISE_WRITER_SYSTEM, repairPrompt, {
-        temperature: 0.7,
-        maxTokens: 3000,
-        jsonSchema: PREMISE_WRITER_SCHEMA,
+      const judgePrompt = buildPremiseJudgePrompt({
+        premise: JSON.stringify(premiseData, null, 2),
+        mustHonorBlock: mustHonor,
+      });
+
+      const judgeStartMs = Date.now();
+      const judgeRaw = await this.llm.call("premise_judge", PREMISE_JUDGE_SYSTEM, judgePrompt, {
+        temperature: 0.3,
+        maxTokens: 800,
+        jsonSchema: PREMISE_JUDGE_SCHEMA,
         abortSignal,
       });
-      traces.push(this.makeTrace(project.operationId, "premise_writer", repairStartMs, "fail_repaired"));
+      traces.push(this.makeTrace(project.operationId, "premise_judge", judgeStartMs));
 
+      let judgeResult: any;
       try {
-        premiseData = JSON.parse(repairRaw);
+        judgeResult = JSON.parse(judgeRaw);
       } catch {
-        // Repair parse failure — keep original
+        // Judge parse failure — accept premise as-is
+        judgeResult = { pass: true, issues: [], constraint_violations: [] };
+      }
+
+      // ── Repair if judge failed ───────────────────────────────────
+      if (!judgeResult.pass && judgeResult.issues?.length > 0) {
+        const repairPrompt = buildPremiseWriterPrompt({
+          seedInput: project.seedInput,
+          conversationTurns: project.conversationTurns,
+          constraintBlock: this.formatConstraints(project.constraintLedger),
+          mustHonorBlock: mustHonor,
+          culturalBrief,
+          psychologyBlock: psychBlock,
+          revisionFeedback: judgeResult.issues.map((i: any) => `${i.field}: ${i.fix_instruction}`).join("\n"),
+          currentPremise: JSON.stringify(premiseData, null, 2),
+        });
+
+        const repairStartMs = Date.now();
+        const repairRaw = await this.llm.call("premise_writer", PREMISE_WRITER_SYSTEM, repairPrompt, {
+          temperature: 0.7,
+          maxTokens: 3000,
+          jsonSchema: PREMISE_WRITER_SCHEMA,
+          abortSignal,
+        });
+        traces.push(this.makeTrace(project.operationId, "premise_writer", repairStartMs, "fail_repaired"));
+
+        try {
+          premiseData = JSON.parse(repairRaw);
+        } catch {
+          // Repair parse failure — keep original
+        }
       }
     }
 

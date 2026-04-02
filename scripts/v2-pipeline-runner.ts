@@ -40,6 +40,7 @@ const args = process.argv.slice(2);
 const customSeed = args.includes("--seed") ? args[args.indexOf("--seed") + 1] : null;
 const skipBaseline = args.includes("--no-baseline");
 const skipJudge = args.includes("--no-judge");
+const pipelineMode = args.includes("--mode") ? args[args.indexOf("--mode") + 1] : undefined;
 const seed = customSeed ?? SEEDS[Math.floor(Math.random() * SEEDS.length)];
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -52,6 +53,20 @@ function log(section: string, msg: string) {
 async function callLLM(
   system: string, user: string, model: string, maxTokens = 4000,
 ): Promise<string> {
+  // Grok models use xAI's OpenAI-compatible API
+  if (model.startsWith("grok-")) {
+    const grokKey = process.env.GROK_API_KEY;
+    if (!grokKey) throw new Error("GROK_API_KEY required for Grok models");
+    const res = await fetch("https://api.x.ai/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${grokKey}` },
+      body: JSON.stringify({ model, max_tokens: maxTokens, messages: [{ role: "system", content: system }, { role: "user", content: user }] }),
+    });
+    const data = await res.json() as any;
+    if (data.error) throw new Error(`LLM: ${JSON.stringify(data.error)}`);
+    return data.choices?.[0]?.message?.content ?? "";
+  }
+
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -83,7 +98,7 @@ async function api(method: string, path: string, body?: any): Promise<any> {
   }
 }
 
-async function poll(path: string, statusField: string, projectId: string, timeoutMs = 600_000): Promise<any> {
+async function poll(path: string, statusField: string, projectId: string, timeoutMs = 1_200_000): Promise<any> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     // Check the specific endpoint first
@@ -102,7 +117,7 @@ async function poll(path: string, statusField: string, projectId: string, timeou
       log("poll", `${elapsed}s — sub-steps: ${subSteps.join(", ") || "starting..."}`);
     }
 
-    await new Promise(r => setTimeout(r, 3000));
+    await new Promise(r => setTimeout(r, 1500));
   }
   throw new Error(`Timeout polling ${path} after ${timeoutMs}ms`);
 }
@@ -115,7 +130,9 @@ async function runV2Pipeline(seed: string): Promise<{ output: string; durationMs
 
   // Step 1: Create project + intake
   log("v2", "Step 1: Creating project...");
-  const { projectId } = await api("POST", "", { seedInput: seed });
+  const createBody: Record<string, string> = { seedInput: seed };
+  if (pipelineMode) createBody.mode = pipelineMode;
+  const { projectId } = await api("POST", "", createBody);
   log("v2", `  Project: ${projectId}`);
 
   // Run intake turn
@@ -259,7 +276,8 @@ ${intakeResult.assumptions?.length ? `\nAssumptions it made:\n${intakeResult.ass
 
 Give a brief, opinionated answer (1-2 sentences). Be a real creative person with preferences.`;
 
-  return await callLLM("You are a creative person testing a tool. Be concise.", prompt, SIM_MODEL, 200);
+  const simModel = pipelineMode === "erotica-fast" ? "grok-4-1-fast-non-reasoning" : SIM_MODEL;
+  return await callLLM("You are a creative person testing a tool. Be concise.", prompt, simModel, 200);
 }
 
 // ── Blind Comparative Judge ──────────────────────────────────────────

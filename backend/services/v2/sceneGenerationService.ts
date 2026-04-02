@@ -226,10 +226,11 @@ export class SceneGenerationService {
     for (let attempt = 0; attempt <= MAX_SCENE_RETRIES; attempt++) {
       if (abortSignal?.aborted) throw new DOMException("Aborted", "AbortError");
 
+      console.log(`[scene-gen] ${plan.scene_id}: prompt ~${Math.round((SCENE_WRITER_SYSTEM.length + writerPrompt.length + cacheablePrefix.length) / 4)} tokens (sys=${SCENE_WRITER_SYSTEM.length} user=${writerPrompt.length} cache=${cacheablePrefix.length} chars)`);
       const startMs = Date.now();
       const writerRaw = await this.llm.call("scene_writer", SCENE_WRITER_SYSTEM, writerPrompt, {
         temperature: 0.85,
-        maxTokens: 6000,
+        maxTokens: 8000,
         jsonSchema: SCENE_WRITER_SCHEMA,
         truncationMode: "critical",
         abortSignal,
