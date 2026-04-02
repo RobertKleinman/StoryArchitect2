@@ -128,9 +128,60 @@ export async function saveFingerprint(fp: StoryFingerprint): Promise<void> {
  * Build a freshness constraint block for bible generation.
  * Returns a string to inject into character/world writer prompts,
  * or empty string if no fingerprints exist.
+ *
+ * Helpers below extract first-name frequency and recurring premise
+ * patterns so the freshness block can flag overused elements.
  */
+
+/** Extract first names from full names (e.g., "Ravi Chandrasekhar" → "Ravi") */
+function extractFirstNames(fullNames: string[]): Set<string> {
+  const firsts = new Set<string>();
+  for (const name of fullNames) {
+    const parts = name.split(/\s+/);
+    if (parts.length > 0 && parts[0].length >= 2) {
+      firsts.add(parts[0]);
+    }
+  }
+  return firsts;
+}
+
+/** Count how many times each first name appears across fingerprints */
+function findRepeatedFirstNames(fingerprints: StoryFingerprint[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const fp of fingerprints) {
+    // Count each first name once per story (not per character)
+    const firsts = extractFirstNames(fp.character_names);
+    for (const name of firsts) {
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+    }
+  }
+  return counts;
+}
+
+/** Extract recurring premise patterns (e.g., "sweaty feet = power source") */
+function findSettingPatterns(fingerprints: StoryFingerprint[]): string[] {
+  // Extract short setting summaries and find common phrases
+  const patterns: string[] = [];
+  const seedWords = new Map<string, number>();
+  for (const fp of fingerprints) {
+    // Tokenize seed into 3-word phrases
+    const words = fp.seed_summary.toLowerCase().replace(/[^a-z\s]/g, "").split(/\s+/).filter(w => w.length > 3);
+    for (let i = 0; i < words.length - 2; i++) {
+      const phrase = `${words[i]} ${words[i + 1]} ${words[i + 2]}`;
+      seedWords.set(phrase, (seedWords.get(phrase) ?? 0) + 1);
+    }
+  }
+  // Phrases appearing in 3+ stories are patterns
+  for (const [phrase, count] of seedWords) {
+    if (count >= 3) patterns.push(phrase);
+  }
+  return patterns;
+}
+
 export function buildFreshnessBlock(fingerprints: StoryFingerprint[]): string {
   if (fingerprints.length === 0) return "";
+
+  const recent = fingerprints.slice(-15); // Last 15 stories
 
   const lines: string[] = [
     "FRESHNESS — AVOID REPEATING PREVIOUS STORIES:",
@@ -139,14 +190,14 @@ export function buildFreshnessBlock(fingerprints: StoryFingerprint[]): string {
     "",
   ];
 
-  // Collect all used names
+  // Collect all used full names
   const allNames = new Set<string>();
   const allArchetypes = new Set<string>();
   const allSettings = new Set<string>();
   const allThemes = new Set<string>();
   const allLocations = new Set<string>();
 
-  for (const fp of fingerprints.slice(-10)) { // Last 10 stories max
+  for (const fp of recent) {
     fp.character_names.forEach(n => allNames.add(n));
     fp.character_archetypes.forEach(a => allArchetypes.add(a));
     if (fp.setting_type) allSettings.add(fp.setting_type.slice(0, 80));
@@ -155,8 +206,19 @@ export function buildFreshnessBlock(fingerprints: StoryFingerprint[]): string {
   }
 
   if (allNames.size > 0) {
-    lines.push(`Names already used (DO NOT reuse): ${[...allNames].join(", ")}`);
+    lines.push(`Full names already used (DO NOT reuse): ${[...allNames].join(", ")}`);
   }
+
+  // First name frequency — block names used 2+ times
+  const firstNameCounts = findRepeatedFirstNames(recent);
+  const overusedFirstNames = [...firstNameCounts.entries()]
+    .filter(([, count]) => count >= 2)
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, count]) => `${name} (${count}x)`);
+  if (overusedFirstNames.length > 0) {
+    lines.push(`First names overused (DO NOT reuse these first names even with different surnames): ${overusedFirstNames.join(", ")}`);
+  }
+
   if (allArchetypes.size > 0) {
     lines.push(`Archetypes already used (vary these): ${[...allArchetypes].slice(0, 15).join("; ")}`);
   }
@@ -165,6 +227,17 @@ export function buildFreshnessBlock(fingerprints: StoryFingerprint[]): string {
   }
   if (allThemes.size > 0) {
     lines.push(`Themes already explored (find fresh angles): ${[...allThemes].slice(0, 10).join(", ")}`);
+  }
+
+  // Detect recurring premise patterns
+  const patterns = findSettingPatterns(recent);
+  if (patterns.length > 0) {
+    lines.push(`Recurring premise patterns to AVOID: ${patterns.join("; ")}`);
+  }
+
+  // Setting variety check — if settings are too similar, call it out
+  if (allSettings.size > 0) {
+    lines.push(`Settings already used (create a distinctly different premise and world): ${[...allSettings].slice(0, 8).join(" | ")}`);
   }
 
   lines.push("");
