@@ -16,6 +16,7 @@ import type {
 import type {
   ScenePlan, VNScene, ReadableScene,
 } from "./scene";
+import type { SensoryPalette } from "../sensoryPalette";
 
 // ── Premise Artifact (output of Step 2) ─────────────────────────────
 
@@ -125,6 +126,8 @@ export interface StoryBibleArtifact {
     };
     addiction_engine: string;
   };
+
+  sensory_palette?: SensoryPalette;
 }
 
 // ── Scene Plan Artifact (also output of Step 4) ─────────────────────

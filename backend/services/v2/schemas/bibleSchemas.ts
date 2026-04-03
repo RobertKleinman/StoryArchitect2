@@ -117,7 +117,24 @@ export const CHARACTER_WRITER_SCHEMA = {
         items: {
           type: "object",
           properties: {
-            name: { type: "string" },
+            name: { type: "string", description: "Only provide if the user explicitly named this character in the seed. Otherwise leave empty and fill name_spec." },
+            name_spec: {
+              type: "object",
+              description: "Name specification for deterministic name assignment. Provide this instead of choosing a name.",
+              properties: {
+                culture: { type: "string", enum: [
+                  "east_asian", "south_asian", "west_african", "east_african",
+                  "arabic", "latin_american", "slavic", "mediterranean",
+                  "northern_european", "southeast_asian", "pacific_islander",
+                  "persian", "caribbean",
+                ], description: "Cultural/linguistic tradition for the name" },
+                gender_presentation: { type: "string", enum: ["masculine", "feminine", "neutral"] },
+                feel: { type: "string", enum: ["formal", "casual", "diminutive", "archaic"], description: "Name register/formality" },
+                placeholder: { type: "string", description: "Temporary reference name (e.g. __CHAR_A__) used in relationships and ensemble_dynamic. Will be replaced with actual name." },
+              },
+              required: ["culture", "gender_presentation", "feel", "placeholder"],
+              additionalProperties: false,
+            },
             role: { type: "string" },
             description: { type: "string" },
             presentation: { type: "string", enum: ["masculine", "feminine", "androgynous", "unspecified"],
@@ -150,7 +167,7 @@ export const CHARACTER_WRITER_SCHEMA = {
             threshold_statement: { type: "string" },
             competence_axis: { type: "string" },
           },
-          required: ["name", "role", "description", "presentation", "age_range",
+          required: ["name_spec", "role", "description", "presentation", "age_range",
                      "psychological_profile", "threshold_statement", "competence_axis"],
           additionalProperties: false,
         },

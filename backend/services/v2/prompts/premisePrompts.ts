@@ -31,6 +31,7 @@ export function buildPremiseWriterPrompt(args: {
   psychologyBlock?: string;
   revisionFeedback?: string;
   currentPremise?: string;
+  forcingBlock?: string;
 }): string {
   const parts: string[] = [];
 
@@ -72,6 +73,10 @@ export function buildPremiseWriterPrompt(args: {
 
   if (args.mustHonorBlock) {
     parts.push(`\n${args.mustHonorBlock}`);
+  }
+
+  if (args.forcingBlock) {
+    parts.push(`\n${args.forcingBlock}`);
   }
 
   return parts.join("\n");

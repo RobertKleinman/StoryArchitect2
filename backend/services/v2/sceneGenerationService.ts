@@ -20,6 +20,10 @@ import { SCENE_WRITER_SCHEMA, SCENE_JUDGE_SCHEMA } from "./schemas/sceneSchemas"
 import { compressForScene, previousSceneDigest, buildCanonicalNames } from "./contextCompressor";
 import { emitProgress, emitSceneComplete } from "./progressEmitter";
 import { getAbortSignal } from "./orchestrator";
+import {
+  createTracker, updateFrequency, findOverusedDescriptors, formatPaletteForRewrite,
+  type DescriptorFrequency, type SensoryPalette,
+} from "../../../shared/sensoryPalette";
 
 const DEFAULT_BATCH_SIZE = 1;  // sequential by default for tension tracking
 const MAX_SCENE_RETRIES = 2;
@@ -90,6 +94,10 @@ export class SceneGenerationService {
       scene_count: 0,
       used_phrases: [],
     };
+
+    // ── Sensory vocabulary tracker — flags overused descriptors ──
+    let descriptorTracker: DescriptorFrequency = createTracker();
+    const sensoryPalette: SensoryPalette | undefined = project.storyBible?.sensory_palette;
 
     // Process in batches
     for (let batchStart = 0; batchStart < remaining.length; batchStart += batchSize) {
@@ -197,6 +205,19 @@ export class SceneGenerationService {
             tensionState.used_phrases = tensionState.used_phrases.slice(-60);
           }
           console.log(`[repetition] Extracted ${newPhrases.length} phrases from ${scene.scene_id} (${tensionState.used_phrases.length} total tracked)`);
+        }
+
+        // ── Track sensory vocabulary frequency (deterministic, no LLM) ──
+        const sceneText = scene.readable?.screenplay_text ?? "";
+        if (sceneText) {
+          descriptorTracker = updateFrequency(descriptorTracker, sceneText, scene.scene_id);
+          const overused = findOverusedDescriptors(descriptorTracker);
+          if (overused.length > 0 && sensoryPalette) {
+            console.log(`[vocab] Overused descriptors in ${scene.scene_id}: ${overused.join(", ")} — targeted rewrite available but deferred to postproduction`);
+            // NOTE: Targeted rewrite could run here via v2_summarizer.
+            // For now, we log the overuse. A future iteration can add the LLM rewrite step.
+            // The palette + overuse data is available for postproduction pass integration.
+          }
         }
       }
 

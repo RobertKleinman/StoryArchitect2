@@ -134,7 +134,7 @@ export async function saveFingerprint(fp: StoryFingerprint): Promise<void> {
  */
 
 /** Extract first names from full names (e.g., "Ravi Chandrasekhar" → "Ravi") */
-function extractFirstNames(fullNames: string[]): Set<string> {
+export function extractFirstNames(fullNames: string[]): Set<string> {
   const firsts = new Set<string>();
   for (const name of fullNames) {
     const parts = name.split(/\s+/);

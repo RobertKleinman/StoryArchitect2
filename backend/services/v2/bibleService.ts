@@ -11,6 +11,12 @@ import type { StoryBibleArtifact, ScenePlanArtifact, CharacterProfile, Character
 import { LLMClient } from "../llmClient";
 import { buildMustHonorBlock } from "../mustHonorBlock";
 import { loadFingerprints, buildFreshnessBlock } from "../../../shared/fingerprint";
+import { resolveAllNames, replacePlaceholders } from "../../../shared/namePool";
+import { getForcingFunctions, formatForcingBlock } from "../../../shared/narrativeForcingFunctions";
+import {
+  SENSORY_PALETTE_SYSTEM, buildSensoryPalettePrompt, SENSORY_PALETTE_SCHEMA,
+  type SensoryPalette,
+} from "../../../shared/sensoryPalette";
 import {
   WORLD_WRITER_SYSTEM, CHARACTER_WRITER_SYSTEM, PLOT_WRITER_SYSTEM,
   BIBLE_JUDGE_SYSTEM, SCENE_PLANNER_SYSTEM,
@@ -44,6 +50,9 @@ export class BibleService {
     const freshnessBlock = buildFreshnessBlock(fingerprints);
     if (freshnessBlock) console.log(`[bible] Loaded ${fingerprints.length} story fingerprints for freshness constraints`);
 
+    // Build narrative forcing functions for this mode
+    const bibleForcingBlock = formatForcingBlock(getForcingFunctions(project.mode, "bible"));
+
     // Restore persisted intermediate artifacts from checkpoint (for resume)
     let worldData: any = project.checkpoint.worldData ?? null;
     let charData: any = project.checkpoint.charData ?? null;
@@ -61,7 +70,7 @@ export class BibleService {
 
       const startMs = Date.now();
       const raw = await this.llm.call("bible_writer", WORLD_WRITER_SYSTEM,
-        buildWorldPrompt({ premise: premiseStr, mustHonorBlock: mustHonor, culturalBrief, freshnessBlock }),
+        buildWorldPrompt({ premise: premiseStr, mustHonorBlock: mustHonor, culturalBrief, freshnessBlock, forcingBlock: bibleForcingBlock }),
         { temperature: 0.8, maxTokens: 4000, jsonSchema: WORLD_WRITER_SCHEMA, abortSignal },
       );
       traces.push(this.makeTrace(project.operationId, "bible_writer", startMs, "world"));
@@ -83,13 +92,49 @@ export class BibleService {
       const worldStr = worldData ? JSON.stringify(worldData, null, 2) : "(world not available)";
       const startMs = Date.now();
       const raw = await this.llm.call("bible_writer", CHARACTER_WRITER_SYSTEM,
-        buildCharacterPrompt({ premise: premiseStr, worldSection: worldStr, mustHonorBlock: mustHonor, freshnessBlock }),
+        buildCharacterPrompt({ premise: premiseStr, worldSection: worldStr, mustHonorBlock: mustHonor, freshnessBlock, forcingBlock: bibleForcingBlock }),
         { temperature: 0.8, maxTokens: 5000, jsonSchema: CHARACTER_WRITER_SCHEMA, abortSignal },
       );
       traces.push(this.makeTrace(project.operationId, "bible_writer", startMs, "characters"));
       charData = JSON.parse(raw);
 
-      // Check for name collisions (e.g., "Dris" and "Idris" — one containing the other)
+      // ── Name Resolution: resolve name_specs to actual names from pool ──
+      const resolved = resolveAllNames(
+        charData.characters ?? [],
+        fingerprints,
+        worldData,
+        project.premise.tone_chips,
+        project.premise.setting_anchor,
+      );
+      for (let i = 0; i < (charData.characters ?? []).length; i++) {
+        const r = resolved[i];
+        if (r) {
+          charData.characters[i].name = r.resolvedName;
+          console.log(`[bible] Name resolved: ${r.placeholder} → ${r.resolvedName} (${r.source}, ${r.nameSpec.culture})`);
+        }
+      }
+      // Replace placeholders in relationships and ensemble_dynamic
+      if (charData.relationships) {
+        for (const rel of charData.relationships) {
+          rel.between = rel.between.map((name: string) => {
+            const match = resolved.find(r => r.placeholder === name);
+            return match ? match.resolvedName : name;
+          });
+          rel.nature = replacePlaceholders(rel.nature, resolved);
+          rel.stated_dynamic = replacePlaceholders(rel.stated_dynamic, resolved);
+          rel.true_dynamic = replacePlaceholders(rel.true_dynamic, resolved);
+        }
+      }
+      if (charData.ensemble_dynamic) {
+        charData.ensemble_dynamic = replacePlaceholders(charData.ensemble_dynamic, resolved);
+      }
+      // Also replace placeholders in character descriptions (may reference other characters)
+      for (const c of (charData.characters ?? [])) {
+        if (c.description) c.description = replacePlaceholders(c.description, resolved);
+        if (c.threshold_statement) c.threshold_statement = replacePlaceholders(c.threshold_statement, resolved);
+      }
+
+      // Check for name collisions AFTER resolution (e.g., "Dris" and "Idris" — one containing the other)
       const charNames: string[] = (charData.characters ?? []).map((c: any) => c.name);
       for (let i = 0; i < charNames.length; i++) {
         for (let j = i + 1; j < charNames.length; j++) {
@@ -108,10 +153,10 @@ export class BibleService {
       for (const c of (charData?.characters ?? [])) {
         const p = c.presentation?.toLowerCase?.() ?? "";
         if (PRESENTATION_MAP[p]) {
-          console.warn(`[bible] Normalizing presentation "${c.presentation}" → "${PRESENTATION_MAP[p]}" for ${c.name}`);
+          console.warn(`[bible] Normalizing presentation "${c.presentation}" → "${PRESENTATION_MAP[p]}" for ${c.name ?? c.name_spec?.placeholder}`);
           c.presentation = PRESENTATION_MAP[p];
         } else if (!["masculine", "feminine", "androgynous", "unspecified"].includes(p)) {
-          console.warn(`[bible] Invalid presentation "${c.presentation}" for ${c.name} — defaulting to "unspecified"`);
+          console.warn(`[bible] Invalid presentation "${c.presentation}" for ${c.name ?? c.name_spec?.placeholder} — defaulting to "unspecified"`);
           c.presentation = "unspecified";
         }
       }
@@ -234,6 +279,30 @@ export class BibleService {
       if (onCheckpoint) await onCheckpoint(project);
     }
 
+    // ── Sub-step 4.5: Sensory Palette (skipped in fast/haiku modes) ──
+    let sensoryPalette: SensoryPalette | undefined;
+    if (!completed.includes("sensory_palette") && !options?.skipJudge) {
+      try {
+        const worldStr = worldData ? JSON.stringify(worldData, null, 2).slice(0, 1500) : "";
+        const paletteStartMs = Date.now();
+        const paletteRaw = await this.llm.call("v2_summarizer", SENSORY_PALETTE_SYSTEM,
+          buildSensoryPalettePrompt({
+            worldSection: worldStr,
+            settingAnchor: project.premise.setting_anchor ?? "",
+            toneChips: project.premise.tone_chips ?? [],
+          }),
+          { temperature: 0.8, maxTokens: 1500, jsonSchema: SENSORY_PALETTE_SCHEMA, abortSignal },
+        );
+        traces.push(this.makeTrace(project.operationId, "v2_summarizer", paletteStartMs, "sensory_palette"));
+        sensoryPalette = JSON.parse(paletteRaw) as SensoryPalette;
+        console.log(`[bible] Sensory palette generated: ${Object.values(sensoryPalette).flat().length} entries`);
+      } catch (err: any) {
+        console.warn(`[bible] Sensory palette generation failed (non-fatal): ${err.message}`);
+      }
+      completed.push("sensory_palette");
+      if (onCheckpoint) await onCheckpoint(project);
+    }
+
     // ── Sub-step 5: Scene Plan ───────────────────────────────────
     let scenePlanData: any = null;
     if (!completed.includes("scene_plan")) {
@@ -335,6 +404,7 @@ export class BibleService {
         dirty_hands: plotData?.dirty_hands ?? undefined,
         addiction_engine: plotData?.addiction_engine ?? "",
       },
+      sensory_palette: sensoryPalette,
     };
 
     const scenePlan: ScenePlanArtifact = {

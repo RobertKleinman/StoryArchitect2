@@ -19,6 +19,7 @@ import {
 import { PREMISE_WRITER_SCHEMA, PREMISE_JUDGE_SCHEMA } from "./schemas/premiseSchemas";
 import { emitProgress } from "./progressEmitter";
 import { getAbortSignal } from "./orchestrator";
+import { getForcingFunctions, formatForcingBlock } from "../../../shared/narrativeForcingFunctions";
 
 export class PremiseService {
   constructor(private llm: LLMClient) {}
@@ -46,6 +47,7 @@ export class PremiseService {
       startedAt: new Date().toISOString(),
     });
 
+    const forcingBlock = formatForcingBlock(getForcingFunctions(project.mode, "premise"));
     const writerPrompt = buildPremiseWriterPrompt({
       seedInput: project.seedInput,
       conversationTurns: project.conversationTurns,
@@ -53,6 +55,7 @@ export class PremiseService {
       mustHonorBlock: mustHonor,
       culturalBrief,
       psychologyBlock: psychBlock,
+      forcingBlock,
     });
 
     const startMs = Date.now();

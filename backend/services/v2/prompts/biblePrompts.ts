@@ -24,10 +24,11 @@ RULES:
 - Respect all MUST HONOR constraints and world rules
 
 NAMES:
-- Names must draw from at least 3 distinct real-world cultural/linguistic traditions across the cast. A cast where every name is short and vaguely Northern European (Kael, Voss, Thane, Prask, Resk, Mirren, Sorin) reads as AI-generated.
-- Mix phonetic structures: monosyllabic AND polysyllabic, different consonant/vowel patterns, different cultural origins (African, East Asian, South Asian, Arabic, Latin American, Indigenous, Slavic, Mediterranean, etc.).
-- In sci-fi/fantasy settings, alien or invented names should STILL show phonetic diversity — not all from the same sound palette.
-- If the premise already names characters, you may rename them if the names lack diversity.
+- Do NOT choose character names yourself. Instead, provide a name_spec for each character with: culture (cultural tradition), gender_presentation, and feel (formal/casual/diminutive/archaic).
+- The culture field must draw from at least 3 distinct traditions across the cast. A cast where every character has the same cultural origin reads as AI-generated.
+- Use distinctive placeholders like __CHAR_A__, __CHAR_B__, __CHAR_C__ etc. in the "placeholder" field. Use these same placeholders when referencing characters in relationships.between[], ensemble_dynamic, and description fields. They will be replaced with real names after generation.
+- If the premise already names a character explicitly (user-provided name), keep that name in the "name" field and leave name_spec empty for that character.
+- IMPORTANT: Do NOT invent names. Only output name_spec + placeholder. Real names are assigned from a curated pool after generation.
 
 CHARACTER DEPTH:
 - Characters should have flaws that lead to genuine mistakes — not just noble sacrifices. Selfishness, bad timing, misplaced loyalty, and lies of omission make characters feel real.
@@ -142,6 +143,7 @@ export function buildWorldPrompt(args: {
   mustHonorBlock: string;
   culturalBrief?: string;
   freshnessBlock?: string;
+  forcingBlock?: string;
 }): string {
   const parts = [
     `PREMISE:\n${args.premise}`,
@@ -149,6 +151,7 @@ export function buildWorldPrompt(args: {
   if (args.culturalBrief) parts.push(`\nCULTURAL RESEARCH:\n${args.culturalBrief}`);
   if (args.mustHonorBlock) parts.push(`\n${args.mustHonorBlock}`);
   if (args.freshnessBlock) parts.push(`\n${args.freshnessBlock}`);
+  if (args.forcingBlock) parts.push(`\n${args.forcingBlock}`);
   return parts.join("\n");
 }
 
@@ -157,12 +160,14 @@ export function buildCharacterPrompt(args: {
   worldSection: string;
   mustHonorBlock: string;
   freshnessBlock?: string;
+  forcingBlock?: string;
 }): string {
   return [
     `PREMISE:\n${args.premise}`,
     `\nWORLD:\n${args.worldSection}`,
     args.mustHonorBlock ? `\n${args.mustHonorBlock}` : "",
     args.freshnessBlock ? `\n${args.freshnessBlock}` : "",
+    args.forcingBlock ? `\n${args.forcingBlock}` : "",
   ].filter(Boolean).join("\n");
 }
 

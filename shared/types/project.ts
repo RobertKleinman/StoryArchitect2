@@ -93,7 +93,7 @@ export interface ReviewTurn {
 
 // ── Sub-step checkpoint (for Step 4 bible generation) ───────────────
 
-export type BibleSubStep = "world" | "characters" | "plot" | "judge" | "scene_plan";
+export type BibleSubStep = "world" | "characters" | "plot" | "judge" | "sensory_palette" | "scene_plan";
 
 export interface BibleCheckpoint {
   completedSubSteps: BibleSubStep[];
