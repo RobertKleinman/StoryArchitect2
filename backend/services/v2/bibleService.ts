@@ -43,7 +43,19 @@ export class BibleService {
     const abortSignal = getAbortSignal(projectId);
     const traces: StepTrace[] = [];
     const mustHonor = buildMustHonorBlock(project.constraintLedger);
-    const premiseStr = this.formatPremise(project.premise);
+
+    // Build premise-to-placeholder mapping to prevent old premise names from leaking
+    const premiseNameMap = new Map<string, string>();
+    for (let i = 0; i < (project.premise.characters_sketch ?? []).length; i++) {
+      const sketch = project.premise.characters_sketch[i];
+      if (sketch.name) {
+        premiseNameMap.set(sketch.name, `__CHAR_${String.fromCharCode(65 + i)}__`);
+      }
+    }
+
+    // premiseStr with placeholders for world/character writers (pre-resolution)
+    // Will be recomputed with resolved names for plot/scene planner (post-resolution)
+    let premiseStr = this.formatPremise(project.premise, premiseNameMap);
 
     // Load story fingerprints for freshness injection
     const fingerprints = await loadFingerprints();
@@ -175,6 +187,24 @@ export class BibleService {
           c.presentation = "unspecified";
         }
       }
+
+      // ── Sync resolved names back to premise (prevents name leaks downstream) ──
+      for (let i = 0; i < resolved.length && i < (project.premise.characters_sketch ?? []).length; i++) {
+        const oldName = project.premise.characters_sketch[i].name;
+        const newName = resolved[i].resolvedName;
+        if (oldName && oldName !== newName) {
+          project.premise.characters_sketch[i].name = newName;
+          // Replace old name in premise free-text fields
+          for (const field of ["hook_sentence", "synopsis", "premise_paragraph", "emotional_promise", "core_conflict"] as const) {
+            if ((project.premise as any)[field]) {
+              (project.premise as any)[field] = (project.premise as any)[field].replaceAll(oldName, newName);
+            }
+          }
+          console.log(`[bible] Premise synced: "${oldName}" → "${newName}" in premise text`);
+        }
+      }
+      // Recompute premiseStr with resolved names for plot writer + scene planner
+      premiseStr = this.formatPremise(project.premise);
 
       completed.push("characters");
       project.checkpoint.charData = charData;
@@ -435,8 +465,8 @@ export class BibleService {
 
   // ── Helpers ─────────────────────────────────────────────────────
 
-  private formatPremise(premise: any): string {
-    return [
+  private formatPremise(premise: any, nameMap?: Map<string, string>): string {
+    let result = [
       `HOOK: ${premise.hook_sentence}`,
       `EMOTIONAL PROMISE: ${premise.emotional_promise}`,
       `PREMISE: ${premise.premise_paragraph}`,
@@ -447,6 +477,15 @@ export class BibleService {
       `CHARACTERS: ${premise.characters_sketch?.map((c: any) => `${c.name} (${c.role}): ${c.one_liner}`).join("; ")}`,
       premise.bans?.length ? `BANS: ${premise.bans.join(", ")}` : "",
     ].filter(Boolean).join("\n");
+
+    // Replace premise character names with placeholders to prevent name leaks
+    if (nameMap) {
+      for (const [name, placeholder] of nameMap) {
+        result = result.replaceAll(name, placeholder);
+      }
+    }
+
+    return result;
   }
 
   /** Compress world to just what the plot writer needs: locations, rules, factions, thesis */
