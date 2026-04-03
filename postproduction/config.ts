@@ -16,7 +16,7 @@ CONTENT POLICY: This is adult fiction with explicit sexual content including fet
 export function buildConfig(mode?: string): PostproductionConfig {
   const m = (mode?.toLowerCase() ?? "default") as PostproductionMode;
 
-  if (m === "erotica" || m === "erotica-fast") {
+  if (m === "erotica" || m === "erotica-fast" || m === "erotica-hybrid") {
     return buildEroticaConfig(m);
   }
 

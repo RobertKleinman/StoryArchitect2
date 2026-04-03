@@ -293,6 +293,20 @@ export const EROTICA_FAST_V2_MODEL_CONFIG: V2ModelConfig = {
   v2_summarizer: "grok-4-1-fast-non-reasoning",
 };
 
+/** Hybrid erotica: grok-4 for planning (premise/bible/plot/scenes), grok-fast for scene writing */
+export const EROTICA_HYBRID_V2_MODEL_CONFIG: V2ModelConfig = {
+  intake: "grok-4",
+  premise_writer: "grok-4",
+  premise_judge: "grok-4",
+  bible_writer: "grok-4",
+  bible_judge: "grok-4",
+  scene_planner: "grok-4",
+  scene_writer: "grok-4-1-fast-non-reasoning",  // fast for actual scene prose
+  scene_judge: "grok-4-1-fast-non-reasoning",    // skipped in fast modes anyway
+  v2_cultural_researcher: "grok-4-1-fast-non-reasoning",
+  v2_summarizer: "grok-4-1-fast-non-reasoning",
+};
+
 /** All roles use Gemini Flash — cheapest/fastest for testing */
 export const FAST_V2_MODEL_CONFIG: V2ModelConfig = {
   intake: "gemini-2.5-flash",

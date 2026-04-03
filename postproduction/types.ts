@@ -306,7 +306,7 @@ export function normalizeSpecialSpeaker(speaker: string): string | null {
 
 import type { LLMProvider } from "./llm";
 
-export type PostproductionMode = "default" | "fast" | "haiku" | "erotica" | "erotica-fast";
+export type PostproductionMode = "default" | "fast" | "haiku" | "erotica" | "erotica-fast" | "erotica-hybrid";
 
 export interface PostproductionLLMConfig {
   provider: LLMProvider;

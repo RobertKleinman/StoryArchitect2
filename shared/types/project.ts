@@ -116,7 +116,7 @@ export interface SceneCheckpoint {
 
 // ── The project state machine (discriminated union on `step`) ───────
 
-export type GenerationMode = "default" | "fast" | "erotica" | "erotica-fast" | "haiku";
+export type GenerationMode = "default" | "fast" | "erotica" | "erotica-fast" | "erotica-hybrid" | "haiku";
 
 interface ProjectBase {
   projectId: ProjectId;

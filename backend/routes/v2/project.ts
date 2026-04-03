@@ -11,7 +11,7 @@ import { SceneGenerationService } from "../../services/v2/sceneGenerationService
 // PolishService available but not used in default pipeline — quality baked into scene writer prompt
 import { ProjectStoreV2 } from "../../storage/v2/projectStoreV2";
 import { LLMClient } from "../../services/llmClient";
-import { DEFAULT_V2_MODEL_CONFIG, EROTICA_V2_MODEL_CONFIG, EROTICA_FAST_V2_MODEL_CONFIG, FAST_V2_MODEL_CONFIG } from "../../../shared/modelConfig";
+import { DEFAULT_V2_MODEL_CONFIG, EROTICA_V2_MODEL_CONFIG, EROTICA_FAST_V2_MODEL_CONFIG, EROTICA_HYBRID_V2_MODEL_CONFIG, FAST_V2_MODEL_CONFIG } from "../../../shared/modelConfig";
 import { emitStepComplete, emitError, cleanupEmitter } from "../../services/v2/progressEmitter";
 import { acquireInflight, releaseInflight, buildInflightKey } from "../../services/inflightGuard";
 import { extractFingerprint, saveFingerprint } from "../../../shared/fingerprint";
@@ -51,6 +51,9 @@ function getLLMForMode(mode?: string): LLMClient {
   } else if (key === "erotica-fast") {
     client = new LLMClient(undefined, EROTICA_FAST_V2_MODEL_CONFIG);
     console.log(`[v2] LLM client created: erotica-fast mode (Grok 4.1 Fast NR)`);
+  } else if (key === "erotica-hybrid") {
+    client = new LLMClient(undefined, EROTICA_HYBRID_V2_MODEL_CONFIG);
+    console.log(`[v2] LLM client created: erotica-hybrid mode (Grok-4 plan + Grok Fast scenes)`);
   } else if (key === "fast" || key === "haiku") {
     client = new LLMClient(undefined, FAST_V2_MODEL_CONFIG);
     console.log(`[v2] LLM client created: fast mode (Gemini Flash)`);
@@ -479,8 +482,8 @@ router.post("/:projectId/generate-scenes", async (req: Request, res: Response) =
     const controller = registerAbort(req.params.projectId);
     try {
       const sceneGen = new SceneGenerationService(getLLMForMode(generating.mode));
-      // Fast/erotica-fast modes: parallel generation, skip judge & tension tracking
-      const isFastMode = generating.mode === "fast" || generating.mode === "erotica-fast" || generating.mode === "haiku";
+      // Fast/erotica-fast/erotica-hybrid modes: parallel generation, skip judge & tension tracking for scene writing
+      const isFastMode = generating.mode === "fast" || generating.mode === "erotica-fast" || generating.mode === "erotica-hybrid" || generating.mode === "haiku";
       const result = await sceneGen.generate(
         generating,
         async (updated) => { await store.save(updated); },
