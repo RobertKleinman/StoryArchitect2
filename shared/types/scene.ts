@@ -86,6 +86,20 @@ export type PacingType =
   | "aftermath"          // processing what just happened, quiet
   | "set_piece";         // the big moment, fully staged
 
+export type EscalationType =
+  | "external_discovery"       // someone else sees/learns the secret
+  | "self_sabotage"            // a character's own flaw makes things worse
+  | "desire_outpaces_comfort"  // they want more than they're emotionally ready for
+  | "forced_choice"            // must pick: the secret or something else they value
+  | "consequences_surface"     // a previous action comes back with fallout
+  | "power_shift"              // who's in control flips
+  | "deadline_pressure"        // a ticking clock compresses the tension
+  | "jealousy_or_rivalry"      // a third person's interest complicates things
+  | "vulnerability_break"      // one character drops their guard irreversibly
+  | "commitment_escalation"    // what was casual becomes serious
+  | "external_crisis"          // something unrelated forces them together or apart
+  | "identity_confrontation";  // a character faces what this desire means about who they are
+
 // ─── Scene Plan (the full dramatic schema, derived from tension chain) ───
 
 export interface ScenePlan {
@@ -119,6 +133,8 @@ export interface ScenePlan {
 
   // ─── Secondary fields (derivable, improve cohesion) ───
   pacing_type: PacingType;
+  /** How tension escalates in this scene — must vary across the story */
+  escalation_type?: EscalationType;
   /** Concrete detail or line from previous scene that carries into this one */
   continuity_anchor?: string;
   /** Which motifs recur or are introduced in this scene */

@@ -125,9 +125,25 @@ RULES:
 - Track information delta per scene (what's revealed, what's hidden)
 - Scene count should match the story's length and complexity (see the target range in the user prompt)
 
+ESCALATION TYPE (required per scene — pick from this menu):
+Each scene must have an escalation_type from this list. Use at least 4 DIFFERENT types across the story. No single type may appear more than twice.
+
+- external_discovery: Someone else sees or learns the secret
+- self_sabotage: A character's own flaw, impulsiveness, or compulsion makes things worse
+- desire_outpaces_comfort: They want more than they're emotionally ready to handle
+- forced_choice: An external situation demands they choose between the secret and something else they value
+- consequences_surface: A previous action comes back with unexpected fallout
+- power_shift: Who's in control flips — the dynamic between them changes
+- deadline_pressure: A ticking clock (departure, event, decision) compresses the tension
+- jealousy_or_rivalry: A third person's interest threatens or complicates things
+- vulnerability_break: One character drops their guard in a way that can't be taken back
+- commitment_escalation: What was casual or deniable becomes serious — one of them wants more
+- external_crisis: Something unrelated to the relationship forces them together or apart
+- identity_confrontation: A character has to face what this desire means about who they are
+
 ESCALATION VARIETY:
-- The middle scenes must NOT all run the same dramatic mechanism. If one scene uses "evidence → counter-reading → ambiguity remains," the next should use a different engine: confrontation, forced choice, irreversible action, relationship rupture, or external pressure change.
-- At least one scene in the middle act must produce an IRREVERSIBLE change — something is said that cannot be unsaid, a relationship breaks, a line is crossed, information leaks. Perfectly balanced ambiguity across all scenes makes the story feel curated, not lived.
+- The middle scenes must NOT all run the same dramatic mechanism. The escalation_type menu above enforces this — pick different ones.
+- At least one scene in the middle act must produce an IRREVERSIBLE change — something is said that cannot be unsaid, a relationship breaks, a line is crossed, information leaks.
 - Vary what is at stake: not just "the truth about X" every scene, but also trust, loyalty, self-image, professional standing, or safety.
 
 CONTENT DIRECTIVES:

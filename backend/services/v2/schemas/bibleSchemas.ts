@@ -397,6 +397,16 @@ export const SCENE_PLANNER_SCHEMA = {
               type: "string",
               enum: ["pressure_cooker", "slow_burn", "whiplash", "aftermath", "set_piece"],
             },
+            escalation_type: {
+              type: "string",
+              enum: [
+                "external_discovery", "self_sabotage", "desire_outpaces_comfort",
+                "forced_choice", "consequences_surface", "power_shift",
+                "deadline_pressure", "jealousy_or_rivalry", "vulnerability_break",
+                "commitment_escalation", "external_crisis", "identity_confrontation",
+              ],
+              description: "How tension escalates in this scene. Must use at least 4 different types across the story.",
+            },
             content_directives: {
               type: "array",
               items: { type: "string" },
@@ -405,7 +415,7 @@ export const SCENE_PLANNER_SCHEMA = {
           },
           required: ["scene_id", "beat_ids", "title", "purpose", "setting",
                      "characters_present", "pov_character", "objective",
-                     "emotion_arc", "exit_hook", "pacing_type"],
+                     "emotion_arc", "exit_hook", "pacing_type", "escalation_type"],
           additionalProperties: false,
         },
       },

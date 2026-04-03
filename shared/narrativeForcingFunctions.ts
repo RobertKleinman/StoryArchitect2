@@ -94,6 +94,13 @@ const FORCING_FUNCTIONS: ForcingFunction[] = [
     constraint: "If the setting involves an institution, the protagonist's relationship to it must be more complex than simple opposition. Consider complicity, reform from within, reluctant enforcement, or genuine belief in a flawed system.",
     rationale: "Nuanced institutional relationships are more interesting than default rebellion.",
   },
+  {
+    id: "all_no_discovery_default",
+    mode: "all",
+    stage: "bible",
+    constraint: "At least half the story's escalation must come from INTERNAL sources (self-sabotage, desire outpacing comfort, identity confrontation, vulnerability, commitment escalation) rather than external discovery or third-party interference. Characters should create their own problems.",
+    rationale: "'Someone almost catches them' appeared as the primary escalation in 6/6 test stories. Internal escalation is more interesting.",
+  },
 ];
 
 /**
