@@ -99,12 +99,27 @@ export class BibleService {
       charData = JSON.parse(raw);
 
       // ── Name Resolution: resolve name_specs to actual names from pool ──
+      // Detect gender lock from seed for erotica modes (e.g., "gay male only" → masculine lock)
+      const seedLower = (premiseStr + " " + (project.premise.hook_sentence ?? "")).toLowerCase();
+      const isErotica = project.mode?.startsWith("erotica");
+      let genderLock: "masculine" | "feminine" | undefined;
+      if (isErotica) {
+        if (/\bgay\s+male\b|\bgay\s+men\b|\ball[- ]male\b|\bmen\s+only\b/.test(seedLower)) {
+          genderLock = "masculine";
+        } else if (/\blesbian\b|\bgay\s+female\b|\ball[- ]female\b|\bwomen\s+only\b/.test(seedLower)) {
+          genderLock = "feminine";
+        }
+      }
+      if (genderLock) console.log(`[bible] Gender lock: ${genderLock} (detected from seed)`);
+
       const resolved = resolveAllNames(
         charData.characters ?? [],
         fingerprints,
         worldData,
         project.premise.tone_chips,
         project.premise.setting_anchor,
+        undefined, // userProvidedNames
+        genderLock,
       );
       for (let i = 0; i < (charData.characters ?? []).length; i++) {
         const r = resolved[i];

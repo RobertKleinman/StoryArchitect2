@@ -107,13 +107,15 @@ export function buildExclusionSet(fingerprints: StoryFingerprint[]): Set<string>
 
 /**
  * Resolve a NameSpec to an actual name from the pool.
- * Fallback chain: exact match → widen gender → widen culture → any remaining → fantasy name.
+ * Fallback chain: exact match → widen culture (same gender) → widen gender → any remaining → fantasy name.
+ * When lockGender is true (e.g., "gay male only" seeds), gender is never widened.
  */
 export function resolveName(
   spec: NameSpec,
   excluded: Set<string>,
   pool: LinkedName[],
   allowedFamilies?: CultureFamily[],
+  lockGender = false,
 ): LinkedName | null {
   // Helper to check if a name is excluded
   const isExcluded = (n: LinkedName): boolean => {
@@ -130,14 +132,7 @@ export function resolveName(
   );
   if (candidates.length > 0) return pickRandom(candidates);
 
-  // Step 2: widen gender (same culture, any gender)
-  candidates = pool.filter(n =>
-    n.culture === spec.culture &&
-    !isExcluded(n),
-  );
-  if (candidates.length > 0) return pickRandom(candidates);
-
-  // Step 3: widen culture (allowed families, same gender)
+  // Step 2: widen culture FIRST (same gender, allowed families)
   const families = allowedFamilies ?? CULTURE_FAMILIES as unknown as CultureFamily[];
   candidates = pool.filter(n =>
     families.includes(n.culture) &&
@@ -146,8 +141,20 @@ export function resolveName(
   );
   if (candidates.length > 0) return pickRandom(candidates);
 
-  // Step 4: any remaining non-excluded name
-  candidates = pool.filter(n => !isExcluded(n));
+  // Step 3: widen gender (same culture, any gender) — SKIP if lockGender
+  if (!lockGender) {
+    candidates = pool.filter(n =>
+      n.culture === spec.culture &&
+      !isExcluded(n),
+    );
+    if (candidates.length > 0) return pickRandom(candidates);
+  }
+
+  // Step 4: any remaining non-excluded name (respects lockGender)
+  candidates = pool.filter(n =>
+    (!lockGender || n.gender_presentation === spec.gender_presentation) &&
+    !isExcluded(n),
+  );
   if (candidates.length > 0) return pickRandom(candidates);
 
   // Step 5: pool exhausted — generate a fantasy name
@@ -297,6 +304,10 @@ export interface ResolvedCharacter {
 /**
  * Resolve all character names from LLM output.
  * Returns a map of placeholder → resolved name for string replacement.
+ *
+ * When genderLock is set (e.g., "masculine" for gay male erotica),
+ * ALL characters' name specs are forced to that gender and the pool
+ * never widens to other genders.
  */
 export function resolveAllNames(
   characters: any[],
@@ -305,6 +316,7 @@ export function resolveAllNames(
   premiseToneChips?: string[],
   premiseSettingAnchor?: string,
   userProvidedNames?: Set<string>,
+  genderLock?: "masculine" | "feminine" | "neutral",
 ): ResolvedCharacter[] {
   const pool = loadNamePool();
   const excluded = buildExclusionSet(fingerprints);
@@ -333,8 +345,8 @@ export function resolveAllNames(
     if (char.name_spec) {
       const spec: NameSpec = {
         culture: CULTURE_FAMILIES.includes(char.name_spec.culture) ? char.name_spec.culture : pickRandom([...profile.allowed_families]),
-        gender_presentation: ["masculine", "feminine", "neutral"].includes(char.name_spec.gender_presentation)
-          ? char.name_spec.gender_presentation : "neutral",
+        gender_presentation: genderLock ?? (["masculine", "feminine", "neutral"].includes(char.name_spec.gender_presentation)
+          ? char.name_spec.gender_presentation : "neutral"),
         feel: char.name_spec.feel ?? "casual",
       };
 
@@ -347,7 +359,7 @@ export function resolveAllNames(
         source = "fantasy";
       } else {
         // Real or hybrid world: try pool first, then fantasy fallback
-        const poolResult = resolveName(spec, storyExcluded, pool, profile.allowed_families);
+        const poolResult = resolveName(spec, storyExcluded, pool, profile.allowed_families, !!genderLock);
         if (poolResult) {
           resolvedName = poolResult.display_name;
           source = "pool";
