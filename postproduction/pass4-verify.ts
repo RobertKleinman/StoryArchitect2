@@ -14,7 +14,9 @@ import type {
   ContinuityLedger,
   SceneEditResult,
   VerificationResult,
+  PostproductionConfig,
 } from "./types";
+import { callLLM } from "./llm";
 
 // ── Config ──
 
@@ -28,7 +30,15 @@ export async function runVerification(
   originalScenes: IdentifiedScene[],
   editResults: SceneEditResult[],
   ledger: ContinuityLedger,
+  config?: PostproductionConfig,
 ): Promise<VerificationResult[]> {
+  const llm = config?.llm ?? {
+    provider: "anthropic" as const,
+    baseUrl: "https://api.anthropic.com/v1",
+    apiKey: ANTHROPIC_API_KEY ?? "",
+    editorialModel: "", verifyModel: VERIFY_MODEL, emotionModel: "",
+    dualModel: false, secondary: null, systemPromptSuffix: "",
+  };
   const results: VerificationResult[] = [];
   const fixedSceneIds = new Set(
     editResults.filter(r => r.status === "fixed").map(r => r.scene_id)
@@ -163,7 +173,10 @@ Return JSON only:
 { "contradictions": ["description of each NEW contradiction introduced by the edits, if any"] }`;
 
   try {
-    const response = await callAnthropic(systemPrompt, userPrompt, VERIFY_MODEL, 0.2, 1000);
+    const response = await callLLM(
+      llm.provider, llm.baseUrl, llm.apiKey,
+      systemPrompt, userPrompt, llm.verifyModel, 0.2, 1000,
+    );
     const jsonMatch = response.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return [];
     const parsed = JSON.parse(jsonMatch[0]);

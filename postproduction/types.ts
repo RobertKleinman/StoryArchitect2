@@ -301,3 +301,33 @@ export function normalizeSpecialSpeaker(speaker: string): string | null {
   if (SPECIAL_SPEAKERS.has(base)) return base;
   return null;
 }
+
+// ── Postproduction Config (mode-aware LLM routing) ──
+
+import type { LLMProvider } from "./llm";
+
+export type PostproductionMode = "default" | "fast" | "haiku" | "erotica" | "erotica-fast";
+
+export interface PostproductionLLMConfig {
+  provider: LLMProvider;
+  baseUrl: string;
+  apiKey: string;
+  editorialModel: string;
+  verifyModel: string;
+  emotionModel: string;
+  dualModel: boolean;
+  secondary: {
+    provider: LLMProvider;
+    baseUrl: string;
+    apiKey: string;
+    model: string;
+  } | null;
+  /** Appended to system prompts for content-mode-specific instructions */
+  systemPromptSuffix: string;
+}
+
+export interface PostproductionConfig {
+  mode: PostproductionMode;
+  llm: PostproductionLLMConfig;
+  runEroticaCleanup: boolean;
+}

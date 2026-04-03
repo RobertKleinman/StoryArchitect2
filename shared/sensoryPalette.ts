@@ -32,7 +32,7 @@ export interface DescriptorFrequency {
  * Only these words are counted — not all adjectives.
  * Focused on words that LLMs tend to overuse in descriptive passages.
  */
-const SENSORY_WORDS = new Set([
+export const SENSORY_WORDS = new Set([
   // Texture
   "callused", "calloused", "rough", "smooth", "silky", "coarse", "gritty", "velvety",
   "slick", "oiled", "polished", "weathered", "scarred", "puckered", "ridged",

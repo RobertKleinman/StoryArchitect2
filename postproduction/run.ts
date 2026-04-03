@@ -23,7 +23,9 @@ import { runTargetedFixes } from "./pass3-fixes";
 import { runVerification } from "./pass4-verify";
 import { runPackager } from "./packager";
 import { mapEmotionsWithLLM } from "./emotion-mapper";
-import type { EditorOutput, SceneEditResult, PipelineOutput, IdentifiedScene } from "./types";
+import type { EditorOutput, SceneEditResult, PipelineOutput, IdentifiedScene, PostproductionConfig } from "./types";
+import { buildConfig } from "./config";
+import { runEroticaCleanup } from "./pass3b-erotica-cleanup";
 
 /** Everything the packager needs, saved after the editor completes */
 interface EditorSnapshot {
@@ -39,6 +41,7 @@ interface Args {
   inputPath?: string;
   runId?: string;
   repackagePath?: string;
+  mode?: string;
   force: boolean;
   skipLlm: boolean;
   editorOnly: boolean;
@@ -52,6 +55,7 @@ function parseArgs(): Args {
     switch (args[i]) {
       case "--run-id": result.runId = args[++i]; break;
       case "--repackage": result.repackagePath = args[++i]; break;
+      case "--mode": result.mode = args[++i]; break;
       case "--force": result.force = true; break;
       case "--skip-llm": result.skipLlm = true; break;
       case "--editor-only": result.editorOnly = true; break;
@@ -107,9 +111,12 @@ async function resolveInputPath(args: Args): Promise<string> {
 async function main() {
   const args = parseArgs();
 
+  const config = buildConfig(args.mode ?? process.env.V2_MODE);
+
   console.log("\n" + "═".repeat(60));
   console.log("  POSTPRODUCTION");
   console.log("═".repeat(60));
+  log("CONFIG", `Mode: ${config.mode} | Provider: ${config.llm.provider} | Model: ${config.llm.editorialModel}`);
 
   // ── Repackage mode: load snapshot and skip straight to packager ──
   if (args.repackagePath) {
@@ -168,9 +175,9 @@ async function main() {
 
   if (!args.skipLlm) {
     // ── Pass 2: Continuity Read ──
-    const dualModel = process.env.EDITOR_DUAL_MODEL !== "false" && process.env.OPENAI_API_KEY;
-    log("PASS 2", `Running continuity read (${dualModel ? "Sonnet + GPT dual-model" : "Sonnet only"})...`);
-    editorialReport = await runContinuityRead(input, scenes);
+    const dualModel = config.llm.dualModel;
+    log("PASS 2", `Running continuity read (${dualModel ? config.llm.editorialModel + " + " + config.llm.secondary?.model : config.llm.editorialModel + " only"})...`);
+    editorialReport = await runContinuityRead(input, scenes, config);
     llmCalls += dualModel ? 2 : 1;
     log("PASS 2", `Found ${editorialReport.fixable_findings.length} fixable findings, ${editorialReport.report_only.length} report-only`);
 
@@ -190,6 +197,7 @@ async function main() {
         autoFixableStructural,
         editorialReport.continuity_ledger,
         input.seed ?? "(no seed)",
+        config,
       );
       editedScenes = fixResult.scenes;
       editResults = fixResult.results;
@@ -202,6 +210,27 @@ async function main() {
       log("PASS 3", "No fixable issues — skipping");
     }
 
+    // ── Pass 3B: Erotica Cleanup (only for erotica modes) ──
+    if (config.runEroticaCleanup) {
+      log("PASS 3B", "Running erotica-specific cleanup...");
+      const cleanupResult = await runEroticaCleanup(editedScenes, input, config);
+      editedScenes = cleanupResult.scenes;
+      const cleanupFixed = cleanupResult.results.filter(r => r.status === "fixed").length;
+      llmCalls += cleanupFixed;
+      // Merge cleanup results into editResults
+      for (const cr of cleanupResult.results) {
+        const existing = editResults.find(r => r.scene_id === cr.scene_id);
+        if (existing && cr.status === "fixed") {
+          existing.diffs_applied += cr.diffs_applied;
+          existing.issues_addressed.push(...cr.issues_addressed);
+          existing.status = "fixed";
+        } else if (!existing && cr.status === "fixed") {
+          editResults.push(cr);
+        }
+      }
+      log("PASS 3B", `${cleanupFixed} scenes cleaned up`);
+    }
+
     // ── Pass 4+5: Verify ──
     const fixedCount = editResults.filter(r => r.status === "fixed").length;
     if (fixedCount > 0) {
@@ -211,6 +240,7 @@ async function main() {
         scenes, // original pre-edit scenes for before/after comparison
         editResults,
         editorialReport.continuity_ledger,
+        config,
       );
       llmCalls += fixedCount;
 
@@ -264,7 +294,7 @@ async function main() {
 
   // ── Emotion mapping (1 cheap LLM call, cached) ──
   const allEmotions = editedScenes.flatMap(s => s.lines.map(l => l.emotion).filter(Boolean) as string[]);
-  const emotionCache = await mapEmotionsWithLLM(allEmotions);
+  const emotionCache = await mapEmotionsWithLLM(allEmotions, config);
 
   // ── Packager ──
   log("PACKAGER", "Packaging for VNBuilder...");

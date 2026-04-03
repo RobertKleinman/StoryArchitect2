@@ -15,7 +15,9 @@ import type {
   EditorialFinding,
   EditorialReport,
   ContinuityLedger,
+  PostproductionConfig,
 } from "./types";
+import { callLLM } from "./llm";
 
 // ── Config ──
 
@@ -30,27 +32,52 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 export async function runContinuityRead(
   input: PipelineOutput,
   scenes: IdentifiedScene[],
+  config?: PostproductionConfig,
 ): Promise<EditorialReport> {
-  if (!ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY required for editor");
+  // Resolve config — backward compatible: undefined = default behavior from env vars
+  const llm = config?.llm ?? {
+    provider: "anthropic" as const,
+    baseUrl: "https://api.anthropic.com/v1",
+    apiKey: ANTHROPIC_API_KEY ?? "",
+    editorialModel: PRIMARY_MODEL,
+    verifyModel: "",
+    emotionModel: "",
+    dualModel: SECONDARY_ENABLED && !!OPENAI_API_KEY,
+    secondary: (SECONDARY_ENABLED && OPENAI_API_KEY) ? {
+      provider: "openai-compat" as const,
+      baseUrl: "https://api.openai.com/v1",
+      apiKey: OPENAI_API_KEY,
+      model: SECONDARY_MODEL,
+    } : null,
+    systemPromptSuffix: "",
+  };
+
+  if (!llm.apiKey) throw new Error("API key required for editor");
 
   const screenplay = formatScreenplay(scenes);
   const characterBrief = formatCharacterBrief(input);
   const seed = input.seed ?? "(no seed available)";
 
-  const systemPrompt = buildSystemPrompt();
+  const systemPrompt = buildSystemPrompt() + llm.systemPromptSuffix;
   const userPrompt = buildUserPrompt(seed, characterBrief, screenplay);
 
-  // Run primary (Sonnet) — always
-  const primaryPromise = callAnthropic(systemPrompt, userPrompt, PRIMARY_MODEL, 0.3, 16000);
+  // Run primary — always
+  const primaryPromise = callLLM(
+    llm.provider, llm.baseUrl, llm.apiKey,
+    systemPrompt, userPrompt, llm.editorialModel, 0.3, 16000,
+  );
 
-  // Run secondary (GPT) — in parallel if enabled and key available
+  // Run secondary — in parallel if enabled
   let secondaryPromise: Promise<string | null> = Promise.resolve(null);
-  if (SECONDARY_ENABLED && OPENAI_API_KEY) {
-    secondaryPromise = callOpenAI(systemPrompt, userPrompt, SECONDARY_MODEL, 0.3, 16000)
-      .catch(err => {
-        console.warn(`[PASS2] Secondary model (${SECONDARY_MODEL}) failed:`, err.message ?? err);
-        return null;
-      });
+  if (llm.dualModel && llm.secondary) {
+    const sec = llm.secondary;
+    secondaryPromise = callLLM(
+      sec.provider, sec.baseUrl, sec.apiKey,
+      systemPrompt, userPrompt, sec.model, 0.3, 16000,
+    ).catch(err => {
+      console.warn(`[PASS2] Secondary model (${sec.model}) failed:`, err.message ?? err);
+      return null;
+    });
   }
 
   const [primaryRaw, secondaryRaw] = await Promise.all([primaryPromise, secondaryPromise]);

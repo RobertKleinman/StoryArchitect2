@@ -18,7 +18,9 @@ import type {
   LineDiff,
   SceneEditResult,
   VNLine,
+  PostproductionConfig,
 } from "./types";
+import { callLLM } from "./llm";
 
 // ── Config ──
 
@@ -33,8 +35,17 @@ export async function runTargetedFixes(
   structuralIssues: StructuralIssue[],
   ledger: ContinuityLedger,
   seed: string,
+  config?: PostproductionConfig,
 ): Promise<{ scenes: IdentifiedScene[]; results: SceneEditResult[] }> {
-  if (!ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY required for editor");
+  const llm = config?.llm ?? {
+    provider: "anthropic" as const,
+    baseUrl: "https://api.anthropic.com/v1",
+    apiKey: ANTHROPIC_API_KEY ?? "",
+    editorialModel: MODEL,
+    verifyModel: "", emotionModel: "", dualModel: false, secondary: null,
+    systemPromptSuffix: "",
+  };
+  if (!llm.apiKey) throw new Error("API key required for editor");
 
   const results: SceneEditResult[] = [];
   const updatedScenes = [...scenes];
@@ -70,11 +81,11 @@ export async function runTargetedFixes(
     if (sceneFindings.length === 0 && sceneStructural.length === 0) continue;
 
     // Try to fix (with one retry)
-    let result = await attemptFix(scene, sceneFindings, sceneStructural, ledger, seed, false);
+    let result = await attemptFix(scene, sceneFindings, sceneStructural, ledger, seed, false, llm);
 
     if (result.status === "unfixed" && result.diffs_rejected > 0) {
       // Retry with stricter prompt
-      result = await attemptFix(scene, sceneFindings, sceneStructural, ledger, seed, true);
+      result = await attemptFix(scene, sceneFindings, sceneStructural, ledger, seed, true, llm);
     }
 
     if (result.status === "fixed" && result.fixedScene) {
@@ -125,6 +136,7 @@ async function attemptFix(
   ledger: ContinuityLedger,
   seed: string,
   strict: boolean,
+  llm: PostproductionConfig["llm"],
 ): Promise<FixAttemptResult> {
   const issueList = [
     ...findings.map(f => `[${f.category}] Line ${f.line_id}: ${f.description}. Suggestion: ${f.fix_suggestion}`),
@@ -187,7 +199,10 @@ Return JSON only:
 }`;
 
   try {
-    const response = await callAnthropic(systemPrompt, userPrompt, MODEL, 0.5, 8000);
+    const response = await callLLM(
+      llm.provider, llm.baseUrl, llm.apiKey,
+      systemPrompt + llm.systemPromptSuffix, userPrompt, llm.editorialModel, 0.5, 8000,
+    );
     const jsonMatch = response.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return { status: "unfixed", diffs_applied: 0, diffs_rejected: 0 };
 

@@ -9,6 +9,8 @@
  */
 
 import { readFile, writeFile, mkdir } from "fs/promises";
+import type { PostproductionConfig } from "./types";
+import { callLLM } from "./llm";
 
 const VN_EXPRESSIONS = ["neutral", "angry", "sad", "tense", "warm", "amused", "calm", "formal"] as const;
 type VNExpression = typeof VN_EXPRESSIONS[number];
@@ -68,6 +70,7 @@ async function saveCache(cache: Record<string, VNExpression>): Promise<void> {
  */
 export async function mapEmotionsWithLLM(
   emotions: string[],
+  config?: PostproductionConfig,
 ): Promise<Record<string, VNExpression>> {
   const cache = await loadCache();
   const unique = [...new Set(emotions.map(e => e.toLowerCase().trim()))];
@@ -77,26 +80,24 @@ export async function mapEmotionsWithLLM(
     return cache;
   }
 
-  // Batch call to Haiku
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    console.warn("[emotion-mapper] No ANTHROPIC_API_KEY — skipping LLM mapping");
+  // Resolve LLM config
+  const llm = config?.llm ?? {
+    provider: "anthropic" as const,
+    baseUrl: "https://api.anthropic.com/v1",
+    apiKey: process.env.ANTHROPIC_API_KEY ?? "",
+    editorialModel: "", verifyModel: "",
+    emotionModel: "claude-haiku-4-5-20251001",
+    dualModel: false, secondary: null, systemPromptSuffix: "",
+  };
+
+  if (!llm.apiKey) {
+    console.warn("[emotion-mapper] No API key — skipping LLM mapping");
     return cache;
   }
 
-  console.log(`[emotion-mapper] Mapping ${uncached.length} new emotions via Haiku...`);
+  console.log(`[emotion-mapper] Mapping ${uncached.length} new emotions via ${llm.emotionModel}...`);
 
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 4000,
-      system: `You map fictional character emotions to display expressions. The target expressions are exactly: ${VN_EXPRESSIONS.join(", ")}.
+  const systemPrompt = `You map fictional character emotions to display expressions. The target expressions are exactly: ${VN_EXPRESSIONS.join(", ")}.
 
 Rules:
 - Every emotion MUST map to exactly one of the 8 expressions
@@ -113,21 +114,20 @@ Rules:
 - "dry" / "sardonic" / "wry" / "ironic" → amused
 - Compound emotions like "angry but controlled" → map to the dominant emotion (angry), not the control (formal)
 - If the emotion describes a physical state without emotion (e.g., "still", "quiet"), consider the likely emotional context — stillness from fear is tense, stillness from calm is calm
-- Respond ONLY with a JSON object mapping each emotion to its expression. No other text.`,
-      messages: [{
-        role: "user",
-        content: `Map each emotion to one of: ${VN_EXPRESSIONS.join(", ")}\n\n${JSON.stringify(uncached)}`,
-      }],
-    }),
-  });
+- Respond ONLY with a JSON object mapping each emotion to its expression. No other text.`;
 
-  const data = await res.json() as any;
-  if (data.error) {
-    console.warn(`[emotion-mapper] LLM error: ${JSON.stringify(data.error)}`);
+  const userPrompt = `Map each emotion to one of: ${VN_EXPRESSIONS.join(", ")}\n\n${JSON.stringify(uncached)}`;
+
+  let text: string;
+  try {
+    text = await callLLM(
+      llm.provider, llm.baseUrl, llm.apiKey,
+      systemPrompt, userPrompt, llm.emotionModel, 0.3, 4000,
+    );
+  } catch (err: any) {
+    console.warn(`[emotion-mapper] LLM error: ${err.message}`);
     return cache;
   }
-
-  const text = data.content?.[0]?.text ?? "";
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
     console.warn("[emotion-mapper] LLM did not return JSON");
