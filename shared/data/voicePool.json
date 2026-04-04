@@ -1,0 +1,167 @@
+[
+  {
+    "id": "questions_not_statements",
+    "voice_pattern": "Talks in questions more than statements — even commands come out as questions",
+    "speech_card": {
+      "typical_length": "medium",
+      "under_pressure": "questions become rhetorical and rapid-fire, barely waiting for answers",
+      "never_articulates": "direct demands — always frames wants as questions to maintain deniability",
+      "deflection_style": "answers a question with another question, redirecting without ever committing"
+    },
+    "tags": ["indirect", "probing", "controlling"]
+  },
+  {
+    "id": "drops_pronouns",
+    "voice_pattern": "Short sentences, drops pronouns and articles — telegraphic speech",
+    "speech_card": {
+      "typical_length": "short",
+      "under_pressure": "compresses to single words or two-word fragments",
+      "never_articulates": "full explanations of reasoning — just states conclusions",
+      "deflection_style": "goes silent, then changes subject with a flat non-sequitur"
+    },
+    "tags": ["terse", "action-oriented", "guarded"]
+  },
+  {
+    "id": "overly_formal",
+    "voice_pattern": "Overly formal, never uses contractions — speaks like a written document",
+    "speech_card": {
+      "typical_length": "long",
+      "under_pressure": "formality becomes rigid and clipped, each word precisely chosen",
+      "never_articulates": "casual affection — warmth comes out as stiff courtesy",
+      "deflection_style": "retreats into procedure, protocol, or technicality"
+    },
+    "tags": ["controlled", "professional", "distant"]
+  },
+  {
+    "id": "rambles_catches",
+    "voice_pattern": "Rambles then catches himself — starts long, abruptly stops or redirects",
+    "speech_card": {
+      "typical_length": "medium",
+      "under_pressure": "rambling accelerates, self-corrections become frantic",
+      "never_articulates": "the thing he was actually getting at — always veers off before landing",
+      "deflection_style": "buries the real point inside a longer tangent so it sounds incidental"
+    },
+    "tags": ["nervous", "intelligent", "avoidant"]
+  },
+  {
+    "id": "deadpan_flat",
+    "voice_pattern": "Deadpan delivery — says serious things flatly, jokes without changing tone",
+    "speech_card": {
+      "typical_length": "short",
+      "under_pressure": "gets quieter instead of louder, tone goes completely flat",
+      "never_articulates": "that he cares — everything is presented as observation, not feeling",
+      "deflection_style": "dry understatement that makes the other person unsure if it was a joke"
+    },
+    "tags": ["dry", "understated", "intimidating"]
+  },
+  {
+    "id": "starts_changes_direction",
+    "voice_pattern": "Starts sentences then changes direction mid-thought — visible thinking out loud",
+    "speech_card": {
+      "typical_length": "medium",
+      "under_pressure": "sentences fragment more, thoughts collide and overlap",
+      "never_articulates": "a clean thesis — always arrives at the point sideways",
+      "deflection_style": "genuinely loses the thread, or pretends to, circling back later when it's less charged"
+    },
+    "tags": ["spontaneous", "honest", "scattered"]
+  },
+  {
+    "id": "stories_analogies",
+    "voice_pattern": "Speaks in stories and analogies — answers questions with anecdotes",
+    "speech_card": {
+      "typical_length": "long",
+      "under_pressure": "stories get shorter and sharper, parables become pointed warnings",
+      "never_articulates": "direct instructions — always expects the listener to extract the lesson",
+      "deflection_style": "launches into a tangentially related story that avoids the actual question"
+    },
+    "tags": ["charismatic", "evasive", "warm"]
+  },
+  {
+    "id": "finishes_sentences",
+    "voice_pattern": "Finishes other people's sentences — impatient listener who jumps ahead",
+    "speech_card": {
+      "typical_length": "short",
+      "under_pressure": "interrupts constantly, stops listening, talks over others",
+      "never_articulates": "patience or uncertainty — always projects that he already knows",
+      "deflection_style": "preemptively answers what he thinks you're about to ask, often wrong"
+    },
+    "tags": ["impatient", "sharp", "domineering"]
+  },
+  {
+    "id": "qualifies_everything",
+    "voice_pattern": "Qualifies everything — hedges, conditionals, 'sort of', 'I guess', 'probably'",
+    "speech_card": {
+      "typical_length": "medium",
+      "under_pressure": "hedging disappears, suddenly direct and blunt — the real voice",
+      "never_articulates": "certainty about anything emotional — keeps an escape hatch in every statement",
+      "deflection_style": "adds so many qualifiers that the original point dissolves into mush"
+    },
+    "tags": ["cautious", "intellectual", "vulnerable"]
+  },
+  {
+    "id": "echoes_last_word",
+    "voice_pattern": "Echoes the last thing someone said before responding — processing out loud",
+    "speech_card": {
+      "typical_length": "medium",
+      "under_pressure": "echoing becomes sarcastic repetition, throwing words back as weapons",
+      "never_articulates": "original emotional statements — always reacts to what others said first",
+      "deflection_style": "repeats the question back slowly, buying time while appearing engaged"
+    },
+    "tags": ["reactive", "deliberate", "confrontational"]
+  },
+  {
+    "id": "nicknames_everyone",
+    "voice_pattern": "Gives everyone nicknames and uses them consistently — never uses real names",
+    "speech_card": {
+      "typical_length": "short",
+      "under_pressure": "drops nicknames, uses real name — which signals how serious the situation is",
+      "never_articulates": "genuine respect directly — it's buried in the nicknames he chooses",
+      "deflection_style": "makes a joke about the person's nickname to change the subject"
+    },
+    "tags": ["playful", "dominant", "distancing"]
+  },
+  {
+    "id": "speaks_in_instructions",
+    "voice_pattern": "Speaks in instructions and lists — 'first, second, third' even in casual talk",
+    "speech_card": {
+      "typical_length": "medium",
+      "under_pressure": "lists break down, order collapses, reveals the chaos underneath the structure",
+      "never_articulates": "feelings without numbering them — 'I have two problems with this'",
+      "deflection_style": "reframes emotional questions as procedural ones with action items"
+    },
+    "tags": ["systematic", "controlling", "anxious"]
+  },
+  {
+    "id": "trailing_off",
+    "voice_pattern": "Trails off at the end of sentences — leaves thoughts hanging for others to complete",
+    "speech_card": {
+      "typical_length": "medium",
+      "under_pressure": "sentences get even more incomplete, almost non-verbal",
+      "never_articulates": "conclusions — always implies, never states",
+      "deflection_style": "starts the hard thing, trails off, switches to something safer"
+    },
+    "tags": ["passive", "suggestive", "withdrawn"]
+  },
+  {
+    "id": "blunt_no_softening",
+    "voice_pattern": "Says exactly what he means with no softening — no 'maybe', no 'I think'",
+    "speech_card": {
+      "typical_length": "short",
+      "under_pressure": "doesn't change at all — already at maximum directness",
+      "never_articulates": "doubt or ambiguity — presents everything as settled fact",
+      "deflection_style": "states something so directly that it shuts down the conversation"
+    },
+    "tags": ["direct", "intimidating", "honest"]
+  },
+  {
+    "id": "mutters_asides",
+    "voice_pattern": "Mutters asides and commentary meant to be overheard — passive-aggressive honesty",
+    "speech_card": {
+      "typical_length": "short",
+      "under_pressure": "asides become louder and more pointed, barely disguised as mumbling",
+      "never_articulates": "complaints directly to the person — always through the aside channel",
+      "deflection_style": "pretends he wasn't talking to anyone when called on it"
+    },
+    "tags": ["sarcastic", "cowardly", "observant"]
+  }
+]

@@ -184,15 +184,23 @@ export class PremiseService {
 
     // ── Deterministic post-generation scrubs (erotica only) ─────
     const isErotica = project.mode?.startsWith("erotica");
+    let detectedOrientation: "gay male" | "lesbian" | "bisexual" | undefined;
     if (isErotica) {
-      // Gender enforcement: detect orientation from seed, fix any mismatches
+      // Detect orientation from seed (which has the original user input)
       const seedLower = (project.seedInput + " " + (premiseData.hook_sentence ?? "")).toLowerCase();
-      let requiredPresentation: string | undefined;
       if (/\bgay\s+m(ale|en)\b|\ball[- ]male\b|\bmen\s+only\b/.test(seedLower)) {
-        requiredPresentation = "masculine";
+        detectedOrientation = "gay male";
       } else if (/\blesbian\b|\bgay\s+female\b|\ball[- ]female\b|\bwomen\s+only\b/.test(seedLower)) {
-        requiredPresentation = "feminine";
+        detectedOrientation = "lesbian";
+      } else if (/\bbi(sexual)?\b|\bpansexual\b/.test(seedLower)) {
+        detectedOrientation = "bisexual";
       }
+      if (detectedOrientation) console.log(`[premise] Erotica orientation detected: ${detectedOrientation}`);
+
+      // Gender enforcement on characters
+      let requiredPresentation: string | undefined;
+      if (detectedOrientation === "gay male") requiredPresentation = "masculine";
+      else if (detectedOrientation === "lesbian") requiredPresentation = "feminine";
       if (requiredPresentation && premiseData.characters_sketch) {
         for (const c of premiseData.characters_sketch) {
           const pres = (c.presentation ?? "").toLowerCase();
@@ -224,6 +232,7 @@ export class PremiseService {
       core_conflict: premiseData.core_conflict,
       suggested_length: premiseData.suggested_length ?? "medium",
       suggested_cast: premiseData.suggested_cast ?? "small_ensemble",
+      erotica_orientation: detectedOrientation,
     };
 
     return { premise, traces };

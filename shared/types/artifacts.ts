@@ -44,6 +44,9 @@ export interface PremiseArtifact {
   core_conflict: string;
   suggested_length: "short" | "medium" | "long";
   suggested_cast: "duo" | "triangle" | "small_ensemble" | "large_ensemble";
+
+  /** Detected from seed for erotica modes — used downstream for gender enforcement */
+  erotica_orientation?: "gay male" | "lesbian" | "bisexual";
 }
 
 // ── Character Profile (used in Story Bible) ─────────────────────────

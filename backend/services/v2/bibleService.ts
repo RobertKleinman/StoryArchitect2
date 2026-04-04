@@ -13,6 +13,65 @@ import { buildMustHonorBlock } from "../mustHonorBlock";
 import { loadFingerprints, buildFreshnessBlock } from "../../../shared/fingerprint";
 import { resolveAllNames, replacePlaceholders } from "../../../shared/namePool";
 import { getForcingFunctions, formatForcingBlock } from "../../../shared/narrativeForcingFunctions";
+import { assignVoicePatterns, applyVoicePatterns } from "../../../shared/voicePool";
+
+// ── Plot Character Leak Scrubber ────────────────────────────────────
+
+/**
+ * Find capitalized multi-word phrases (likely invented names) in a beat's text
+ * that don't match any known character name. Replace with "a [role]" descriptor.
+ *
+ * Pattern: two+ adjacent capitalized words that aren't sentence-starters
+ * and aren't in the known character set.
+ */
+function scrubPhantomNames(beatText: string, knownNames: Set<string>): string {
+  // Build set of known first names and full names for matching
+  const knownFirstNames = new Set<string>();
+  const knownFullNormalized = new Set<string>();
+  for (const name of knownNames) {
+    knownFullNormalized.add(name.toLowerCase());
+    const first = name.split(/\s+/)[0];
+    if (first) knownFirstNames.add(first.toLowerCase());
+  }
+
+  // Words that start capitalized phrases but aren't person names
+  const NOT_NAMES = new Set([
+    // Conjunctions/prepositions that start sentences
+    "but", "and", "or", "the", "a", "an", "in", "on", "at", "for", "so",
+    "yet", "nor", "as", "if", "when", "while", "after", "before", "during",
+    // Location/object words
+    "main", "old", "new", "hidden", "narrow", "dark", "dim", "dimly",
+    "central", "upper", "lower", "north", "south", "east", "west",
+    "abandoned", "dilapidated", "cracked", "failing", "rundown", "cluttered",
+    "cargo", "crew", "bunk", "med", "observation", "engineering", "docking",
+    "command", "bridge", "deck", "bay", "hold", "pod", "pods", "chamber",
+    "corridor", "tunnel", "tunnels", "hall", "room", "vault", "lair",
+    "corporate", "imperial", "royal", "galactic", "interstellar",
+  ]);
+
+  return beatText.replace(
+    /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b/g,
+    (match) => {
+      const lower = match.toLowerCase();
+      // Is it a known character? Keep it.
+      if (knownFullNormalized.has(lower)) return match;
+      // Is the first word a known character's first name? Keep it.
+      const words = match.split(/\s+/);
+      const firstWord = words[0].toLowerCase();
+      if (knownFirstNames.has(firstWord)) return match;
+      // Is the first or last word a location/object/conjunction word? Keep it — it's not a person name.
+      const lastWord = words[words.length - 1].toLowerCase();
+      if (NOT_NAMES.has(firstWord) || NOT_NAMES.has(lastWord)) return match;
+      // Exactly 2 words, both look like person names (no location words) — likely a phantom
+      if (words.length === 2) {
+        console.log(`[bible] Phantom name scrubbed: "${match}" → "an outsider"`);
+        return "an outsider";
+      }
+      // 3+ words — probably a location or title, not a person name. Keep it.
+      return match;
+    },
+  );
+}
 import {
   SENSORY_PALETTE_SYSTEM, buildSensoryPalettePrompt, SENSORY_PALETTE_SCHEMA,
   type SensoryPalette,
@@ -65,20 +124,29 @@ export class BibleService {
     // Build narrative forcing functions for this mode
     const bibleForcingBlock = formatForcingBlock(getForcingFunctions(project.mode, "bible"));
 
-    // Detect orientation from seed for erotica modes — used in prompt constraints
+    // Detect orientation for erotica modes — used for gender enforcement and prompt constraints.
+    // Primary source: stored on premise artifact (detected from seed at premise stage).
+    // Fallback: scan premise text for keywords.
     const isErotica = project.mode?.startsWith("erotica");
-    const seedLowerForOrientation = (premiseStr + " " + (project.premise.hook_sentence ?? "")).toLowerCase();
-    let eroticaOrientation: string | undefined;
-    if (isErotica) {
-      if (/\bgay\s+male\b|\bgay\s+men\b|\ball[- ]male\b|\bmen\s+only\b/.test(seedLowerForOrientation)) {
+    let eroticaOrientation: string | undefined = project.premise.erotica_orientation;
+    if (isErotica && !eroticaOrientation) {
+      const allPremiseText = [
+        premiseStr,
+        project.premise.hook_sentence ?? "",
+        project.premise.synopsis ?? "",
+        project.premise.core_conflict ?? "",
+        ...(project.premise.tone_chips ?? []),
+        ...(project.premise.characters_sketch ?? []).map((c: any) => `${c.role ?? ""} ${c.one_liner ?? ""}`),
+      ].join(" ").toLowerCase();
+      if (/\bgay\s+m(ale|en)\b|\ball[- ]male\b|\bmen\s+only\b|\btwink\b|\bhomoerotic\b/.test(allPremiseText)) {
         eroticaOrientation = "gay male";
-      } else if (/\blesbian\b|\bgay\s+female\b|\ball[- ]female\b|\bwomen\s+only\b/.test(seedLowerForOrientation)) {
+      } else if (/\blesbian\b|\bgay\s+female\b|\ball[- ]female\b|\bwomen\s+only\b/.test(allPremiseText)) {
         eroticaOrientation = "lesbian";
-      } else if (/\bbi(sexual)?\b|\bpansexual\b/.test(seedLowerForOrientation)) {
+      } else if (/\bbi(sexual)?\b|\bpansexual\b/.test(allPremiseText)) {
         eroticaOrientation = "bisexual";
       }
-      if (eroticaOrientation) console.log(`[bible] Erotica orientation: ${eroticaOrientation}`);
     }
+    if (eroticaOrientation) console.log(`[bible] Erotica orientation: ${eroticaOrientation}`);
 
     // Restore persisted intermediate artifacts from checkpoint (for resume)
     let worldData: any = project.checkpoint.worldData ?? null;
@@ -125,19 +193,12 @@ export class BibleService {
       traces.push(this.makeTrace(project.operationId, "bible_writer", startMs, "characters"));
       charData = JSON.parse(raw);
 
-      // ── Name Resolution: resolve name_specs to actual names from pool ──
-      // Detect gender lock from seed for erotica modes (e.g., "gay male only" → masculine lock)
-      const seedLower = (premiseStr + " " + (project.premise.hook_sentence ?? "")).toLowerCase();
-      const isErotica = project.mode?.startsWith("erotica");
-      let genderLock: "masculine" | "feminine" | undefined;
-      if (isErotica) {
-        if (/\bgay\s+male\b|\bgay\s+men\b|\ball[- ]male\b|\bmen\s+only\b/.test(seedLower)) {
-          genderLock = "masculine";
-        } else if (/\blesbian\b|\bgay\s+female\b|\ball[- ]female\b|\bwomen\s+only\b/.test(seedLower)) {
-          genderLock = "feminine";
-        }
-      }
-      if (genderLock) console.log(`[bible] Gender lock: ${genderLock} (detected from seed)`);
+      // ── Name Resolution: derive gender lock from orientation detected above ──
+      const genderLock: "masculine" | "feminine" | undefined =
+        eroticaOrientation === "gay male" ? "masculine"
+        : eroticaOrientation === "lesbian" ? "feminine"
+        : undefined;
+      if (genderLock) console.log(`[bible] Gender lock: ${genderLock} (from orientation: ${eroticaOrientation})`);
 
       const resolved = resolveAllNames(
         charData.characters ?? [],
@@ -176,6 +237,35 @@ export class BibleService {
         if (c.threshold_statement) c.threshold_statement = replacePlaceholders(c.threshold_statement, resolved);
       }
 
+      // Deep placeholder sweep: replace __CHAR_X__ in ALL string fields across the entire charData
+      // Catches stragglers in psychological_profile, speech_card, etc.
+      const placeholderPattern = /__CHAR_[A-Z]__/g;
+      const placeholderMap = new Map(resolved.map(r => [r.placeholder, r.resolvedName]));
+      function deepReplacePlaceholders(obj: any): any {
+        if (typeof obj === "string") {
+          return obj.replace(placeholderPattern, (match) => placeholderMap.get(match) ?? match);
+        }
+        if (Array.isArray(obj)) return obj.map(deepReplacePlaceholders);
+        if (obj && typeof obj === "object") {
+          for (const key of Object.keys(obj)) {
+            obj[key] = deepReplacePlaceholders(obj[key]);
+          }
+        }
+        return obj;
+      }
+      charData = deepReplacePlaceholders(charData);
+
+      // Gender lock enforcement: for erotica modes, force all characters to match orientation
+      if (genderLock) {
+        for (const c of (charData?.characters ?? [])) {
+          const p = (c.presentation ?? "").toLowerCase();
+          if (p && p !== genderLock && p !== "unspecified") {
+            console.log(`[bible] Gender lock: ${c.name} presentation "${c.presentation}" → "${genderLock}"`);
+            c.presentation = genderLock;
+          }
+        }
+      }
+
       // Check for name collisions AFTER resolution (e.g., "Dris" and "Idris" — one containing the other)
       const charNames: string[] = (charData.characters ?? []).map((c: any) => c.name);
       for (let i = 0; i < charNames.length; i++) {
@@ -202,6 +292,11 @@ export class BibleService {
           c.presentation = "unspecified";
         }
       }
+
+      // ── Assign deterministic voice patterns from curated pool ──
+      const charList = (charData.characters ?? []).map((c: any) => ({ name: c.name, role: c.role }));
+      const voiceAssignments = assignVoicePatterns(charList);
+      applyVoicePatterns(charData, voiceAssignments);
 
       // ── Sync resolved names back to premise (prevents name leaks downstream) ──
       for (let i = 0; i < resolved.length && i < (project.premise.characters_sketch ?? []).length; i++) {
@@ -244,6 +339,24 @@ export class BibleService {
       );
       traces.push(this.makeTrace(project.operationId, "bible_writer", startMs, "plot"));
       plotData = JSON.parse(raw);
+
+      // ── Scrub phantom characters from plot beats ──
+      // The plot generator sometimes invents named characters not in the bible.
+      // Replace them with role descriptors so downstream doesn't reference ghosts.
+      const knownNames = new Set<string>(
+        (charData?.characters ?? []).map((c: any) => c.name as string),
+      );
+      if (plotData?.tension_chain) {
+        for (const beat of plotData.tension_chain) {
+          beat.beat = scrubPhantomNames(beat.beat ?? "", knownNames);
+          // Also scrub characters_involved if it references unknown names
+          if (beat.characters_involved) {
+            beat.characters_involved = beat.characters_involved.filter(
+              (name: string) => knownNames.has(name),
+            );
+          }
+        }
+      }
 
       completed.push("plot");
       project.checkpoint.plotData = plotData;
