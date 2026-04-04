@@ -65,6 +65,21 @@ export class BibleService {
     // Build narrative forcing functions for this mode
     const bibleForcingBlock = formatForcingBlock(getForcingFunctions(project.mode, "bible"));
 
+    // Detect orientation from seed for erotica modes — used in prompt constraints
+    const isErotica = project.mode?.startsWith("erotica");
+    const seedLowerForOrientation = (premiseStr + " " + (project.premise.hook_sentence ?? "")).toLowerCase();
+    let eroticaOrientation: string | undefined;
+    if (isErotica) {
+      if (/\bgay\s+male\b|\bgay\s+men\b|\ball[- ]male\b|\bmen\s+only\b/.test(seedLowerForOrientation)) {
+        eroticaOrientation = "gay male";
+      } else if (/\blesbian\b|\bgay\s+female\b|\ball[- ]female\b|\bwomen\s+only\b/.test(seedLowerForOrientation)) {
+        eroticaOrientation = "lesbian";
+      } else if (/\bbi(sexual)?\b|\bpansexual\b/.test(seedLowerForOrientation)) {
+        eroticaOrientation = "bisexual";
+      }
+      if (eroticaOrientation) console.log(`[bible] Erotica orientation: ${eroticaOrientation}`);
+    }
+
     // Restore persisted intermediate artifacts from checkpoint (for resume)
     let worldData: any = project.checkpoint.worldData ?? null;
     let charData: any = project.checkpoint.charData ?? null;
@@ -82,7 +97,7 @@ export class BibleService {
 
       const startMs = Date.now();
       const raw = await this.llm.call("bible_writer", WORLD_WRITER_SYSTEM,
-        buildWorldPrompt({ premise: premiseStr, mustHonorBlock: mustHonor, culturalBrief, freshnessBlock, forcingBlock: bibleForcingBlock }),
+        buildWorldPrompt({ premise: premiseStr, mustHonorBlock: mustHonor, culturalBrief, freshnessBlock, forcingBlock: bibleForcingBlock, mode: project.mode }),
         { temperature: 0.8, maxTokens: 4000, jsonSchema: WORLD_WRITER_SCHEMA, abortSignal },
       );
       traces.push(this.makeTrace(project.operationId, "bible_writer", startMs, "world"));
@@ -104,7 +119,7 @@ export class BibleService {
       const worldStr = worldData ? JSON.stringify(worldData, null, 2) : "(world not available)";
       const startMs = Date.now();
       const raw = await this.llm.call("bible_writer", CHARACTER_WRITER_SYSTEM,
-        buildCharacterPrompt({ premise: premiseStr, worldSection: worldStr, mustHonorBlock: mustHonor, freshnessBlock, forcingBlock: bibleForcingBlock }),
+        buildCharacterPrompt({ premise: premiseStr, worldSection: worldStr, mustHonorBlock: mustHonor, freshnessBlock, forcingBlock: bibleForcingBlock, mode: project.mode, eroticaOrientation }),
         { temperature: 0.8, maxTokens: 5000, jsonSchema: CHARACTER_WRITER_SCHEMA, abortSignal },
       );
       traces.push(this.makeTrace(project.operationId, "bible_writer", startMs, "characters"));
@@ -224,7 +239,7 @@ export class BibleService {
       const charsForPlot = this.compressCharsForPlot(charData);
       const startMs = Date.now();
       const raw = await this.llm.call("bible_writer", PLOT_WRITER_SYSTEM,
-        buildPlotPrompt({ premise: premiseStr, worldSection: worldForPlot, characterSection: charsForPlot, mustHonorBlock: mustHonor, suggestedLength: project.premise.suggested_length }),
+        buildPlotPrompt({ premise: premiseStr, worldSection: worldForPlot, characterSection: charsForPlot, mustHonorBlock: mustHonor, suggestedLength: project.premise.suggested_length, mode: project.mode }),
         { temperature: 0.8, maxTokens: 8000, jsonSchema: PLOT_WRITER_SCHEMA, abortSignal },
       );
       traces.push(this.makeTrace(project.operationId, "bible_writer", startMs, "plot"));
@@ -254,6 +269,8 @@ export class BibleService {
             characterSection: this.compressCharsForPlot(charData),
             plotSection: JSON.stringify(plotData),
             mustHonorBlock: mustHonor,
+            mode: project.mode,
+            eroticaOrientation,
           }),
           { temperature: 0.3, maxTokens: 2000, jsonSchema: BIBLE_JUDGE_SCHEMA, abortSignal },
         );

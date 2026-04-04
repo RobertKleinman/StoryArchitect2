@@ -20,6 +20,7 @@ export interface EroticaDiagnosticReport {
     arc_shape: ArcShapeMetrics;
     vulnerability: VulnerabilityMetrics;
     structural: OpenEndedMetrics;
+    rob_style: RobStyleMetrics;
   };
   flagged_lines: FlaggedLine[];
   per_scene: SceneDiagnostic[];
@@ -103,6 +104,22 @@ export interface OpenEndedMetrics {
   top_bigrams: Array<{ bigram: string; count: number }>;
   scene_opening_patterns: Array<{ scene_id: string; pattern: string }>;
   scene_closing_patterns: Array<{ scene_id: string; pattern: string }>;
+}
+
+// ── Rob Style Metrics ───────────────────────────────────────────
+
+export interface RobStyleMetrics {
+  dialogue_sentence_count: number;
+  under_8_words_rate: number;
+  in_zone_rate: number;          // 8-18 words
+  over_25_words_rate: number;
+  mean_sentence_words: number;
+  internal_question_count: number;
+  internal_question_rate: number;
+  why_what_how_count: number;
+  exclamation_line_count: number;
+  exclamation_rate: number;
+  flagged_line_ids: string[];
 }
 
 // ── Flagged Lines ────────���─────────────────────────────────────────

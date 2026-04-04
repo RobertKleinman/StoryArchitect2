@@ -1,16 +1,15 @@
 /**
- * CONTENT PRESERVATION VALIDATOR
- * ================================
- * Validates that LLM rewrites don't shrink word count or strip explicit content.
- * This is the safety net — previous postproduction halved word counts and
- * removed fetish content that was the actual point of the stories.
+ * CONTENT PRESERVATION VALIDATOR (Scene-Level)
+ * ===============================================
+ * Validates that a rewritten scene preserves content quality.
+ * Compares whole scenes, not individual diffs.
  */
 
-import type { IdentifiedLine, LineDiff, VNLine } from "../types";
+import type { IdentifiedLine } from "../types";
 import type { ContentValidationResult } from "./types";
 
-// Explicit content keywords — if these appear in the original, they should
-// survive somewhere in the scene (not necessarily the same line) after rewrite.
+// Explicit content keywords — if these appear in the original scene, they should
+// survive somewhere in the rewritten scene.
 const EXPLICIT_KEYWORDS = new Set([
   // Body parts
   "cock", "dick", "shaft", "tip", "balls", "ass", "hole", "taint",
@@ -23,143 +22,74 @@ const EXPLICIT_KEYWORDS = new Set([
   "sock", "socks", "leather", "collar", "leash", "rope", "cuff",
   "sweat", "musk", "scent", "smell", "taste", "sniff", "inhale",
   // Power dynamic
-  "submit", "obey", "kneel", "serve", "master", "sir", "pet",
-  "slave", "beg", "please", "permission",
+  "submit", "obey", "serve", "master", "sir",
+  "slave", "permission",
 ]);
 
-/**
- * Extract explicit keywords from a text string.
- */
-function findExplicitKeywords(text: string): Set<string> {
-  const words = text.toLowerCase().replace(/[^a-z\s]/g, "").split(/\s+/);
+function extractKeywords(lines: Array<{ text: string }>): Set<string> {
   const found = new Set<string>();
-  for (const w of words) {
-    if (EXPLICIT_KEYWORDS.has(w)) found.add(w);
+  for (const line of lines) {
+    const words = line.text.toLowerCase().replace(/[^a-z\s]/g, "").split(/\s+/);
+    for (const w of words) {
+      if (EXPLICIT_KEYWORDS.has(w)) found.add(w);
+    }
   }
   return found;
 }
 
-/**
- * Count words in a text string.
- */
-function wordCount(text: string): number {
-  return text.split(/\s+/).filter(Boolean).length;
+function totalWordCount(lines: Array<{ text: string }>): number {
+  return lines.reduce((sum, l) => sum + l.text.split(/\s+/).filter(Boolean).length, 0);
 }
 
 /**
- * Validate that a set of diffs preserves content quality.
- * Returns which diffs should be rejected and why.
+ * Validate that a rewritten scene preserves content compared to the original.
  */
-export function validateContentPreservation(
-  sceneLines: IdentifiedLine[],
-  diffs: LineDiff[],
+export function validateSceneRewrite(
+  originalLines: IdentifiedLine[],
+  rewrittenLines: Array<{ speaker: string; text: string; emotion?: string | null }>,
 ): ContentValidationResult {
-  const rejected: string[] = [];
   const reasons: string[] = [];
 
-  // Build a map of original lines by ID
-  const lineMap = new Map<string, IdentifiedLine>();
-  for (const line of sceneLines) {
-    lineMap.set(line._lid, line);
+  // Word count comparison
+  const origWords = totalWordCount(originalLines);
+  const newWords = totalWordCount(rewrittenLines);
+  const ratio = origWords > 0 ? newWords / origWords : 1;
+
+  if (ratio < 0.8) {
+    reasons.push(`Word count dropped ${origWords}→${newWords} (${((1 - ratio) * 100).toFixed(0)}% reduction) — below 80% threshold`);
+  }
+  if (ratio > 1.3) {
+    reasons.push(`Word count grew ${origWords}→${newWords} (${((ratio - 1) * 100).toFixed(0)}% increase) — above 130% threshold`);
   }
 
-  // Track total word count change
-  let totalOriginalWords = 0;
-  let totalNewWords = 0;
-
-  // Track explicit keywords before and after
-  const originalKeywords = new Set<string>();
-  for (const line of sceneLines) {
-    for (const kw of findExplicitKeywords(line.text)) {
-      originalKeywords.add(kw);
-    }
+  // Explicit content survival
+  const origKeywords = extractKeywords(originalLines);
+  const newKeywords = extractKeywords(rewrittenLines);
+  const lost: string[] = [];
+  for (const kw of origKeywords) {
+    if (!newKeywords.has(kw)) lost.push(kw);
+  }
+  if (lost.length > 0) {
+    reasons.push(`Explicit keywords lost: ${lost.join(", ")}`);
   }
 
-  // Validate each diff
-  for (const diff of diffs) {
-    const original = lineMap.get(diff.line_id);
-    if (!original) {
-      rejected.push(diff.line_id);
-      reasons.push(`${diff.line_id}: line not found in scene`);
-      continue;
-    }
-
-    if (diff.action === "delete") {
-      // Deletion removes words entirely — check if it's a significant loss
-      const origWords = wordCount(original.text);
-      totalOriginalWords += origWords;
-      // totalNewWords stays 0 for this line
-      if (origWords > 10) {
-        rejected.push(diff.line_id);
-        reasons.push(`${diff.line_id}: deletion of ${origWords}-word line — too much content loss`);
-      }
-      continue;
-    }
-
-    if (diff.action === "replace" && diff.new_line) {
-      const origWords = wordCount(original.text);
-      const newWords = wordCount(diff.new_line.text);
-      totalOriginalWords += origWords;
-      totalNewWords += newWords;
-
-      // Per-line check: reject if line shrinks more than 40%
-      if (origWords > 5 && newWords < origWords * 0.6) {
-        rejected.push(diff.line_id);
-        reasons.push(`${diff.line_id}: word count dropped ${origWords}→${newWords} (${((1 - newWords / origWords) * 100).toFixed(0)}% reduction)`);
-      }
-    }
-
-    if (diff.action === "insert_after" && diff.new_line) {
-      totalNewWords += wordCount(diff.new_line.text);
-    }
+  // Character survival — every character who spoke in original should speak in rewrite
+  const origSpeakers = new Set(originalLines.map(l => l.speaker.toUpperCase()).filter(s => s !== "NARRATION" && s !== "INTERNAL"));
+  const newSpeakers = new Set(rewrittenLines.map(l => l.speaker.toUpperCase()).filter(s => s !== "NARRATION" && s !== "INTERNAL"));
+  const missingSpeakers: string[] = [];
+  for (const sp of origSpeakers) {
+    if (!newSpeakers.has(sp)) missingSpeakers.push(sp);
+  }
+  if (missingSpeakers.length > 0) {
+    reasons.push(`Characters missing from rewrite: ${missingSpeakers.join(", ")}`);
   }
 
-  // Scene-level word count check: reject all diffs if total drops >20%
-  if (totalOriginalWords > 0 && totalNewWords < totalOriginalWords * 0.8) {
-    const reduction = ((1 - totalNewWords / totalOriginalWords) * 100).toFixed(0);
-    // Reject ALL diffs — the rewrite as a whole shrinks too much
-    for (const diff of diffs) {
-      if (!rejected.includes(diff.line_id)) {
-        rejected.push(diff.line_id);
-      }
-    }
-    reasons.push(`Scene total: ${totalOriginalWords}→${totalNewWords} words (${reduction}% reduction) — all diffs rejected`);
-  }
-
-  // Explicit content survival check
-  // Build the post-rewrite keyword set by applying diffs to a copy
-  const postRewriteKeywords = new Set<string>();
-  for (const line of sceneLines) {
-    const diff = diffs.find(d => d.line_id === line._lid && !rejected.includes(d.line_id));
-    if (diff?.action === "replace" && diff.new_line) {
-      for (const kw of findExplicitKeywords(diff.new_line.text)) {
-        postRewriteKeywords.add(kw);
-      }
-    } else if (diff?.action === "delete" && !rejected.includes(diff.line_id)) {
-      // Line deleted, keywords lost from this line
-    } else {
-      for (const kw of findExplicitKeywords(line.text)) {
-        postRewriteKeywords.add(kw);
-      }
-    }
-  }
-
-  // Check which keywords were lost
-  const lostKeywords: string[] = [];
-  for (const kw of originalKeywords) {
-    if (!postRewriteKeywords.has(kw)) {
-      lostKeywords.push(kw);
-    }
-  }
-  if (lostKeywords.length > 0) {
-    reasons.push(`Explicit content keywords lost: ${lostKeywords.join(", ")} — review diffs manually`);
-    // Don't auto-reject for keyword loss — it's a warning, not a hard gate.
-    // The word count check is the hard gate.
-  }
+  // Hard reject only on word count — keyword loss and missing speakers are warnings
+  const valid = ratio >= 0.8 && ratio <= 1.3;
 
   return {
-    valid: rejected.length === 0,
-    rejected_diffs: rejected,
+    valid,
+    rejected_diffs: valid ? [] : ["scene_rewrite"],
     reasons,
   };
 }

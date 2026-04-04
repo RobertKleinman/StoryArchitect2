@@ -5,8 +5,7 @@ import { detect as detectNicknameOveruse } from "../erotica/detectors/nickname-o
 import { detect as detectInternalTemplate } from "../erotica/detectors/internal-template";
 import { detect as detectArcShape } from "../erotica/detectors/arc-shape";
 import { detect as detectVulnerability } from "../erotica/detectors/vulnerability";
-import { validateContentPreservation } from "../erotica/content-validator";
-import type { LineDiff } from "../types";
+import { validateSceneRewrite } from "../erotica/content-validator";
 
 // ── Test Fixtures ──
 
@@ -223,47 +222,60 @@ describe("vulnerability detector", () => {
   });
 });
 
-// ── Content Preservation Validator ──
+// ── Content Preservation Validator (Scene-Level) ──
 
-describe("content preservation validator", () => {
+describe("scene content preservation validator", () => {
   const originalLines: IdentifiedLine[] = [
-    makeLine("COMMANDER REX", "Kneel and lick my boots clean, slave.", "commanding", 0),
-    makeLine("KAI", "Make me, you bastard.", "defiant", 1),
-    makeLine("COMMANDER REX", "Now worship.", "commanding", 2),
+    makeLine("NARRATION", "The cell door slams shut behind them. Commander Rex stands at the center, boots planted wide.", "", 0),
+    makeLine("COMMANDER REX", "Kneel and lick my boots clean, slave. Every ridge, every crease.", "commanding", 1),
+    makeLine("KAI", "Make me, you bastard. I'd rather rot in this cell than give you the satisfaction.", "defiant", 2),
+    makeLine("INTERNAL", "*His boots. The smell hits before they touch. Salt and leather.*", "conflicted", 3),
+    makeLine("COMMANDER REX", "Now worship. Or we do this the hard way.", "commanding", 4),
   ];
 
-  it("accepts diffs that maintain word count", () => {
-    const diffs: LineDiff[] = [{
-      line_id: "s1_L002",
-      expected_old_text: "Now worship.",
-      action: "replace",
-      new_line: { speaker: "COMMANDER REX", text: "Show me how well you worship.", emotion: "commanding" },
-    }];
-    const result = validateContentPreservation(originalLines, diffs);
+  it("accepts rewrites that maintain word count", () => {
+    const rewritten = [
+      { speaker: "NARRATION", text: "The cell door slams shut. Commander Rex stands at the center, boots planted wide on the grate.", emotion: null },
+      { speaker: "COMMANDER REX", text: "Kneel. Lick my boots clean — every ridge, every crease.", emotion: "commanding" },
+      { speaker: "KAI", text: "I'd rather rot in this cell than give you that.", emotion: "defiant" },
+      { speaker: "INTERNAL", text: "His boots. Salt and leather before they even touch.", emotion: "conflicted" },
+      { speaker: "COMMANDER REX", text: "Worship. Or we do this the hard way.", emotion: "commanding" },
+    ];
+    const result = validateSceneRewrite(originalLines, rewritten);
     expect(result.valid).toBe(true);
   });
 
-  it("rejects diffs that shrink a line by >40%", () => {
-    const diffs: LineDiff[] = [{
-      line_id: "s1_L000",
-      expected_old_text: "Kneel and lick my boots clean, slave.",
-      action: "replace",
-      new_line: { speaker: "COMMANDER REX", text: "Kneel.", emotion: "commanding" },
-    }];
-    const result = validateContentPreservation(originalLines, diffs);
+  it("rejects rewrites that shrink word count below 80%", () => {
+    const rewritten = [
+      { speaker: "COMMANDER REX", text: "Kneel.", emotion: "commanding" },
+      { speaker: "KAI", text: "No.", emotion: "defiant" },
+      { speaker: "COMMANDER REX", text: "Worship.", emotion: "commanding" },
+    ];
+    const result = validateSceneRewrite(originalLines, rewritten);
     expect(result.valid).toBe(false);
-    expect(result.rejected_diffs).toContain("s1_L000");
   });
 
   it("warns when explicit keywords are lost", () => {
-    const diffs: LineDiff[] = [{
-      line_id: "s1_L000",
-      expected_old_text: "Kneel and lick my boots clean, slave.",
-      action: "replace",
-      new_line: { speaker: "COMMANDER REX", text: "Get down on the ground and show respect now.", emotion: "commanding" },
-    }];
-    const result = validateContentPreservation(originalLines, diffs);
-    // Word count is close enough, but "lick", "boots", "slave" are lost
+    const rewritten = [
+      { speaker: "NARRATION", text: "The cell door slams shut behind them. Commander Rex stands at the center, feet planted wide.", emotion: null },
+      { speaker: "COMMANDER REX", text: "Get down on the ground and show respect to your superior right now.", emotion: "commanding" },
+      { speaker: "KAI", text: "You'll have to force me, you arrogant fool. I'm not giving you anything.", emotion: "defiant" },
+      { speaker: "INTERNAL", text: "His presence fills the room. Something sharp in the air.", emotion: "conflicted" },
+      { speaker: "COMMANDER REX", text: "Show me what you've got. Prove your devotion to me.", emotion: "commanding" },
+    ];
+    const result = validateSceneRewrite(originalLines, rewritten);
+    // "lick", "boots", "slave" are lost
     expect(result.reasons.some(r => r.includes("keywords lost"))).toBe(true);
+  });
+
+  it("warns when characters are missing from rewrite", () => {
+    const rewritten = [
+      { speaker: "NARRATION", text: "The cell door slams shut. Rex stands in the center of the room, boots planted wide.", emotion: null },
+      { speaker: "COMMANDER REX", text: "Kneel and lick my boots clean, slave. Every ridge.", emotion: "commanding" },
+      { speaker: "INTERNAL", text: "His boots. Salt and leather.", emotion: "conflicted" },
+      { speaker: "COMMANDER REX", text: "Now worship. Or we do this the hard way.", emotion: "commanding" },
+    ];
+    const result = validateSceneRewrite(originalLines, rewritten);
+    expect(result.reasons.some(r => r.includes("Characters missing"))).toBe(true);
   });
 });

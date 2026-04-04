@@ -154,12 +154,65 @@ CONTENT DIRECTIVES:
 
 OUTPUT FORMAT: JSON matching the provided schema.`;
 
+// ── Erotica Constraint Blocks ──────────────────────────────────────
+
+function isEroticaMode(mode?: string): boolean {
+  return !!mode?.startsWith("erotica");
+}
+
+function buildEroticaWorldBlock(): string {
+  return `
+EROTICA CONSTRAINTS:
+- At least 1-2 locations must serve NON-SEXUAL dramatic purposes. A locker room can have banter without fetish content. A command center can have strategy discussions. A bar can have character development. Not every location description should reference the fetish — save that for locations where it actually happens.
+- Location descriptions should emphasize what ACTIVITIES happen there, not just sensory fetish details. "Training gym with heavy bags and a chalk board of match stats" not "sweat-slick foot worship training pit."`;
+}
+
+function buildEroticaCharacterBlock(orientation?: string): string {
+  const genderLine = orientation === "gay male"
+    ? "- GENDER CASTING: This is gay male erotica. ALL characters — protagonists, antagonists, supporting, catalysts — MUST be male. Set presentation to \"masculine\" for every character. No women in the cast."
+    : orientation === "lesbian"
+    ? "- GENDER CASTING: This is lesbian erotica. ALL characters — protagonists, antagonists, supporting, catalysts — MUST be female. Set presentation to \"feminine\" for every character. No men in the cast."
+    : "- GENDER CASTING: Match character genders to the orientation specified in the premise.";
+
+  return `
+EROTICA CONSTRAINTS:
+${genderLine}
+- PROFESSIONAL ROLES: Characters who have professional roles (announcer, trainer, medic, guard, coach) must speak and behave as professionals FIRST. Their voice_pattern and description should reflect their JOB, not the sexual content of the story. An announcer calls the match — crowd energy, tactics, rivalries, upsets. A trainer pushes technique and conditioning. They can REACT to erotic content but should not narrate or describe it as their primary function.
+- SUPPORTING CHARACTER DEPTH: Supporting characters need their own agenda that creates conflict independently of the protagonists' sexual dynamic. A trainer with standards and a career to protect. A rival with political ambitions. A friend with competing loyalties. Not just props for the fetish.`;
+}
+
+function buildEroticaPlotBlock(): string {
+  return `
+EROTICA CONSTRAINTS:
+- NOT EVERY BEAT IS A SEX SCENE. At least 30% of beats should be driven by non-sexual dramatic tension: rivalry, professional stakes, betrayal, humor, discovery, argument. The erotic content is more powerful when it contrasts with non-erotic scenes.
+- FETISH BEATS MUST ESCALATE. If beat 3 and beat 7 both involve the same physical act, beat 7 must change something — the power dynamic shifts, the emotional stakes are higher, a boundary is crossed. Repetition without escalation is the #1 quality killer.
+- Content directives should only appear on 40-60% of scenes. Leave the rest as character/drama scenes where intimacy may appear naturally but isn't the planned focus.`;
+}
+
+function buildEroticaJudgeBlock(orientation?: string): string {
+  const genderCheck = orientation === "gay male"
+    ? "For gay male erotica, ALL named characters must be male with masculine presentation. No women in the cast — not as announcers, trainers, or any role."
+    : orientation === "lesbian"
+    ? "For lesbian erotica, ALL named characters must be female with feminine presentation. No men in the cast."
+    : "Character genders should match the orientation specified in the premise.";
+
+  return `
+EROTICA-SPECIFIC CHECKS (apply these in addition to the above):
+13. Gender casting: ${genderCheck} Flag any character whose presentation doesn't match.
+14. Scene variety: At least 2-3 scenes in the plot must function as CHARACTER scenes (comedy, argument, negotiation, professional conflict) where the fetish/erotic content is NOT the primary activity. Count them. If zero exist, FAIL.
+15. Character depth beyond kink: Every character must have a want, goal, or fear that has nothing to do with sex. If a character's description, psychological profile, and role ALL reference only the fetish — FAIL.
+16. Location diversity: Not every location can be themed around the fetish. At least 1-2 locations must serve non-sexual dramatic functions. If every location description references the fetish — FAIL.
+17. Plot beat variety: The tension chain must not repeat the same physical act in >50% of beats. Each fetish beat should escalate or change the dynamic, not repeat it.
+18. Professional character voice: Characters with professional roles (announcer, trainer, etc.) must have voice_patterns that reflect their profession — not "erotic flair" or "vivid fetish narration." An announcer who narrates kink acts is a broken character.`;
+}
+
 export function buildWorldPrompt(args: {
   premise: string;
   mustHonorBlock: string;
   culturalBrief?: string;
   freshnessBlock?: string;
   forcingBlock?: string;
+  mode?: string;
 }): string {
   const parts = [
     `PREMISE:\n${args.premise}`,
@@ -168,6 +221,7 @@ export function buildWorldPrompt(args: {
   if (args.mustHonorBlock) parts.push(`\n${args.mustHonorBlock}`);
   if (args.freshnessBlock) parts.push(`\n${args.freshnessBlock}`);
   if (args.forcingBlock) parts.push(`\n${args.forcingBlock}`);
+  if (isEroticaMode(args.mode)) parts.push(buildEroticaWorldBlock());
   return parts.join("\n");
 }
 
@@ -177,6 +231,8 @@ export function buildCharacterPrompt(args: {
   mustHonorBlock: string;
   freshnessBlock?: string;
   forcingBlock?: string;
+  mode?: string;
+  eroticaOrientation?: string;
 }): string {
   return [
     `PREMISE:\n${args.premise}`,
@@ -184,6 +240,7 @@ export function buildCharacterPrompt(args: {
     args.mustHonorBlock ? `\n${args.mustHonorBlock}` : "",
     args.freshnessBlock ? `\n${args.freshnessBlock}` : "",
     args.forcingBlock ? `\n${args.forcingBlock}` : "",
+    isEroticaMode(args.mode) ? buildEroticaCharacterBlock(args.eroticaOrientation) : "",
   ].filter(Boolean).join("\n");
 }
 
@@ -193,6 +250,7 @@ export function buildPlotPrompt(args: {
   characterSection: string;
   mustHonorBlock: string;
   suggestedLength?: "short" | "medium" | "long";
+  mode?: string;
 }): string {
   const beatRange = args.suggestedLength === "short" ? "6-10"
     : args.suggestedLength === "long" ? "18-25" : "12-18";
@@ -202,6 +260,7 @@ export function buildPlotPrompt(args: {
     `\nCHARACTERS:\n${args.characterSection}`,
     args.mustHonorBlock ? `\n${args.mustHonorBlock}` : "",
     `\nTARGET: ${beatRange} causally linked beats for a ${args.suggestedLength ?? "medium"}-length story.`,
+    isEroticaMode(args.mode) ? buildEroticaPlotBlock() : "",
   ].filter(Boolean).join("\n");
 }
 
@@ -210,12 +269,15 @@ export function buildBibleJudgePrompt(args: {
   characterSection: string;
   plotSection: string;
   mustHonorBlock: string;
+  mode?: string;
+  eroticaOrientation?: string;
 }): string {
   return [
     `WORLD:\n${args.worldSection}`,
     `\nCHARACTERS:\n${args.characterSection}`,
     `\nPLOT:\n${args.plotSection}`,
     args.mustHonorBlock ? `\n${args.mustHonorBlock}` : "",
+    isEroticaMode(args.mode) ? buildEroticaJudgeBlock(args.eroticaOrientation) : "",
     "\nEvaluate the consistency and quality of this story bible.",
   ].filter(Boolean).join("\n");
 }

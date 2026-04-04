@@ -19,6 +19,7 @@ import { detect as detectInternalTemplate } from "./detectors/internal-template"
 import { detect as detectArcShape } from "./detectors/arc-shape";
 import { detect as detectVulnerability } from "./detectors/vulnerability";
 import { detect as detectStructural } from "./detectors/structural";
+import { detect as detectRobStyle } from "./detectors/rob-style";
 
 /**
  * Run the full diagnostic suite against a set of identified scenes.
@@ -36,12 +37,14 @@ export function runEroticaDiagnostic(
   const arcResult = detectArcShape(scenes, storyBible);
   const vulnResult = detectVulnerability(scenes);
   const structResult = detectStructural(scenes);
+  const robResult = detectRobStyle(scenes);
 
   // Combine flagged lines from fixable detectors
   const allFlagged = [
     ...domResult.flagged,
     ...nicknameResult.flagged,
     ...internalResult.flagged,
+    ...robResult.flagged,
   ];
 
   // Count line types (normalize speaker casing)
@@ -91,13 +94,18 @@ export function runEroticaDiagnostic(
   });
 
   // Compute severity score (0-100)
-  // Weighted: dom monotony 30, nickname overuse 15, internal template 20, arc sameness 25, vulnerability 10
+  // Weighted: dom monotony 25, nickname overuse 10, internal template 15, arc sameness 20, vulnerability 8, rob style 22
+  const robStylePenalty =
+    Math.min(robResult.metrics.under_8_words_rate / 0.95, 1) * 8 +  // 95% under-8 = max penalty
+    Math.min(robResult.metrics.internal_question_rate / 0.3, 1) * 7 + // 30% rhetorical Q = max
+    Math.min(robResult.metrics.exclamation_rate / 0.15, 1) * 7;       // 15% excl = max
   const severityScore = Math.round(
-    domResult.metrics.monotony_score * 30 +
-    Math.min(nicknameResult.metrics.address_rate / 0.3, 1) * 15 + // 30% rate = max severity
-    internalResult.metrics.template_uniformity_score * 20 +
-    (1 - arcResult.metrics.shape_diversity_score) * 25 +
-    (1 - Math.min(vulnResult.metrics.vulnerability_rate / 0.15, 1)) * 10 // 15% vuln = no penalty
+    domResult.metrics.monotony_score * 25 +
+    Math.min(nicknameResult.metrics.address_rate / 0.3, 1) * 10 +
+    internalResult.metrics.template_uniformity_score * 15 +
+    (1 - arcResult.metrics.shape_diversity_score) * 20 +
+    (1 - Math.min(vulnResult.metrics.vulnerability_rate / 0.15, 1)) * 8 +
+    robStylePenalty
   );
 
   const fixableIssues = allFlagged.length;
@@ -124,6 +132,7 @@ export function runEroticaDiagnostic(
       arc_shape: arcResult.metrics,
       vulnerability: vulnResult.metrics,
       structural: structResult.metrics,
+      rob_style: robResult.metrics,
     },
     flagged_lines: allFlagged,
     per_scene: perScene,
@@ -224,6 +233,15 @@ export function formatReport(report: EroticaDiagnosticReport): string {
     }
   }
 
+  // Rob Style
+  lines.push("");
+  lines.push("── ROB STYLE DEVIATIONS ─────────────────────────────");
+  const rs = m.rob_style;
+  lines.push(`Sentence length: mean=${rs.mean_sentence_words} words  |  <8 words: ${(rs.under_8_words_rate * 100).toFixed(0)}%  |  8-18 zone: ${(rs.in_zone_rate * 100).toFixed(0)}%  |  >25: ${(rs.over_25_words_rate * 100).toFixed(0)}%`);
+  lines.push(`Internal questions: ${rs.internal_question_count}/${m.internal_template.total_internal_lines} (${(rs.internal_question_rate * 100).toFixed(0)}%)  |  "Why/what/how" rhetorical: ${rs.why_what_how_count}`);
+  lines.push(`Exclamation marks: ${rs.exclamation_line_count} lines (${(rs.exclamation_rate * 100).toFixed(0)}%)  [Rob: almost never]`);
+  if (rs.flagged_line_ids.length > 0) lines.push(`⚠ ${rs.flagged_line_ids.length} lines flagged for rewrite`);
+
   // Per-scene summary
   lines.push("");
   lines.push("── PER-SCENE BREAKDOWN ─────────────────────────────");
@@ -272,6 +290,10 @@ export function compareReports(
   delta("Internal uniformity", before.metrics.internal_template.template_uniformity_score * 100, after.metrics.internal_template.template_uniformity_score * 100, "%");
   delta("Arc diversity", before.metrics.arc_shape.shape_diversity_score * 100, after.metrics.arc_shape.shape_diversity_score * 100, "%", false);
   delta("Vulnerability rate", before.metrics.vulnerability.vulnerability_rate * 100, after.metrics.vulnerability.vulnerability_rate * 100, "%", false);
+  lines.push("");
+  delta("Sentence <8 words", before.metrics.rob_style.under_8_words_rate * 100, after.metrics.rob_style.under_8_words_rate * 100, "%");
+  delta("Rhetorical Q rate", before.metrics.rob_style.internal_question_rate * 100, after.metrics.rob_style.internal_question_rate * 100, "%");
+  delta("Exclamation rate", before.metrics.rob_style.exclamation_rate * 100, after.metrics.rob_style.exclamation_rate * 100, "%");
 
   return lines.join("\n");
 }
