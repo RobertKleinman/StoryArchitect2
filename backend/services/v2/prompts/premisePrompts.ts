@@ -32,6 +32,7 @@ export function buildPremiseWriterPrompt(args: {
   revisionFeedback?: string;
   currentPremise?: string;
   forcingBlock?: string;
+  mode?: string;
 }): string {
   const parts: string[] = [];
 
@@ -77,6 +78,12 @@ export function buildPremiseWriterPrompt(args: {
 
   if (args.forcingBlock) {
     parts.push(`\n${args.forcingBlock}`);
+  }
+
+  if (args.mode?.startsWith("erotica")) {
+    parts.push(`
+EROTICA SYNOPSIS RULE:
+The synopsis must describe the story's DRAMATIC arc, not just the sexual content. At least half the synopsis sentences should describe non-sexual events: rivalries, professional stakes, betrayals, discoveries, arguments, character decisions, consequences. The erotic content is part of the story — not the whole summary. A synopsis that reads like a list of sex scenes will produce a story with no dramatic tension.`);
   }
 
   return parts.join("\n");

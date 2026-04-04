@@ -21,6 +21,51 @@ import { emitProgress } from "./progressEmitter";
 import { getAbortSignal } from "./orchestrator";
 import { getForcingFunctions, formatForcingBlock } from "../../../shared/narrativeForcingFunctions";
 
+// ── Deterministic Tone Chip Scrubber (erotica only) ──────────────
+
+// Words that describe content, not mood — strip from multi-word chips
+const PURPLE_WORDS = new Set([
+  // Content descriptors (describe what's in the story, not how it feels)
+  "fetishistic", "fetish", "erotic", "eroticism", "pornographic",
+  "sexual", "sensual", "sensuality", "carnal", "lustful", "orgasmic",
+  "seduction", "seductive", "arousal", "aroused",
+  "foot", "feet", "toe", "sole", "barefoot",
+  "worship", "submission", "domination",
+  // Purple intensifiers
+  "exquisite", "intoxicating", "overwhelming", "devastating",
+  "scorching", "searing", "blazing", "electrifying",
+  "delicious", "sumptuous", "luscious", "tantalizing",
+  "feverish", "primal", "visceral",
+  // Vague space-filler
+  "cosmic", "galactic", "stellar", "interstellar", "nebular", "celestial",
+]);
+
+// Chips that are entirely content — drop completely
+const DROP_CHIPS = new Set([
+  "erotic", "eroticism", "fetish", "kink", "smut",
+  "foot worship", "toe sucking", "sensuality", "seduction",
+  "erotic tension", "erotic anticipation",
+  "foot-focused", "toe-focused",
+]);
+
+export function scrubToneChips(chips: string[]): string[] {
+  const result: string[] = [];
+  for (const chip of chips) {
+    const lower = chip.toLowerCase().trim();
+    if (DROP_CHIPS.has(lower)) continue;
+
+    const words = chip.split(/\s+/);
+    const cleaned = words.filter(w => !PURPLE_WORDS.has(w.toLowerCase().replace(/[^a-z]/g, "")));
+    if (cleaned.length === 0) continue;
+    const scrubbed = cleaned.join(" ");
+
+    if (!result.some(r => r.toLowerCase() === scrubbed.toLowerCase())) {
+      result.push(scrubbed);
+    }
+  }
+  return result;
+}
+
 export class PremiseService {
   constructor(private llm: LLMClient) {}
 
@@ -56,6 +101,7 @@ export class PremiseService {
       culturalBrief,
       psychologyBlock: psychBlock,
       forcingBlock,
+      mode: project.mode,
     });
 
     const startMs = Date.now();
@@ -116,6 +162,7 @@ export class PremiseService {
           psychologyBlock: psychBlock,
           revisionFeedback: judgeResult.issues.map((i: any) => `${i.field}: ${i.fix_instruction}`).join("\n"),
           currentPremise: JSON.stringify(premiseData, null, 2),
+          mode: project.mode,
         });
 
         const repairStartMs = Date.now();
@@ -132,6 +179,33 @@ export class PremiseService {
         } catch {
           // Repair parse failure — keep original
         }
+      }
+    }
+
+    // ── Deterministic post-generation scrubs (erotica only) ─────
+    const isErotica = project.mode?.startsWith("erotica");
+    if (isErotica) {
+      // Gender enforcement: detect orientation from seed, fix any mismatches
+      const seedLower = (project.seedInput + " " + (premiseData.hook_sentence ?? "")).toLowerCase();
+      let requiredPresentation: string | undefined;
+      if (/\bgay\s+m(ale|en)\b|\ball[- ]male\b|\bmen\s+only\b/.test(seedLower)) {
+        requiredPresentation = "masculine";
+      } else if (/\blesbian\b|\bgay\s+female\b|\ball[- ]female\b|\bwomen\s+only\b/.test(seedLower)) {
+        requiredPresentation = "feminine";
+      }
+      if (requiredPresentation && premiseData.characters_sketch) {
+        for (const c of premiseData.characters_sketch) {
+          const pres = (c.presentation ?? "").toLowerCase();
+          if (pres && pres !== requiredPresentation && pres !== "unspecified") {
+            console.log(`[premise] Gender fix: ${c.name} presentation "${c.presentation}" → "${requiredPresentation}"`);
+            c.presentation = requiredPresentation;
+          }
+        }
+      }
+
+      // Tone chip scrub: remove purple/fetish adjectives, keep mood words
+      if (premiseData.tone_chips) {
+        premiseData.tone_chips = scrubToneChips(premiseData.tone_chips);
       }
     }
 
@@ -201,6 +275,7 @@ export class PremiseService {
       mustHonorBlock: mustHonor,
       revisionFeedback: feedback,
       currentPremise: currentPremiseStr,
+      mode: project.mode,
     });
 
     const startMs = Date.now();
