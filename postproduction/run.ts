@@ -26,6 +26,7 @@ import { mapEmotionsWithLLM } from "./emotion-mapper";
 import type { EditorOutput, SceneEditResult, PipelineOutput, IdentifiedScene, PostproductionConfig } from "./types";
 import { buildConfig } from "./config";
 import { runEroticaCleanup } from "./pass3b-erotica-cleanup";
+import { runEroticaDialogueRewrite } from "./erotica/rewriter";
 
 /** Everything the packager needs, saved after the editor completes */
 interface EditorSnapshot {
@@ -229,6 +230,27 @@ async function main() {
         }
       }
       log("PASS 3B", `${cleanupFixed} scenes cleaned up`);
+    }
+
+    // ── Pass 3C: Erotica Dialogue Rewrite (only for erotica modes) ──
+    if (config.runEroticaCleanup) {
+      log("PASS 3C", "Running erotica dialogue rewrite...");
+      const rewriteResult = await runEroticaDialogueRewrite(editedScenes, input, config);
+      editedScenes = rewriteResult.scenes;
+      const rewriteFixed = rewriteResult.results.filter(r => r.status === "fixed").length;
+      llmCalls += rewriteFixed;
+      // Merge rewrite results into editResults (same pattern as pass 3B)
+      for (const rr of rewriteResult.results) {
+        const existing = editResults.find(r => r.scene_id === rr.scene_id);
+        if (existing && rr.status === "fixed") {
+          existing.diffs_applied += rr.diffs_applied;
+          existing.issues_addressed.push(...rr.issues_addressed);
+          existing.status = "fixed";
+        } else if (!existing && rr.status === "fixed") {
+          editResults.push(rr);
+        }
+      }
+      log("PASS 3C", `${rewriteFixed} scenes rewritten`);
     }
 
     // ── Pass 4+5: Verify ──
