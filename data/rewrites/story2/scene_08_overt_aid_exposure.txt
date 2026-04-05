@@ -1,0 +1,32 @@
+SCENE 8: "Overt Aid and Exposure"
+Setting: Overseer's Command Tower — armored viewports hum with drone feeds from the pit below, rule-enforcement consoles blink red under a haze of recycled air thick with sweat.
+Characters: Zephyr, Erik Lindqvist, Khalid
+POV: Zephyr
+
+CHARACTER REFERENCE:
+  Zephyr: (protagonist) Zephyr is a sly, ambitious twink from a fringe colony, whose pretty features and lithe build hide a | voice: quick-witted sarcasm with a lilt of outer-rim slang, peppered with clever quips 
+  Erik Lindqvist: (catalyst) Erik Lindqvist is a veteran arena overseer who enforces the games' rules with reluctant zeal, his hi | voice: clipped, official tone with bursts of reluctant empathy, using technical jargon 
+  Khalid: (antagonist) Khalid is a towering, muscle-bound champion with a commanding presence, driven by a personal kink fo | voice: deep, rumbling commands laced with dry wit and unexpected gentleness, using meta
+
+---
+
+NARRATION: Erik's fingers hover over the veto console. The screen flashes Khalid's champion override code. Towering viewports frame the pit's distant roar. {[Erik's console beeps insistently]}
+[ERIK LINDQUIST] (clipped_reluctance) (flat, official) Protocol 47-B. Champion veto denied. Fighter vitals stable—no incapacitation flagged. {[He taps override, screen locks green]}
+[RAFAEL ESPINOZA] (hopeful_sarcasm) (quick lilt) Wait— you're blocking him? Just like that? Erik, that's... {[Zephyr leans forward, collar comm bead dangling loose from earlier slip]}
+[OBIORA ACHEBE] (controlled_fury) (deep rumble) Denied? On what grounds, overseer? That twink's tongue was on my boot five minutes ago. {[Khalid steps closer, boot sole grinding arena sand across the console floor]}
+INTERNAL (hazy_pull): *Sand from his boot. Still damp. The smell hits—hits harder than it should.*
+[ERIK LINDQUIST] (rigid_defense) (clipped, gesturing at pad) Grounds? Vitals log. No yield signal. Check the drone feed yourself. {[Erik slides a holopad across, not meeting Khalid's eyes]}
+[RAFAEL ESPINOZA] (wicked_quip) (sarcastic lilt) See? Rules are rules, champ. Can't veto what didn't happen. Or... did it? {[Zephyr smirks, but fingers twitch toward the loose comm bead on the floor]}
+[OBIORA ACHEBE] (stoic_doubt) (dry, short) Rules. Always rules when it's convenient. {[Khalid pauses, boot nudging the comm bead closer to Zephyr's foot—stops short]}
+NARRATION: Silence stretches. Drones whir outside. Erik's hand rests on the console edge, knuckles pale. {[No one moves for the bead]}
+[ERIK LINDQUIST] (overcompensating_bureaucracy) (too quick, official) It's logged. Senate will see it.
+[RAFAEL ESPINOZA] (breathless_hope) (speeding up, overlapping) Senate. Yeah, Cassius's probably grinning down there already. This changes— {[Zephyr reaches for the bead—fumbles it under the console]}
+[OBIORA ACHEBE] (probing_wit) (rumbling counter-question) Changes what? Your little rebellion? Or just your addiction? {[Khalid crouches slow, massive frame blocking the viewport light, eyes on Zephyr]}
+INTERNAL (anxious_triumph): *His shadow covers me. Bead's gone—signal's live. Cassius hears this?*
+[RAFAEL ESPINOZA] (deflecting_humor) (forced quip, trailing) Addiction? Nah, that's your kink talking. I'm just here for the show. {[Zephyr laughs sharp—voice cracks halfway]}
+[ERIK LINDQUIST] (rigid_overreach) (silent pause first, then burst) Enough. Decision stands. Clear the tower. {[Erik turns to a side panel, back to them—too rigid]}
+[OBIORA ACHEBE] (rising_command) (volume up, curt) You first, overseer. Explain this to the pit cams. {[Khalid straightens, hand clamps Zephyr's shoulder—pulls him half off balance]}
+NARRATION: Zephyr stumbles into Khalid's grip. The console blinks: veto blocked, logged. {[Khalid's boot hovers over the console's exposed wire]}
+[OBIORA ACHEBE] (suspicious_peak) (booming demand) Loyalty, pet. Whose is it? Mine—or his? {[Grip tightens; pit roar swells through viewport]}
+
+--- TRANSITION: Cut to Khalid's shadowed glare over Zephyr's shoulder, pit lights flaring. ---

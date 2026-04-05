@@ -1,0 +1,28 @@
+SCENE 7: "Confrontation with Doubt"
+Setting: Underground Gladiator Barracks: Cramped bunks slick with condensation, hygiene pod hissing steam, neon strips flickering over discarded wraps and a half-empty hydration tube.
+Characters: Zephyr, Cassius, Tomas Ruiz
+POV: Zephyr
+
+CHARACTER REFERENCE:
+  Zephyr: (protagonist) Zephyr is a sly, ambitious twink from a fringe colony, whose pretty features and lithe build hide a | voice: quick-witted sarcasm with a lilt of outer-rim slang, peppered with clever quips 
+  Cassius: (supporting) Cassius is Zephyr's loyal ally in the senate shadows, a shrewd strategist who urges reform from with | voice: measured, archaic phrasing with a gravelly accent, fond of proverbs and historic
+
+---
+
+NARRATION: The hygiene pod door slides shut behind Zephyr with a wet click. Steam curls from his shoulders. Cassius stands by the bunk, arms crossed. Tomas Ruiz slumps on the lower rack, picking at a frayed wrap on his ankle. {[Steam drifts toward the flickering neon strip above the bunks]}
+[YOON DOWAN] (measured_gravel) Zephyr. You return from the Pit with sand still in your hair. And that look. Like you've swallowed the wrong pill. {[Cassius's gravelly voice cuts through the pod's hiss. He steps forward, boot nudging the loose comm bead on the floor]}
+[RAFAEL ESPINOZA] (sarcastic_defensive) (with outer-rim lilt) Sand? That's the Colosseum's love bite, Cassius. Stings less than your stare. What's got you pacing my bunk like a debt collector? {[Zephyr wipes his neck with a towel, flicking droplets toward the metal floor. They splatter near Cassius's boot]}
+INTERNAL (hyper_focused): *His boot. Crushed that bead like it meant nothing. Mine rolled in the sand too. Focus on the plan, not the... residue.*
+[YOON DOWAN] (pessimistic_pressure) (trailing gravel) Pacing? No. Observing. You knelt longer than victory demands. Tongue out like a pup. Tomas saw the holo-feed. The senate alcove replayed it thrice. {[Cassius gestures at the cracked data slate on the bunk, paused on Zephyr's face in the Pit sand]}
+[TOMAS RUIZ] (uneasy) It wasn't clean, Raf. Crowd ate it up. But you... lingered. {[Tomas shifts on the bunk, his ankle wrap unraveling further into a pile]}
+[RAFAEL ESPINOZA] (quick_witted_deflect) (breathless run) Lingered? Tactical pause, boys. Khalid thinks he owns the moment—let him. We flip it in the next veto vote. Cassius, your senate play's still gold, right? Tell me we're synced. {[Zephyr leans in, clapping Cassius's shoulder too hard, then pulls back as the towel slips from his grip to the floor]}
+INTERNAL (secretive_twitch): *Shoulder solid. Not like his. No musk. No press. Why's the pod steam smell wrong now?*
+[YOON DOWAN] (fragmenting_doom) (muttering trail-off) Synced. Like a gladiator synced to the whip. You jest, but empires fall on such slips. One whiff of weakness, and Tomas here— {[Cassius cuts off, eyes flicking to Tomas. Silence stretches. The neon buzzes louder.]}
+[TOMAS RUIZ] (awkward_dodge) Me? I'm fine. Just... that wrap's tight. Pass the hydration tube? {[Tomas reaches for the tube, knocks it over instead. Clear liquid pools near the comm bead.]}
+[RAFAEL ESPINOZA] (nitpicking_press) (sarcastic overlap) Weakness? That's arena bait. I played the crowd, Cassius—you saw the senate grid light up. We're golden. Or... wait, your face says otherwise. Spill it straight—what'd I miss while I was 'lingering'? {[Zephyr snatches the data slate, thumbing past the Pit image too fast. It freezes on Cassius's shadowed senate face.]}
+INTERNAL (desperate_drift): *Pushing him. Wrong angle. The pool mixes with sand grains on my sole. Tastes like... no.*
+[YOON DOWAN] (controlled_urgency) Miss. Yes. Erik Lindqvist. From the Tower. He's moved. Bold. Encrypted drop—says he's overriding a veto. For us. Pulls you back in. Now. {[Cassius taps his wrist comm. A faint ping echoes over the pod steam.]}
+[RAFAEL ESPINOZA] (desperate_pull) (lilt spiking) Erik? That stickler? Overriding—shit, that's the fray we need. {[Zephyr straightens, towel forgotten on the wet floor. The neon reflects in the hydration pool.]}
+NARRATION: Cassius's eyes narrow. Tomas ties his wrap tighter. The pod steam thins. {[Zephyr's hand hovers over the bunk ladder, paused.]}
+
+--- TRANSITION: cut to Erik's encrypted holo flickering on the slate ---

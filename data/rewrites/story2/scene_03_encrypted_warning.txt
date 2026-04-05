@@ -1,0 +1,30 @@
+SCENE 3: "Encrypted Warning"
+Setting: Underground Gladiator Barracks: Cramped metal bunks slick with humidity, flickering neon strips buzzing over a communal hygiene pod leaking steam.
+Characters: Zephyr, Cassius
+POV: Zephyr
+
+CHARACTER REFERENCE:
+  Zephyr: (protagonist) Zephyr is a sly, ambitious twink from a fringe colony, whose pretty features and lithe build hide a | voice: quick-witted sarcasm with a lilt of outer-rim slang, peppered with clever quips 
+  Cassius: (supporting) Cassius is Zephyr's loyal ally in the senate shadows, a shrewd strategist who urges reform from with | voice: measured, archaic phrasing with a gravelly accent, fond of proverbs and historic
+
+---
+
+NARRATION: Cassius hunches on the lower bunk, his broad frame compressing the thin mattress. Zephyr paces the narrow aisle between bunks, boot soles sticking slightly to the grated floor. {[Flickering neon casts shadows on damp walls]}
+[RAFAEL ESPINOZA] (eager) Cassius, you won't believe the access Khalid's giving me now. Champion's aide? That's a senate veto in my pocket—our pocket. We hit their next vote hard. {[Leans in close, fingers drumming on a rusted bunk frame]}
+[YOON DOWAN] (cautious) Access like a river cuts stone, but floods the careless bank. This position—it's no mere step, Zephyr. The champion's shadow clings. {[Eyes the hygiene pod's steam curling toward them]}
+[RAFAEL ESPINOZA] (defensive) Clings? Come on, it's intel gold. I saw the rosters—three senators flagged for bribes. We leak that through your channels, and boom, reform wave. {[Stops pacing, wipes sweat from his neck with his sleeve]}
+INTERNAL (irritated): His voice drags like gravel over my plans. Why's the pod dripping louder now?
+[YOON DOWAN] (grave) Bribes. Rosters. Such details dazzle the eye, blind it to the pit beneath. You've been... close to him. Too close. That sweat on you—it's not just the barracks' damp. {[Gestures vaguely at Zephyr's damp collar, then drops his hand]}
+[RAFAEL ESPINOZA] (sarcastic) What, this? Arena residue, Cassius. You think I'm—ha, that's rich. Me, clouded? By a bit of post-fight grime? Let's stick to the veto play. {[Snorts, tugs at his collar, but his fingers linger on the fabric]}
+[YOON DOWAN] (pessimistic) Grime... washes off. Some scents— {[Trails off, stares at the floor grate where water pools]}
+NARRATION: Silence stretches. The neon flickers once, twice. Zephyr's boot taps the grate, sending a ripple through the puddle. {[Steam from the pod drifts between them]}
+[RAFAEL ESPINOZA] (frustrated) Scents? You're spinning proverbs again. If you're warning me off the champion's funk, save it. This is strategy, not—look, the plot holds if we move now. {[Steps closer, voice speeding up]}
+INTERNAL (tense): Funk. He said it. My throat tightens around the word I won't say.
+[YOON DOWAN] (urgent) Strategy demands clear eyes. Yours—fixed on his boots, his commands. One slip in that Victory Chamber, whispers reach the Overseer. Plots exposed. All eroded to dust. {[Leans forward abruptly, bunk creaking under his weight]}
+[RAFAEL ESPINOZA] (angry) Boots? That's your big read? I yield in the pit to survive, not sniff around like some—fine, exposure risk noted. But we need this. {[Fists clench, then unclench at his sides]}
+NARRATION: Zephyr turns toward the pod, hand hovering near the control panel but not touching it. {[His reflection warps in the steamed mirror]}
+[YOON DOWAN] (warning) Need. The word that topples empires. Brace for the spectacle ahead—it will test. {[Stands halfway, then sinks back, hand gripping the bunk edge]}
+INTERNAL (uneasy): Test. The word hangs. Neon buzzes. My sleeve still smells like him.
+NARRATION: Zephyr straightens, eyes on the distant ladder to the Colosseum Pit. {[Puddle ripples from his shifting weight]}
+
+--- TRANSITION: Cut to black on the flickering neon and rising steam. ---

@@ -1,0 +1,37 @@
+SCENE 5: "Allies and Hidden Aid"
+Setting: Senate Shadow Alcove, dim-lit with encrypted terminals flickering blue, air thick with recycled heat and faint metallic tang, transitioning to Overseer's Command Tower via shadowed lift
+Characters: Zephyr, Cassius, Tomas Ruiz, Erik Lindqvist
+POV: Zephyr
+
+CHARACTER REFERENCE:
+  Zephyr: (protagonist) Zephyr is a sly, ambitious twink from a fringe colony, whose pretty features and lithe build hide a | voice: quick-witted sarcasm with a lilt of outer-rim slang, peppered with clever quips 
+  Cassius: (supporting) Cassius is Zephyr's loyal ally in the senate shadows, a shrewd strategist who urges reform from with | voice: measured, archaic phrasing with a gravelly accent, fond of proverbs and historic
+  Erik Lindqvist: (catalyst) Erik Lindqvist is a veteran arena overseer who enforces the games' rules with reluctant zeal, his hi | voice: clipped, official tone with bursts of reluctant empathy, using technical jargon 
+
+---
+
+NARRATION: Holo-screens cast jagged light on the alcove walls. Zephyr leans against a damp terminal console, sleeve still carrying arena sand. {Screens flicker with senate vote tallies.}
+[RAFAEL ESPINOZA] (motivated) Cassius, this slip in the pit—crowd ate it up, but Khalid's not blind. We turn that heat into our blade, yeah? Who's the new face? {Gestures at Tomas Ruiz, who stands rigid by the door panel.}
+[YOON DOWAN] (measured) (gravelly, archaic phrasing) Tomas Ruiz. Fought under my banner in the Epsilon uprising. Lost his squad to senate asset grabs. Now he tallies the ledgers they don't want seen. {Nods to Tomas, who pulls a slim data chit from his vest pocket.}
+[TOMAS RUIZ] (tense) Records show champions' vetoes routed through shell corps. Khalid's next vote—it's primed for a freeze if we tag the right relay. {Slides the chit across the console; it skids into a puddle of condensation.}
+INTERNAL (distracted): Chit gleams wet. Like the pit floor under his boot. Focus, Raf—relay codes, not the taste.
+[RAFAEL ESPINOZA] (hyper_focused) Relay? Which one—the prime hub or those fringe backups? We hit wrong, it's exile tags for all— {Fingers drum the console edge, speeding up.}
+[YOON DOWAN] (pessimistic) (fragmenting) Patience carves the stone. Prime hub's watched. Fringes... {Trails off as the alcove door hisses open.}
+NARRATION: Erik Lindqvist steps in, overseer badge clipped loose on his collar. He doesn't sit. A loose wire dangles from his gauntlet. {Door seals with a dull thud.}
+[ERIK LINDQUIST] (clipped) (official, with reluctant edge) Protocol 47-C: no unscheduled clusters in shadow zones. But your relay query—fringes link to my tower logs. Encrypted slice, one-time. {Tosses a micro-drive; it bounces once before Zephyr snags it.}
+[RAFAEL ESPINOZA] (sarcastic) (quick-witted lilt) Tower logs? Erik, you're handing us Khalid's veto printout? That's—wait, one-time? What if the encryption pings back? {Pockets the drive, but eyes flick to Tomas's clenched fist on the chit.}
+[TOMAS RUIZ] (angry) It'll ping. Always does. My squad got fragged on a 'one-time' tip. You gladiators play submissive—you don't last. {Snatches the wet chit back, wiping it on his thigh.}
+INTERNAL (conflicted): Tomas's thigh—sweat-dark fabric. Not now. But the drive's warm in my pocket, like skin.
+[YOON DOWAN] (stressed) (muttering, trailing) Uprisings teach— {Cuts off as Erik gestures sharply.}
+[ERIK LINDQUIST] (tense)  {Points to the lift panel without a word.}
+NARRATION: Silence stretches. Lift doors grind open. No one moves first. {Terminals hum louder in the gap.}
+[RAFAEL ESPINOZA] (resolute) (sarcastic quip cut short) Tower it is, then. Show us the logs, Overseer. But if this is a rule bend that snaps— {Steps into the lift; others follow unevenly.}
+NARRATION: Lift ascends with a jolt. Command Tower viewscreen shows the Colosseum Pit below, sand still churned from the match. {Erik keys a side panel; arena records scroll—Khalid's veto tallies highlighted.}
+[TOMAS RUIZ] (insistent) See? Shell corp 9-Alpha. Pull that, his next vote dies. But exposure risk—your champion's aides get scanned post-match. {Jabs the screen; highlight flickers.}
+[ERIK LINDQUIST] (bureaucratic) Scan protocols optional. Log it as maintenance. {Turns away, collar clip finally falling to the floor.}
+[YOON DOWAN] (pessimistic) (fragmented) Optional leads to— {Lift dings; doors open to Tower corridor.}
+INTERNAL (torn): Logs burn in my grip. Leverage on him. Or kneel deeper. The sand calls.
+[RAFAEL ESPINOZA] (empowered) Got it. Shell 9-Alpha. We're armed. {Pockets both chit and drive, turning toward the exit ramp.}
+NARRATION: Group disperses into Tower shadows. Zephyr's boot prints arena sand on the grated floor. {Ramp leads down to Barracks transit.}
+
+--- TRANSITION: Cut to Zephyr descending alone, micro-drive heavy in his pocket. ---

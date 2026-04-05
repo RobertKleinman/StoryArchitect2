@@ -1,0 +1,26 @@
+REWRITE FORMAT GUIDE
+════════════════════
+
+HOW TO EDIT:
+- Edit dialogue text freely — change words, rewrite entirely, add/remove lines
+- Keep the [SPEAKER] tags matching character names exactly
+- Keep NARRATION: and INTERNAL: prefixes for those line types
+
+LINE FORMATS:
+  [Character Name] (emotion) text here
+  [Character Name] (emotion) (whispered) text here {stage direction}
+  NARRATION: Description of action. {optional stage direction}
+  INTERNAL (emotion): Character's inner thought.
+
+RULES:
+- (emotion) is optional — delete it or change it
+- (delivery) like (whispered) is optional — add in parens after emotion
+- {stage direction} is optional — add in curly braces at end of line
+- To DELETE a line: remove the entire line
+- To ADD a line: just write a new line in the right format
+- To REORDER: just move lines around
+- Don't edit the SCENE header, CHARACTER REFERENCE, or TRANSITION lines
+- The importer ignores blank lines and the header/reference sections
+
+AFTER EDITING:
+  npx tsx scripts/import-from-rewrite.ts <original-export.json> <rewrites-dir>
