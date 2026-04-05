@@ -1,13 +1,38 @@
 SCENE 9: "Loyalty's Proof"
-Setting: Champion's Victory Chamber — plush zero-grav loungers sag under dim amber lights, scent vents humming with recycled sweat, panoramic viewport framing the empty arena pit below.
+Setting: Khalid's private chambers
 Characters: Zephyr, Khalid
 POV: Zephyr
 
 CHARACTER REFERENCE:
-  Zephyr: (protagonist) Zephyr is a sly, ambitious twink from a fringe colony, whose pretty features and lithe build hide a | voice: quick-witted sarcasm with a lilt of outer-rim slang, peppered with clever quips 
-  Khalid: (antagonist) Khalid is a towering, muscle-bound champion with a commanding presence, driven by a personal kink fo | voice: deep, rumbling commands laced with dry wit and unexpected gentleness, using meta
+  Khalid: Suspicious after Erik's move in scene 8. He suspects Zephyr is involved but can't prove it. He's going to test Zephyr's loyalty the only way he knows — through submission. But there's something else underneath: he's started to care about Zephyr, and the possibility of betrayal genuinely bothers him. Not just as lost property, but as a personal wound.
+  Zephyr: At his lowest. The addiction is deep. Cassius doesn't trust him. Erik is exposed. The mission is on a knife edge. And now Khalid is testing him. He has to lie — convincingly — while the pheromones are screaming at him to submit for real.
 
----
+REVISED DIRECTION:
+  This is the most intense Zephyr/Khalid scene. The fetish content escalates but the emotional stakes are what matter. Zephyr has to deceive someone he's chemically bonded to.
+
+  Key beats:
+  - Khalid confronts Zephyr about the Erik situation. Not directly accusing — probing.
+  - Demands proof of loyalty through submission — deeper than before
+  - Zephyr complies, trying to use the intimacy to extract final information (vote access, codes, whatever the underground needs for the climax)
+  - During the worship, Zephyr whispers his lie — tells Khalid he's loyal, that the feelings are real
+  - The horror: part of it IS real. The pheromones have blurred the line. Zephyr doesn't know if he's lying or telling the truth.
+  - Khalid either believes him or chooses to believe him — because he wants it to be true
+  - Exit: Zephyr has what the underground needs but he's hollowed out. Sets up the climax.
+
+  The deception:
+  What makes this scene painful isn't the fetish content — it's that Zephyr is lying to someone during an intimate act, and he can't be sure he's lying. The pheromones have made the feelings real. He's betraying someone who, in a twisted way, he actually has feelings for. That's the tragedy of the whole story.
+
+  Addiction escalation:
+  Scene 1: Involuntary → Scene 2: Fought, denied → Scene 4: Fought, failed → Scene 6: Voluntary → Scene 9: CAN'T DISTINGUISH. Is he choosing or is it the chemicals?
+
+  Questions to resolve:
+  - What specific information does Zephyr extract? This needs to connect to whatever the underground uses in scene 10.
+  - Does Khalid let his guard down? Show vulnerability?
+  - Is there a moment where Zephyr could end it — could confess, could ask for help — and doesn't?
+
+--- LLM DRAFT BELOW (needs full rewrite — uses wrong names, wrong world) ---
+
+
 
 NARRATION: Khalid's boot hovers inches from Zephyr's knee. The Victory Chamber's vents push thick air—stale sweat from last bout's gear piled in the corner. {Khalid's shadow cuts across the viewport, arena sands stark white below.}
 [OBIORA ACHEBE] (suspicious_demand) (booming, boot grinding down slowly) Loyalty, pet. Whose is it? Mine—or his?

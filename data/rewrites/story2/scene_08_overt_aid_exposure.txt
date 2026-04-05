@@ -1,14 +1,32 @@
 SCENE 8: "Overt Aid and Exposure"
-Setting: Overseer's Command Tower — armored viewports hum with drone feeds from the pit below, rule-enforcement consoles blink red under a haze of recycled air thick with sweat.
-Characters: Zephyr, Erik Lindqvist, Khalid
+Setting: Erik's domain — the Overseer's Command Tower or wherever he operates from
+Characters: Zephyr, Erik Lindqvist (Khalid may appear or be referenced)
 POV: Zephyr
 
 CHARACTER REFERENCE:
-  Zephyr: (protagonist) Zephyr is a sly, ambitious twink from a fringe colony, whose pretty features and lithe build hide a | voice: quick-witted sarcasm with a lilt of outer-rim slang, peppered with clever quips 
-  Erik Lindqvist: (catalyst) Erik Lindqvist is a veteran arena overseer who enforces the games' rules with reluctant zeal, his hi | voice: clipped, official tone with bursts of reluctant empathy, using technical jargon 
-  Khalid: (antagonist) Khalid is a towering, muscle-bound champion with a commanding presence, driven by a personal kink fo | voice: deep, rumbling commands laced with dry wit and unexpected gentleness, using meta
+  Erik Lindqvist: Makes a bold move — does something overt that helps Zephyr/the underground but exposes himself to scrutiny. This is Erik crossing his own point of no return.
+  Zephyr: Caught between the mission and the addiction. Erik's aid is the lifeline pulling him back, but Khalid's suspicion is growing.
 
----
+REVISED DIRECTION:
+  Erik takes a risk. Something official — blocking a veto, altering records, passing classified information openly. Whatever it is, it advances the underground's cause but puts Erik in danger.
+
+  Key beats:
+  - Erik does something concrete and visible that aids the rebellion
+  - It works — there's a moment of triumph
+  - But it attracts attention. Khalid's attention specifically.
+  - Khalid begins to suspect that Zephyr is connected to whatever Erik just did
+  - Exit: Khalid's suspicion sets up scene 9 — the loyalty test
+
+  Questions to resolve:
+  - What specifically does Erik do? Block a senate vote? Release records? Sabotage arena systems?
+  - Does Zephyr witness it directly or learn about it after?
+  - Does Erik and Zephyr interact in this scene, or is it Erik acting alone with Zephyr seeing the consequences?
+  - How does Khalid's suspicion manifest? Does he confront Zephyr directly or just become colder/more controlling?
+  - Is there an addiction beat? (Zephyr might be experiencing withdrawal if he's been away from Khalid, or heightened craving if Khalid has been withholding as punishment)
+
+--- LLM DRAFT BELOW (needs full rewrite — uses wrong names, wrong world) ---
+
+
 
 NARRATION: Erik's fingers hover over the veto console. The screen flashes Khalid's champion override code. Towering viewports frame the pit's distant roar. {[Erik's console beeps insistently]}
 [ERIK LINDQUIST] (clipped_reluctance) (flat, official) Protocol 47-B. Champion veto denied. Fighter vitals stable—no incapacitation flagged. {[He taps override, screen locks green]}

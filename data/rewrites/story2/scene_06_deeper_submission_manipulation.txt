@@ -1,13 +1,40 @@
-SCENE 6: "Sweat and Senate Shadows"
-Setting: Champion's Victory Chamber — lavish suite with plush zero-grav loungers, scent-diffusing vents humming low, panoramic arena view flickering with post-fight replays, Khalid's combat boots discarded by a trophy case.
+SCENE 6: "Deeper Submission"
+Setting: Khalid's private chambers at his estate (not the arena suite — this is where he lives)
 Characters: Zephyr, Khalid
 POV: Zephyr
 
 CHARACTER REFERENCE:
-  Zephyr: (protagonist) Zephyr is a sly, ambitious twink from a fringe colony, whose pretty features and lithe build hide a | voice: quick-witted sarcasm with a lilt of outer-rim slang, peppered with clever quips 
-  Khalid: (antagonist) Khalid is a towering, muscle-bound champion with a commanding presence, driven by a personal kink fo | voice: deep, rumbling commands laced with dry wit and unexpected gentleness, using meta
+  Zephyr: Deeper into the addiction now. He has intel from Erik and purpose from Cassius. He's supposed to be using his position to extract information from Khalid. But the pheromones are making it harder to stay focused. He's starting to lose track of which feelings are real and which are chemical.
+  Khalid: Beginning to show something beyond pure dominance. There are moments of unexpected gentleness — touching Zephyr's hair softly, asking if he's eaten. Is this manipulation, genuine care, or just possessiveness? Zephyr can't tell. Neither can the reader.
 
----
+REVISED DIRECTION:
+  This is the turning point for the addiction. In scene 4, Zephyr already worships Khalid without being told and volunteers for Titus's feet. So the escalation here is NOT "does something without being asked" — he's already doing that. The escalation is: HE GOES TO KHALID ON HIS OWN. Not summoned. Not ordered. He walks to Khalid's chambers because his body is screaming for the musk and he can't resist anymore. That's the line.
+
+  Key beats:
+  - Zephyr goes to Khalid's chambers uninvited — maybe tells himself it's for intel, but the reader knows
+  - Khalid is surprised. Then pleased. This changes their dynamic — the slave came to him.
+  - Zephyr tries to use the intimacy to extract information — asks questions during worship
+  - Khalid shows tenderness — not performance (like scene 4 with the generals) but private, real. This connects to his jealousy in scene 4 ("You're mine. Not his.") — he's becoming possessive in a way that looks like caring.
+  - The horror of realising he didn't come for intel. He came because he wanted to.
+  - Exit: Zephyr leaves with some intel but deeply shaken. His behaviour is becoming erratic. Sets up Cassius noticing in scene 7.
+
+  Addiction escalation:
+  Scene 1: First exposure (pit — involuntary, didn't know what was happening)
+  Scene 2: Second exposure (suite — fought it, was denied)
+  Scene 4: Performs willingly in front of others, volunteers for Titus — but still has strategic justification
+  Scene 6: THIS SCENE — seeks Khalid out. No justification holds. The line between strategy and addiction is gone.
+
+  Khalid's jealousy thread:
+  Scene 4 planted it ("You're mine. Not his."). In this scene, Khalid might reference the Titus incident — did Zephyr enjoy it? Was that real or performance? This is Khalid being vulnerable without admitting it. It makes scene 9's loyalty test inevitable.
+
+  Questions to resolve:
+  - What information does Zephyr try to extract? Maybe something about Titus — his movements, his weaknesses, his relationship to the Emperor?
+  - Does Khalid suspect anything? He's not stupid — a slave asking political questions mid-worship is unusual.
+  - How does Khalid show tenderness? Physical (stroking hair, feeding him)? Verbal ("my pretty fighter")? Or something quieter — letting Zephyr sleep on the floor by his bed instead of sending him back to the barracks?
+
+--- LLM DRAFT BELOW (needs full rewrite — uses wrong names, wrong world) ---
+
+
 
 NARRATION: The chamber door seals with a hiss. Khalid sprawls on the zero-grav lounger, one massive foot propped on the edge, sole upturned and glistening from the pit. {[Door seals behind Zephyr. Vents push warm, musky air.]}
 [OBIORA ACHEBE] (commanding_amusement) (deep rumble) On your knees, boy. Clean what the crowd cheered for. {[His foot flexes, sweat beading along the arch.]}

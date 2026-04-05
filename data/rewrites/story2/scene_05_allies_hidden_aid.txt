@@ -1,14 +1,33 @@
 SCENE 5: "Allies and Hidden Aid"
-Setting: Senate Shadow Alcove, dim-lit with encrypted terminals flickering blue, air thick with recycled heat and faint metallic tang, transitioning to Overseer's Command Tower via shadowed lift
-Characters: Zephyr, Cassius, Tomas Ruiz, Erik Lindqvist
+Setting: Needs deciding — somewhere Zephyr encounters Erik in an official capacity. Options: arena processing area, a slave inspection, a corridor in Khalid's estate, the overseer's tower during a routine check.
+Characters: Zephyr, Erik Lindqvist
 POV: Zephyr
 
 CHARACTER REFERENCE:
-  Zephyr: (protagonist) Zephyr is a sly, ambitious twink from a fringe colony, whose pretty features and lithe build hide a | voice: quick-witted sarcasm with a lilt of outer-rim slang, peppered with clever quips 
-  Cassius: (supporting) Cassius is Zephyr's loyal ally in the senate shadows, a shrewd strategist who urges reform from with | voice: measured, archaic phrasing with a gravelly accent, fond of proverbs and historic
-  Erik Lindqvist: (catalyst) Erik Lindqvist is a veteran arena overseer who enforces the games' rules with reluctant zeal, his hi | voice: clipped, official tone with bursts of reluctant empathy, using technical jargon 
+  Zephyr: Now installed in Khalid's household. Playing the obedient slave per Cassius's instructions. The addiction is getting worse — he's having to actively resist between encounters with Khalid. He has a purpose now (the underground, the cause) but the pheromones are eroding his will.
+  Erik Lindqvist: Veteran arena overseer. Early 50s. Clipped, official. Goes silent under pressure. Haunted by a past failure — couldn't save a fighter from exile. He's not part of the underground (yet?) but he has doubts about the system. He has access to arena records, imperial communications, schedules.
 
----
+REVISED DIRECTION:
+  "Tomas Ruiz" from the original plan doesn't exist. Erik is the sole new ally in this scene.
+
+  Key beats:
+  - Zephyr encounters Erik through some official process (Erik oversees arena/slave operations)
+  - Erik sees something that makes him uneasy — maybe he recognises the Axion name on paperwork, or he sees the pheromone effects and knows what they mean, or he simply sees a kid being destroyed by the system
+  - Erik provides concrete aid: information, access, a warning. Something Zephyr can use.
+  - The aid is dangerous for Erik. He's an imperial official. If caught helping a slave, it's over for him.
+  - Erik's motivation is guilt — he watched what happened to Hector (or someone like Hector) and did nothing. He won't make that mistake again.
+  - Zephyr is suspicious at first — why would an overseer help him?
+  - Exit: Zephyr now has two threads — Cassius's underground + Erik's inside access. But he has to go back to Khalid.
+
+  Questions to resolve:
+  - Does Erik know Zephyr is Ionion royalty? Or does he just see a slave he wants to help?
+  - What specifically does Erik give him? Arena schedules (when Khalid is away)? Senate comms showing corruption? Access to a communication channel?
+  - Does this scene happen before or after scene 4 (public humiliation)?
+  - Is there a pheromone/addiction beat in this scene? (Even away from Khalid, Zephyr might be experiencing withdrawal — irritability, craving, distraction)
+
+--- LLM DRAFT BELOW (needs full rewrite — uses wrong names, wrong world) ---
+
+
 
 NARRATION: Holo-screens cast jagged light on the alcove walls. Zephyr leans against a damp terminal console, sleeve still carrying arena sand. {Screens flicker with senate vote tallies.}
 [RAFAEL ESPINOZA] (motivated) Cassius, this slip in the pit—crowd ate it up, but Khalid's not blind. We turn that heat into our blade, yeah? Who's the new face? {Gestures at Tomas Ruiz, who stands rigid by the door panel.}
