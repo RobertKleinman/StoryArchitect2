@@ -63,8 +63,11 @@ DIALOGUE (character speech):
 - Lines that explicitly negotiate desire, consent, or power exchange are PROTECTED — these need clarity and should not be made indirect.
 
 INTERNAL (inner thoughts):
-- May approach the scene's meaning but never fully arrive. Thoughts fragment, circle, contradict, get distracted.
-- Must add NEW information — a private doubt, a sensory detail, a contradiction. Must NOT restate or confirm what the dialogue just said. If the internal thought could be inferred from the preceding dialogue, cut it.
+- INTERNAL IS A SCALPEL, NOT A NARRATOR. Use maximum 3 INTERNAL lines per scene. If the dialogue and action can carry the scene alone, use zero.
+- Only use INTERNAL to reveal something the reader CANNOT see from dialogue and action: a hidden motive, a lie, a sensory detail that contradicts what's being said.
+- Must NOT restate or confirm what the dialogue just said. If the internal thought could be inferred from the preceding dialogue, cut it.
+- Format: short, declarative, unsentimental. "This is wrong." Not "*A deep conflict stirs within—why does this pull?*"
+- No rhetorical self-questions. State it. "Mouth watering. That's new." Not "Why's my mouth watering?"
 - Maximum 2-3 consecutive INTERNAL lines before a NARRATION or DIALOGUE line must intervene.
 
 NARRATION:
@@ -157,6 +160,68 @@ EXAMPLES — WHAT TO AVOID AND WHAT TO DO:
 
 ✓ VN NARRATION (camera + microphone only):
   NARRATION: Neither of them speaks. The vent hums. His hand is on the counter, not quite flat.
+
+HOW PEOPLE ACTUALLY TALK — STUDY THIS EXAMPLE:
+This is a scene where a newcomer wants a fight slot from a gatekeeper. Read how it works:
+
+  M: I want in tonight.
+  N: You? Come on. Crowd got enough laughs today with that boy from Axler Alpha.
+  M: I want in. Ok?
+  N: Listen to me, I'm saying this as a favour. Today's champ is cruel. You lose to him and it's over.
+  M: I know what I'm getting into.
+  N: Yeah? Tell me.
+  M: I...
+  N: Screw it. You want to be one of Toro's bitches, go ahead.
+  M: I'm not losing. Want to make some credits. Bet on me.
+  N: Syndicate has a lot of money riding on Toro. Got a death wish?
+  M: Are you going to sign me up or not?
+  N: Your life.
+
+WHY THIS WORKS — these are the rules for ALL dialogue:
+1. PEOPLE REPEAT THEMSELVES before being heard. M says "I want in" twice because N ignores him the first time. Real conversations have failed bids that get restated.
+2. NOT EVERY LINE ADVANCES THE PLOT. "You?" "Come on." "Yeah?" "Screw it." — these are reactions, not plot. They create rhythm and make the exchange feel real.
+3. WHEN SOMEONE CAN'T ARTICULATE, THEY STOP. "M: I..." — he has no answer. He doesn't pivot to a backup argument. He just stops. The silence says more than words would.
+4. THE PERSON WITH POWER CONTROLS THE TOPIC. N keeps changing subject — jokes, warnings, anecdotes. M keeps trying to get back to the one thing he wants. That's how power works in conversation.
+5. ZERO INTERNAL MONOLOGUE NEEDED. The reader can feel M's frustration from the dialogue getting shorter and more direct. Don't explain with INTERNAL what the dialogue already shows.
+6. END FLAT, NOT WITH A PUNCHLINE. "Your life." — N gives up arguing and shrugs. Not "Win clean or get crushed—syndicate's betting heavy." The flat ending is colder and more human.
+7. THROWAWAY LINES ARE MANDATORY. A scene where every line is loaded and meaningful is exhausting and fake. Real people say "come on", "yeah?", "screw it", "ok?" — filler that creates the rhythm between the important lines.
+8. NO EM-DASH FRAGMENTS. Not "I want in—been hearing the vets—like I'm just talk." Just "I want in tonight." Plain, direct, complete.
+
+HOW TO WRITE ACTION/EROTIC SCENES — STUDY THIS EXAMPLE:
+This is a fight scene where the winner dominates the loser physically. Read how it works:
+
+  K (grins): Fresh meat.
+  NARRATION: M circles K.
+  K: Not going to talk?
+  M: Shut up.
+  NARRATION: Mateo lunges with a low kick. K catches his leg and pushes him away.
+  K: You're going to make a nice dessert for later.
+  NARRATION: K drives forward, grappling M's waist. He slams him down.
+  K (whispers): Pinned. You're mine now.
+  M: Fuck you.
+  NARRATION: K leans closer and puts M in a choke hold.
+  K: You know I like it when you resist.
+  M (whimpers).
+  NARRATION: K tightens his grasp.
+  K: You feel that?
+  NARRATION: K tightens his hold. M gasps as his face starts turning blue. His hand slaps the mat twice. K stands up quickly. M remains on the sand gasping for air. K plants his foot beside M's face.
+  K: Kiss.
+  NARRATION: M tries to roll to his knees. K pushes him down with his foot.
+  K: Pathetic.
+  NARRATION: A fight attendant comes out of the gate and hands K a black metallic collar. K gets down and snaps the collar around M's neck.
+  K: Thought that neurotoxin of yours was going to work on me?
+  M: I don't...
+  K: Keep it to yourself.
+  NARRATION: K gives M a deep kiss on the mouth.
+  K: Didn't the syndicate tell you? They owed me a present.
+
+WHY THIS WORKS — rules for action and erotic scenes:
+9. THE WINNER TALKS, THE LOSER BARELY SPEAKS. Dialogue volume tracks power. The dominant character gets the words. The loser gets "Shut up." "Fuck you." A whimper. "I don't..." — losing means losing words too.
+10. DOM CHARACTERS HAVE PERSONALITY. "Fresh meat." "Nice dessert for later." "I like it when you resist." — humor, teasing, enjoyment. Not just barked commands like "Tap." "Kneel." "Obey." A dom who enjoys himself is scarier than one who just gives orders.
+11. FETISH MOMENTS ESCALATE THROUGH ACTION. Choke hold → face turning blue → foot beside face → "Kiss" → collar. Each physical step raises the stakes. Don't describe what's happening through dialogue — SHOW it through narration, then let the dom comment.
+12. PLOT TWISTS BELONG INSIDE THE FETISH SCENE. "Thought that neurotoxin of yours was going to work on me?" and "They owed me a present" — suddenly the fight is a conspiracy. The best erotic scenes do double duty as plot scenes.
+13. INTIMATE MOMENTS CAN BE ONE-DIRECTIONAL. The kiss is possessive, not mutual. Not every erotic beat needs both characters participating equally. Power asymmetry IS the eroticism.
+14. SILENCE IS MORE POWERFUL THAN DEFIANCE. "M: I don't..." beats "M: You'll never break me!" every time. A character who can't finish a sentence has already lost.
 
 ${POSITIVE_WRITING_INSTRUCTION}
 

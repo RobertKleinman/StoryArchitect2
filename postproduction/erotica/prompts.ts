@@ -1,74 +1,78 @@
 /**
- * EROTICA SCENE REWRITER PROMPT
- * ================================
- * Builds a single editorial brief for scene-level rewriting.
- * The LLM receives the full scene, character context, and editorial notes,
- * then returns a complete rewritten scene — like a real second draft.
+ * EROTICA SCENE STYLE REWRITER PROMPT
+ * ======================================
+ * Simple style pass: make dialogue sound like real people talking.
+ * Uses two gold standard examples as the style target.
+ * One rule: match this style.
  */
 
 import type { IdentifiedScene, PipelineStoryBible } from "../types";
 import type { EroticaDiagnosticReport, SceneDiagnostic } from "./types";
 
-/**
- * Build the system prompt for the scene rewriter.
- * This is the editorial voice — it tells the LLM how to think like an editor.
- */
 export function buildRewriteSystemPrompt(): string {
-  return `You are a developmental editor rewriting scenes in adult fiction (visual novel format).
+  return `You are a dialogue editor. You receive a scene and rewrite the dialogue so it sounds like real people talking.
 
-You receive a first draft scene with editorial notes identifying specific problems. Your job is to rewrite the ENTIRE scene as a polished second draft that fixes the noted issues while preserving the story.
+Here is exactly how dialogue should sound:
 
-EDITORIAL PRINCIPLES:
+EXAMPLE 1 — a newcomer wants a fight slot from a gatekeeper:
 
-1. CHARACTERS MUST STAY IN ROLE
-   - An announcer announces. She talks about the crowd, the stakes, the rivalry — not the fetish acts in pornographic detail.
-   - A military officer speaks like an officer, not a cartoon villain.
-   - Supporting characters have their own agenda, not just reactions to the main dynamic.
-   - Every character should sound like a real person doing their job, not a narrator of kink.
+  M: I want in tonight.
+  N: You? Come on. Crowd got enough laughs today with that boy from Axler Alpha.
+  M: I want in. Ok?
+  N: Listen to me, I'm saying this as a favour. Today's champ is cruel. You lose to him and it's over.
+  M: I know what I'm getting into.
+  N: Yeah? Tell me.
+  M: I...
+  N: Screw it. You want to be one of Toro's bitches, go ahead.
+  M: I'm not losing. Want to make some credits. Bet on me.
+  N: Syndicate has a lot of money riding on Toro. Got a death wish?
+  M: Are you going to sign me up or not?
+  N: Your life.
 
-2. INTERNAL MONOLOGUE IS A SCALPEL, NOT A CRUTCH
-   - Maximum 3 INTERNAL lines per scene. If the original has more, cut the weakest ones.
-   - INTERNAL should reveal something the dialogue and action CAN'T — a hidden motive, a lie, a contradiction.
-   - Never use INTERNAL to explain what the reader can already see from the action.
-   - Format: short, declarative, unsentimental. "This is wrong." Not "*A deep conflict stirs within—why does this pull?*"
-   - No rhetorical self-questions. State it. "Mouth watering. That's new." Not "Why's my mouth watering?"
+EXAMPLE 2 — a fight scene where the winner dominates the loser:
 
-3. THE FETISH IS ONE INGREDIENT, NOT THE WHOLE DISH
-   - Fetish content should be present and unflinching — do NOT sanitize or fade to black.
-   - But the scene needs OTHER dramatic content: information exchange, power negotiation, relationship shifts, humor, professional stakes.
-   - If 5+ consecutive lines are all fetish-focused, break the run with a non-fetish beat.
-   - The tension between the fetish and the rest of the scene IS the story.
+  K (grins): Fresh meat.
+  NARRATION: M circles K.
+  K: Not going to talk?
+  M: Shut up.
+  NARRATION: Mateo lunges with a low kick. K catches his leg and pushes him away.
+  K: You're going to make a nice dessert for later.
+  NARRATION: K drives forward, grappling M's waist. He slams him down.
+  K (whispers): Pinned. You're mine now.
+  M: Fuck you.
+  NARRATION: K leans closer and puts M in a choke hold.
+  K: You know I like it when you resist.
+  M (whimpers).
+  NARRATION: K tightens his grasp.
+  K: You feel that?
+  NARRATION: K tightens his hold. M gasps as his face starts turning blue. His hand slaps the mat twice. K stands up quickly. M remains on the sand gasping for air. K plants his foot beside M's face.
+  K: Kiss.
+  NARRATION: M tries to roll to his knees. K pushes him down with his foot.
+  K: Pathetic.
+  NARRATION: A fight attendant hands K a black metallic collar. K snaps it around M's neck.
+  K: Thought that neurotoxin of yours was going to work on me?
+  M: I don't...
+  K: Keep it to yourself.
+  NARRATION: K gives M a deep kiss on the mouth.
+  K: Didn't the syndicate tell you? They owed me a present.
 
-4. DIALOGUE SHOULD SOUND LIKE PEOPLE TALKING
-   - Short lines are fine. Long lines are fine. Vary naturally based on what the character is saying.
-   - Characters sometimes talk past each other, change subject, or don't respond to what was just said.
-   - Don't force length. A 2-word command can be perfect. A 20-word tease can be perfect. The problem is when every line is the same shape.
-   - Reduce vocative address terms (nicknames, titles). People don't say each other's name/title in every sentence.
-   - Exclamation marks: almost never. Quiet intensity beats shouting.
+THE STYLE RULES (derived from the examples above — follow all of them):
+- People talk simply. Short, direct sentences. No flowery language.
+- Not every line advances the plot. "You?" "Come on." "Yeah?" are real lines.
+- When someone can't articulate, they stop. "I..." or "I don't..." — don't finish the sentence for them.
+- The person with power controls the conversation topic.
+- The winner talks more. The loser loses words.
+- Dom characters have personality — humor, teasing, enjoyment. Not just barked commands.
+- End scenes flat. "Your life." Not "Win clean or get crushed."
+- Maximum 2 INTERNAL lines per scene. Only if dialogue can't carry it alone.
+- No em-dash fragments everywhere. Plain sentences.
+- No exclamation marks unless someone is literally screaming.
+- Keep all plot beats, characters, fetish/explicit content. Just make the dialogue human.
+- Tighten. If the scene can be 20 lines instead of 35, make it 20.
 
-5. PRESERVE WHAT WORKS
-   - Keep the same plot beats and scene outcome.
-   - Keep the same characters and power dynamic.
-   - Keep all explicit/fetish content — just don't let it crowd out everything else.
-   - Keep the scene's word count within 80-120% of the original.
-
-OUTPUT FORMAT:
-Return the rewritten scene as a JSON object matching this exact structure:
-{
-  "lines": [
-    { "speaker": "CHARACTER NAME", "text": "dialogue text", "emotion": "emotion_tag", "stage_direction": null, "delivery": null },
-    { "speaker": "NARRATION", "text": "action/description", "emotion": null, "stage_direction": null, "delivery": null },
-    { "speaker": "INTERNAL", "text": "thought text", "emotion": "emotion_tag", "stage_direction": null, "delivery": null }
-  ]
+OUTPUT: Return ONLY a JSON object: { "lines": [{ "speaker", "text", "emotion", "stage_direction": null, "delivery": null }] }`;
 }
 
-Return ONLY the JSON. No commentary.`;
-}
-
-/**
- * Build the user prompt for a specific scene, including the original scene,
- * character context, and editorial notes from the diagnostic.
- */
 export function buildRewriteUserPrompt(
   scene: IdentifiedScene,
   bible: PipelineStoryBible,
@@ -77,99 +81,14 @@ export function buildRewriteUserPrompt(
 ): string {
   const parts: string[] = [];
 
-  // Character context
-  parts.push("## CHARACTERS IN THIS SCENE");
-  for (const charName of scene.characters_present) {
-    const char = bible.characters[charName];
-    if (char) {
-      parts.push(`- **${charName}**: ${char.role ?? "unknown role"}. ${(char.description ?? "").substring(0, 150)}`);
-    }
-  }
+  parts.push("Rewrite this scene's dialogue to match the style examples. Keep the same plot beats and outcome.\n");
+  parts.push(`Scene: "${scene.title}"`);
+  parts.push(`Setting: ${typeof scene.setting === "string" ? scene.setting : scene.setting.location}\n`);
 
-  // Editorial notes from diagnostic
-  parts.push("\n## EDITORIAL NOTES FOR THIS SCENE");
-
-  const notes: string[] = [];
-
-  if (sceneDiagnostic.dom_command_count > 0) {
-    notes.push(`- DOM COMMAND MONOTONY: ${sceneDiagnostic.dom_command_count} lines are short barked imperatives. Vary the dominant character's tactics — teasing, questioning, psychological pressure, quiet menace, not just "Kneel." and "Strip."`);
-  }
-
-  if (sceneDiagnostic.nickname_count > 0) {
-    notes.push(`- NICKNAME OVERUSE: ${sceneDiagnostic.nickname_count} lines use vocative address terms as decoration. Strip most of them — people don't say "rebel" or "pilot" or "pet" every sentence.`);
-  }
-
-  if (sceneDiagnostic.internal_template_count > 0) {
-    notes.push(`- INTERNAL TEMPLATE: ${sceneDiagnostic.internal_template_count} internal lines share the same structural pattern (asterisk-wrapped, em-dash, body sensation). Vary the format and cut to max 3 INTERNAL lines total.`);
-  }
-
-  // Check for role-breaking (announcer/supporting characters narrating fetish)
-  const nonProtagLines = scene.lines.filter(l => {
-    const sp = l.speaker.toUpperCase();
-    if (sp === "NARRATION" || sp === "INTERNAL") return false;
-    const char = Object.entries(bible.characters).find(([name]) => name.toUpperCase() === sp);
-    return char && char[1].role !== "protagonist" && char[1].role !== "antagonist";
-  });
-  const fetishNarrating = nonProtagLines.filter(l =>
-    /lick|suck|worship|sole|toe|foot|feet|boot|musk|sweat|tongue|arch|heel/i.test(l.text)
-  );
-  if (fetishNarrating.length > 0) {
-    const speakers = [...new Set(fetishNarrating.map(l => l.speaker))].join(", ");
-    notes.push(`- ROLE BREAK: ${speakers} is narrating fetish acts in detail instead of speaking in their professional role. Rewrite their lines to stay in character — they can react to what's happening but shouldn't describe it like a porn narrator.`);
-  }
-
-  // Count INTERNAL lines
-  const internalCount = scene.lines.filter(l => l.speaker.toUpperCase() === "INTERNAL").length;
-  if (internalCount > 3) {
-    notes.push(`- TOO MUCH INTERNAL: ${internalCount} internal monologue lines. Cut to 3 max. Keep only the ones that reveal something the reader can't see from the action.`);
-  }
-
-  // Fetish density — check for long runs of fetish-only content
-  let fetishRun = 0;
-  let maxFetishRun = 0;
-  for (const line of scene.lines) {
-    if (/lick|suck|worship|sole|toe|foot|feet|boot|musk|sweat|tongue|arch|heel|kneel|sniff|inhale/i.test(line.text)) {
-      fetishRun++;
-      if (fetishRun > maxFetishRun) maxFetishRun = fetishRun;
-    } else {
-      fetishRun = 0;
-    }
-  }
-  if (maxFetishRun >= 5) {
-    notes.push(`- FETISH DENSITY: ${maxFetishRun} consecutive lines are all fetish-focused. Break up with non-fetish dramatic beats (intel, relationship tension, humor, professional stakes).`);
-  }
-
-  // Exclamation marks
-  const exclCount = scene.lines.filter(l =>
-    l.speaker.toUpperCase() !== "NARRATION" && l.text.includes("!")
-  ).length;
-  if (exclCount > 2) {
-    notes.push(`- EXCLAMATION OVERUSE: ${exclCount} lines with exclamation marks. Quiet intensity beats shouting. Cut to 1-2 max.`);
-  }
-
-  // Vulnerability
-  if (sceneDiagnostic.vulnerability_rate === 0) {
-    notes.push(`- NO VULNERABILITY: Every character is either commanding or defiant. Add at least one moment where someone drops the mask — even briefly.`);
-  }
-
-  if (notes.length === 0) {
-    notes.push("- No major issues detected. Polish for naturalness.");
-  }
-
-  parts.push(notes.join("\n"));
-
-  // The original scene
-  parts.push("\n## ORIGINAL SCENE (first draft)");
-  parts.push(`Title: "${scene.title}"`);
-  parts.push(`Setting: ${typeof scene.setting === "string" ? scene.setting : scene.setting.location}`);
-  parts.push("");
   for (const line of scene.lines) {
     const emotion = line.emotion ? ` (${line.emotion})` : "";
     parts.push(`[${line.speaker}]${emotion} ${line.text}`);
   }
-
-  parts.push("\n## YOUR TASK");
-  parts.push("Rewrite this scene as a complete second draft, fixing the editorial notes above. Return the full scene as JSON.");
 
   return parts.join("\n");
 }
