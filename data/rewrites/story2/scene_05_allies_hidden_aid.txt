@@ -1,56 +1,61 @@
 SCENE 5: "Allies and Hidden Aid"
-Setting: Needs deciding — somewhere Zephyr encounters Erik in an official capacity. Options: arena processing area, a slave inspection, a corridor in Khalid's estate, the overseer's tower during a routine check.
+Setting: Medical bay at Khalid's estate — sterile, clinical. Examination table, cabinets, monitoring equipment. The room is monitored.
 Characters: Zephyr, Erik Lindqvist
 POV: Zephyr
 
 CHARACTER REFERENCE:
-  Zephyr: Now installed in Khalid's household. Playing the obedient slave per Cassius's instructions. The addiction is getting worse — he's having to actively resist between encounters with Khalid. He has a purpose now (the underground, the cause) but the pheromones are eroding his will.
-  Erik Lindqvist: Veteran arena overseer. Early 50s. Clipped, official. Goes silent under pressure. Haunted by a past failure — couldn't save a fighter from exile. He's not part of the underground (yet?) but he has doubts about the system. He has access to arena records, imperial communications, schedules.
+  Zephyr: Installed in Khalid's household. Playing the obedient slave per Cassius's instructions. The addiction is getting worse — he's actively fighting cravings between encounters with Khalid. After scene 4's public display, he's rattled. The resistance mark from the Ionion court is hidden under his ribs.
+  Erik Lindqvist: Veteran arena overseer. Early 50s. Conducts medical processing of arena fighters and household slaves — part of his official duties. Clipped, official tone. Goes silent under pressure. Part of the underground resistance — recognises the Ionion court mark.
 
-REVISED DIRECTION:
-  "Tomas Ruiz" from the original plan doesn't exist. Erik is the sole new ally in this scene.
+NOTE: This room is monitored. Everything Erik says aloud is calibrated for whoever is listening. His real communication happens through actions and the code phrase.
 
-  Key beats:
-  - Zephyr encounters Erik through some official process (Erik oversees arena/slave operations)
-  - Erik sees something that makes him uneasy — maybe he recognises the Axion name on paperwork, or he sees the pheromone effects and knows what they mean, or he simply sees a kid being destroyed by the system
-  - Erik provides concrete aid: information, access, a warning. Something Zephyr can use.
-  - The aid is dangerous for Erik. He's an imperial official. If caught helping a slave, it's over for him.
-  - Erik's motivation is guilt — he watched what happened to Hector (or someone like Hector) and did nothing. He won't make that mistake again.
-  - Zephyr is suspicious at first — why would an overseer help him?
-  - Exit: Zephyr now has two threads — Cassius's underground + Erik's inside access. But he has to go back to Khalid.
+---
 
-  Questions to resolve:
-  - Does Erik know Zephyr is Ionion royalty? Or does he just see a slave he wants to help?
-  - What specifically does Erik give him? Arena schedules (when Khalid is away)? Senate comms showing corruption? Access to a communication channel?
-  - Does this scene happen before or after scene 4 (public humiliation)?
-  - Is there a pheromone/addiction beat in this scene? (Even away from Khalid, Zephyr might be experiencing withdrawal — irritability, craving, distraction)
+NARRATION: A medical bay. White walls, strip lighting, the hum of monitoring equipment. An examination table in the centre. Erik Lindqvist stands by a cabinet, reviewing a data pad. An attendant leads Zephyr in.
+[Erik] (without looking up) Standard processing. You'll need to undress.
+NARRATION: Erik gestures at the attendant without raising his eyes from the pad.
+[Erik] That'll be all. Full physical. I'll call when he's ready.
+NARRATION: The attendant leaves. The door seals. Zephyr pulls off his shirt, then the rest. Stands in the cold light. Erik sets the pad down and begins a slow circuit around him. Clinical. Detached. Checking joints, muscle condition, skin. His fingers press along Zephyr's ribcage. He stops.
+[Erik] (flat) You are... that mark.
+NARRATION: Erik's fingers hover over the small raised scar below Zephyr's left arm. Deliberate pattern. Not a wound. He leans closer.
+[Zephyr] It means nothing.
+NARRATION: Erik says nothing for a long moment. Then straightens. His face gives nothing away.
+[Erik] On the table.
+NARRATION: Zephyr climbs onto the examination table. Erik continues the physical — pulse, reflexes, eyes, throat. Methodical. Then he walks to the medical cabinet and opens it. Pulls out vials. Starts mixing.
+[Zephyr] Is something wrong?
+[Erik] Nothing. Standard.
+NARRATION: Erik draws the mixture into an injector. Taps the air out. Turns back toward Zephyr.
+[Zephyr] What is that?
+NARRATION: Zephyr slides off the table. Backs up a step.
+[Zephyr] You're not injecting me with anything.
+[Erik] Don't make this harder than it needs to be.
+[Zephyr] What is it? Tell me.
+[Erik] (silence)
+[Zephyr] Tell me! I have a right to know. I have at least that.
+NARRATION: Erik walks toward the comm panel on the wall. Zephyr moves between him and the panel.
+[Zephyr] Please. You don't understand.
+[Erik] I don't understand? You think I want to do this?
+[Zephyr] I'm Ionion nobility. Don't do this to me.
+[Erik] (quiet) I know who you are. And it doesn't change anything.
+[Zephyr] Then help me. The pheromones — I know what they are. Make them stop.
+[Erik] (pause) Pheromones?
+[Zephyr] His feet. His sweat. They do something to me. To my brain. It has to be illegal. Even the Empire doesn't allow gene-editing on this scale.
+[Erik] (sharp) Keep quiet. Do you have any idea what would happen to you if anyone else heard those accusations?
+[Zephyr] It's true.
+[Erik] It doesn't matter what's true. This is Khalid's house. Everyone here — everyone — is his. And there are no pheromones. Your blood is clear.
+[Zephyr] What?
+NARRATION: Erik holds his gaze. Steady. Giving nothing.
+[Zephyr] It can't be.
+NARRATION: Erik takes Zephyr's arm. Firm grip. Injects him before Zephyr can pull away. Zephyr flinches. It's done.
+[Zephyr] Why?
+[Erik] (silence)
+[Zephyr] Why?
+[Erik] (low) The blue bird will fly.
+NARRATION: Zephyr goes still. The words hang in the sterile air. Erik holds his gaze for one second. Then turns, walks to the comm panel, and presses it.
+[Erik] (official tone) He's done. You can come in.
+NARRATION: Erik doesn't look at Zephyr again.
+[Erik] Get dressed.
+NARRATION: Zephyr pulls his clothes back on. His hands are shaking. Not from the injection. The attendant enters. Erik is already writing on his data pad. The door opens. Zephyr is led out.
+INTERNAL: The blue bird will fly. Cassius's words. He's one of ours. And whatever he just put in my arm — it wasn't standard.
 
---- LLM DRAFT BELOW (needs full rewrite — uses wrong names, wrong world) ---
-
-
-
-NARRATION: Holo-screens cast jagged light on the alcove walls. Zephyr leans against a damp terminal console, sleeve still carrying arena sand. {Screens flicker with senate vote tallies.}
-[RAFAEL ESPINOZA] (motivated) Cassius, this slip in the pit—crowd ate it up, but Khalid's not blind. We turn that heat into our blade, yeah? Who's the new face? {Gestures at Tomas Ruiz, who stands rigid by the door panel.}
-[YOON DOWAN] (measured) (gravelly, archaic phrasing) Tomas Ruiz. Fought under my banner in the Epsilon uprising. Lost his squad to senate asset grabs. Now he tallies the ledgers they don't want seen. {Nods to Tomas, who pulls a slim data chit from his vest pocket.}
-[TOMAS RUIZ] (tense) Records show champions' vetoes routed through shell corps. Khalid's next vote—it's primed for a freeze if we tag the right relay. {Slides the chit across the console; it skids into a puddle of condensation.}
-INTERNAL (distracted): Chit gleams wet. Like the pit floor under his boot. Focus, Raf—relay codes, not the taste.
-[RAFAEL ESPINOZA] (hyper_focused) Relay? Which one—the prime hub or those fringe backups? We hit wrong, it's exile tags for all— {Fingers drum the console edge, speeding up.}
-[YOON DOWAN] (pessimistic) (fragmenting) Patience carves the stone. Prime hub's watched. Fringes... {Trails off as the alcove door hisses open.}
-NARRATION: Erik Lindqvist steps in, overseer badge clipped loose on his collar. He doesn't sit. A loose wire dangles from his gauntlet. {Door seals with a dull thud.}
-[ERIK LINDQUIST] (clipped) (official, with reluctant edge) Protocol 47-C: no unscheduled clusters in shadow zones. But your relay query—fringes link to my tower logs. Encrypted slice, one-time. {Tosses a micro-drive; it bounces once before Zephyr snags it.}
-[RAFAEL ESPINOZA] (sarcastic) (quick-witted lilt) Tower logs? Erik, you're handing us Khalid's veto printout? That's—wait, one-time? What if the encryption pings back? {Pockets the drive, but eyes flick to Tomas's clenched fist on the chit.}
-[TOMAS RUIZ] (angry) It'll ping. Always does. My squad got fragged on a 'one-time' tip. You gladiators play submissive—you don't last. {Snatches the wet chit back, wiping it on his thigh.}
-INTERNAL (conflicted): Tomas's thigh—sweat-dark fabric. Not now. But the drive's warm in my pocket, like skin.
-[YOON DOWAN] (stressed) (muttering, trailing) Uprisings teach— {Cuts off as Erik gestures sharply.}
-[ERIK LINDQUIST] (tense)  {Points to the lift panel without a word.}
-NARRATION: Silence stretches. Lift doors grind open. No one moves first. {Terminals hum louder in the gap.}
-[RAFAEL ESPINOZA] (resolute) (sarcastic quip cut short) Tower it is, then. Show us the logs, Overseer. But if this is a rule bend that snaps— {Steps into the lift; others follow unevenly.}
-NARRATION: Lift ascends with a jolt. Command Tower viewscreen shows the Colosseum Pit below, sand still churned from the match. {Erik keys a side panel; arena records scroll—Khalid's veto tallies highlighted.}
-[TOMAS RUIZ] (insistent) See? Shell corp 9-Alpha. Pull that, his next vote dies. But exposure risk—your champion's aides get scanned post-match. {Jabs the screen; highlight flickers.}
-[ERIK LINDQUIST] (bureaucratic) Scan protocols optional. Log it as maintenance. {Turns away, collar clip finally falling to the floor.}
-[YOON DOWAN] (pessimistic) (fragmented) Optional leads to— {Lift dings; doors open to Tower corridor.}
-INTERNAL (torn): Logs burn in my grip. Leverage on him. Or kneel deeper. The sand calls.
-[RAFAEL ESPINOZA] (empowered) Got it. Shell 9-Alpha. We're armed. {Pockets both chit and drive, turning toward the exit ramp.}
-NARRATION: Group disperses into Tower shadows. Zephyr's boot prints arena sand on the grated floor. {Ramp leads down to Barracks transit.}
-
---- TRANSITION: Cut to Zephyr descending alone, micro-drive heavy in his pocket. ---
+--- TRANSITION: cut ---

@@ -7,7 +7,7 @@ A galactic empire, 50 years old, established by military coup. The Empire rules 
 PREMISE:
 The Ionion Kingdom (a rim planet) refused an imperial slave demand. The Empire made an example of it — raided the planet, captured or killed the nobility. Hector Axion, First in Line to the Ionion throne and Zephyr's third cousin, was captured earlier and publicly broken via pheromone gene-editing. His degradation was broadcast across the galaxy as a warning: this is what happens to those who resist.
 
-Zephyr Axion, Fifth in Line to House Artemis of the Ionion Kingdom, was captured in the raid and conscripted into the imperial arena under a false identity — listed as "Zephyr" from Outer Rim Colony Veska-3. Nobody knows who he really is. His friend Cassius, also from the Ionion court, was captured separately and ended up as a labour slave in the imperial capital.
+Zephyr Axion, Fifth in Line to House Artemis of the Ionion Kingdom, was captured in the raid and conscripted into the imperial arena under a false identity — listed as "Zephyr" from Outer Rim Colony Veska-3. His cover holds through scene 1; in scene 2 he reveals his identity to Khalid in a panic. Khalid doesn't care and later uses it to show off to other elites. His friend Cassius, also from the Ionion court, was captured separately and ended up as a labour slave in the imperial capital.
 
 CORE CONFLICT:
 Zephyr's biological addiction to Khalid's pheromone-edited musk clashes with his duty to the underground resistance and his desire to avenge his people. The fetish content is the mechanism of control — foot worship is how the Empire breaks its conquered. Zephyr must use the very submission that's destroying him as a weapon to bring down his master.
@@ -20,20 +20,20 @@ Zephyr Axion (protagonist)
   Fifth in Line to House Artemis, Ionion Kingdom. Conscripted under false identity. Lithe, pretty, androgynous. Early 20s. Not a fighter — he's smart, sarcastic, and defiant, but physically outmatched by everyone in the pit. His third cousin Hector was publicly broken and broadcast. Zephyr knows he could become the same.
   Voice: quick-witted sarcasm, outer-rim slang, loses words as he loses control
   Under pressure: speeds up, overlaps ideas, can't finish thoughts
-  Addiction arc: Involuntary (scene 1) → Fought/denied (scene 2) → Failed publicly (scene 4) → Voluntary (scene 6) → Can't distinguish real from chemical (scene 9) → Weaponised (scene 10)
+  Addiction arc: Involuntary (scene 1) → Fought/denied (scene 2) → Failed publicly (scene 4) → Counteragent received (scene 5) → Voluntary DESPITE counteragent (scene 6) → Confronted (scene 7) → Can't distinguish real from psychological (scene 9, armpits) → Watches cost of addiction — Cassius (scene 10) → Full body, first kiss, sex, chooses to stay (scene 11). The question "is this real?" is never answered.
 
 Khalid Gessir the Tenth (antagonist)
-  Lord of Touron Six and Geminon Eight. High Senator. Commander of the Eighth Battalion. Reigning pit champion. Mid 30s. Massive, scarred, gene-edited. His pheromones induce chemical dependency — his sweat rewires people who inhale it, creating an addictive craving. He uses this for dominance and control. Haunted by childhood poverty — fears losing status.
-  Voice: deep, rumbling commands, dry wit, unexpected gentleness, metaphors from his impoverished youth
+  Lord of Touron Six and Geminon Eight. High Senator. Commander of the Eighth Battalion. Reigning pit champion. Mid 30s. Massive, scarred, gene-edited. His pheromones induce chemical dependency — his sweat rewires people who inhale it, creating an addictive craving. He uses this for dominance and control. Backstory (revealed scene 6): The Empire invaded his planet when he was 11. Parents put him on a ship that turned out to be a slaver. Killed the slaver in his sleep — a desperate child with a cutting tool. Autopilot brought 12 children to an imperial relay station. Given a "choice": enlist or labour camps. Youngest recruit in the Eighth Battalion. The gene-editing was offered as a reward — he took it because "you take everything when you've had nothing." The Empire that destroyed his world made him into its weapon. He doesn't see the irony — or he's buried it.
+  Voice: deep, rumbling commands, dry wit, unexpected gentleness
   Under pressure: curt orders, volume rising
-  Complexity: Not purely evil. Shows moments of genuine care for Zephyr that may or may not be manipulation. By the end, it's possible he actually cares — which makes Zephyr's betrayal tragic for both of them.
+  Complexity: Not purely evil. A product of the same system he enforces. Shows moments of genuine care for Zephyr that may or may not be manipulation. By the end, it's possible he actually cares — which makes Zephyr's betrayal tragic for both of them.
 
 Cassius (supporting)
   From the Ionion court. Zephyr's friend and advisor. Captured separately, now a labour slave in the imperial capital's holding facility. Part of the underground resistance. Late 40s. Shrewd, blunt, practical. He's the voice of the mission — keeps Zephyr focused when the addiction pulls him away. He watched Hector's broadcast like everyone else. He's terrified of the same thing happening to Zephyr.
   Voice: measured, gravelly, fond of proverbs, fragments under pressure
 
 Erik Lindqvist (catalyst)
-  Veteran arena overseer. Early 50s. Imperial official with growing doubts about the system. Clipped, official tone. Goes silent under pressure. Motivated by guilt — he couldn't save a fighter from unfair exile in the past, and he watched what the system did to people like Hector. He provides Zephyr with inside access/information but it's dangerous for him.
+  Veteran arena overseer. Early 50s. Imperial official and underground resistance member. Clipped, official tone. Goes silent under pressure. Motivated by guilt — he couldn't save a fighter from unfair exile in the past, and he watched what the system did to people like Hector. Recognises the Ionion court resistance mark on Zephyr during a medical examination. Provides a pheromone counteragent disguised as standard processing, but cannot speak freely (medical bay is monitored). Communicates allegiance through the resistance code phrase.
   Voice: clipped, official, bursts of reluctant empathy, technical jargon
 
 Hector Axion (referenced, not present)
@@ -81,26 +81,30 @@ SCENE 4: "Display" ✓ WRITTEN
   Setting: Imperial outdoor lounge — private gathering with generals
   Khalid shows Zephyr off to three generals (Draco, Severin, Titus). Forces public foot worship as entertainment. Zephyr performs the trained ritual — then strategically volunteers to worship Titus's feet (the conqueror of Apollo, second to the Emperor). Titus's feet are revolting without pheromones — pure willpower, not addiction. Khalid shows jealousy ("You're mine. Not his."). The contrast between chemical pleasure and genuine revulsion proves Zephyr is still thinking strategically. Ends with Zephyr finding comfort in Khalid's musk — the worst sign yet.
 
-SCENE 5: "Allies and Hidden Aid"
-  Setting: TBD — wherever Erik operates
-  Erik Lindqvist is introduced as an ally. He provides concrete aid — information, access, something the underground can use. It's risky for him. His motivation: guilt from watching people like Hector get destroyed. Zephyr now has two threads: Cassius's network + Erik's access.
+SCENE 5: "Allies and Hidden Aid" ✓ WRITTEN
+  Setting: Medical bay at Khalid's estate (monitored room)
+  Erik conducts a medical examination. Sees the Ionion court resistance mark on Zephyr's ribs. Zephyr panics about an injection, reveals his identity, begs for help with the pheromones. Erik says "your blood is clear" (for the monitors — can't acknowledge illegal gene-editing in Khalid's house). Injects a pheromone counteragent disguised as standard processing. Confirms allegiance with resistance code phrase: "The blue bird will fly." Zephyr now has two threads: Cassius's network + Erik's medical aid. The counteragent will reduce the chemical pull — but the psychological addiction continues, making scenes 6-9 even more devastating.
 
-SCENE 6: "Deeper Submission"
-  Setting: Khalid's private chambers (his estate)
-  The turning point. Zephyr tries to extract intel during foot worship. Khalid shows unexpected tenderness. Zephyr does something voluntary — not forced, not pheromones. Realises he wanted to. Self-loathing. Behaviour becomes erratic.
+SCENE 6: "Deeper Submission" ✓ WRITTEN
+  Setting: Dining room aboard Khalid's cruiser — FTL travel
+  Zephyr comes to Khalid uninvited. Khalid is mid-call dealing with Titus (political tension, not about Zephyr yet). Over dinner, Khalid opens up: his planet was invaded by the Empire when he was 11. Parents put him on a ship — turned out to be a slaver. Killed the slaver in his sleep with a cutting tool. Autopilot brought the children to an imperial station. Enlisted at 11 — "enlist or labour camps." Worked his way up. Took the gene-editing because "you take everything when you've had nothing." The Empire that destroyed his world made him into its weapon. Zephyr sees the human being — then voluntarily worships. The counteragent is working (Zephyr doesn't know this). The pull is quieter. He's still here. Bookended by: "We all eventually understand our place" → "See. We all know our place."
 
-SCENE 7: "Confrontation with Doubt"
-  Setting: TBD — wherever Cassius and Zephyr can meet
-  Cassius confronts Zephyr about the addiction. Has evidence he's slipping. The Hector parallel becomes explicit: "You're becoming him." The promise from scene 3 is broken — Zephyr didn't tell Cassius he was slipping. Alliance fractures but doesn't break. Erik's aid is mentioned as a lifeline.
+SCENE 7: "Confrontation with Doubt" ✓ WRITTEN
+  Setting: Zephyr's quarters — Cassius cuts power to bypass room bugs
+  Cassius infiltrates as an attendant during an engineered blackout. Wants to extract Zephyr in 3 days. Zephyr refuses — says he's in control. The pheromone argument collapses: Zephyr says his blood is clear (Erik's words), no pheromones. Cassius can't process this — "then what the hell is wrong with you?" The broken promise from scene 3 surfaces. Cassius leaves with the extraction plan. Zephyr's final INTERNAL: "If it's not chemicals, then it's me." Cassius is caught before the extraction can happen (scene 8). This is the last real conversation they have.
 
-SCENE 8: "Overt Aid and Exposure"
-  Setting: Erik's domain
-  Erik takes a bold, visible action that helps the underground. It works but attracts Khalid's suspicion. Khalid begins to suspect Zephyr is connected. Sets up the loyalty test in scene 9.
+SCENE 8: "Exposure" ✓ WRITTEN
+  Setting: Detention cell in Khalid's estate
+  Cassius caught, chained, beaten. K, Z, and Erik enter. Z gives a partial truth — C came during the blackout, said he recognised Z from Ionion. K pisses on Z as punishment; Z swallows and asks to kiss boots (performing total submission to protect cover). The squalid is brought in — a bio-creature that extracts memories through sustained contact, inducing a state of pure bliss in the subject. Once separated, subjects cannot function. C refuses to look at Z (protecting him). C's last defiant words cut off by tentacle. Erik administers the process — stone-faced, operating the interrogation on his own network member. 32-hour extraction creates a hard deadline: the underground must act before C's memories are fully replayed. Z's INTERNAL connects the squalid's mechanism to his own addiction: "They don't need to hurt you. They just need to make you want it."
 
-SCENE 9: "Loyalty's Proof"
-  Setting: Khalid's private chambers
-  Khalid tests Zephyr's loyalty through deepened submission. Zephyr lies — tells Khalid his feelings are real. The horror: he can't tell if he's lying. Extracts the final information the underground needs. Khalid either believes him or chooses to. Both are devastating.
+SCENE 9: "Loyalty's Proof" ✓ WRITTEN
+  Setting: Khalid's private chambers → shower, evening after scene 8
+  Khalid takes Zephyr to the shower. Washes him — taking the sponge away, reversing the power dynamic. Kisses his neck. "You're precious to me." Reveals a past attachment — a commandant he served under in the uprising. "You remind me of him. You were both weak." Probes about Cassius ("who is he?") but doesn't push. Warns about danger: "things I can't control." Says "obey" — the word triggers Z. He buries his face in K's armpit, worshipping involuntarily. The counteragent is working. The chemicals are fading. And he's still here. Final INTERNAL parallels Cassius and the squalid.
 
-SCENE 10: "Pit Yield"
-  Setting: The Pit — major public event
-  The climax. Public foot worship becomes the weapon. During the ritual, Zephyr whispers evidence/an ultimatum. Khalid yields. Power inverts. But it's not clean — the addiction is real, the feelings might be real. Mirror of scene 1: same position, everything underneath changed. Bittersweet, not triumphant.
+SCENE 10: "The Extraction" ✓ WRITTEN
+  Setting: Detention cell — squalid still attached to Cassius
+  Erik calls K and Z urgently. Squalid hit a deep cluster: Titus's agents approaching the Ionion court before the invasion, recruiting rim kingdoms for a coup. Intel is fragmented. K demands enhancement despite metabolic risk. Erik complies — K's own impatience destroys the squalid (Erik didn't need to sabotage; K did it to himself). In its death throes, the squalid's output becomes unreliable — bliss mixes memory with desire. The final image: Z and C younger, in bed, kissing. K's fury: "WHAT IS THIS?" Erik explains: the dream — could be memory, fantasy, or bliss-state noise. Unverifiable. K storms out. Erik whispers "the blue bird will fly" over Cassius's body. Cassius will dream of that kiss forever. Z doesn't know if it was real.
+
+SCENE 11: "Place" ✓ WRITTEN
+  Setting: Khalid's chambers, orbital station over Touron Six
+  Domestic opening: Z massaging and worshipping K's feet on the sofa. K casually mentions Cassius has been "dealt with" — Z tries not to react, fails. Armpit worship continues from scene 9. K kisses Z on the mouth for the first time — a question, not a command. K's terminal beeps: they're leaving (Titus situation). Z proposes the spy mission himself: "Give me to him. As a present." K resists — "You're asking me to give you to a sadist." Z insists: "Let me prove I'm not as weak as you think." K: "I will not make you do this." Z: "Let me." First full sexual encounter — Z offers himself as a gift, K reciprocates, oral sex, mutual intimacy. K asks "is this real?" during the second kiss. Z: "I don't know." They fall asleep together. "You're mine. Even there." / "Even there." Z's final INTERNAL: the pheromones are quiet, the blood is clear, and he chose all of it. Not knowing why is the only honest thing he has left.

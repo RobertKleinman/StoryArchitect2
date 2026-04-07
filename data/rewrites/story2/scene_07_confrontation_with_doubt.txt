@@ -1,51 +1,58 @@
 SCENE 7: "Confrontation with Doubt"
-Setting: Wherever Cassius and Zephyr can meet — holding facility if Zephyr is still being processed, Khalid's household barracks if he's been transferred, or a stolen moment during a public event. Needs to match the logistics established in scenes 3-6.
+Setting: Zephyr's quarters in Khalid's estate — small, spartan. A bed, a shelf, a strip light. The room is bugged — cameras, audio. Cassius knows this.
 Characters: Zephyr, Cassius
 POV: Zephyr
 
 CHARACTER REFERENCE:
-  Zephyr: Erratic. The addiction is visible now — distracted, irritable when away from Khalid, physically twitchy. He crossed a line in scene 6 (voluntary submission) and he knows it. He's trying to hide it from Cassius.
-  Cassius: Has been watching. Either through the underground network, through public broadcasts of pit ceremonies, or through direct observation. He can see what's happening to Zephyr. He's seen this before — with Hector.
+  Zephyr: Defensive. The pull is quieter since Erik's injection but hasn't stopped. Erik told him his blood was clear — no pheromones. So Zephyr believes what he's feeling isn't chemical. He doesn't know the injection was a counteragent. He thinks this is just him.
+  Cassius: Placed himself in Khalid's household through the underground. Dressed as an attendant. Has engineered a power cut to bypass the room's surveillance. He's here as a friend, not a handler — he wants to extract Zephyr. He does NOT know Erik is underground or that Zephyr received a counteragent.
 
-REVISED DIRECTION:
-  "Tomas Ruiz" doesn't exist. This is Cassius and Zephyr only.
+NOTE: Cassius is caught before the extraction can happen (scene 8). This is the last real conversation they have.
 
-  Key beats:
-  - Cassius confronts Zephyr about the addiction. He's not gentle about it.
-  - Zephyr is defensive — claims he's in control, it's part of the plan
-  - Cassius has evidence: something he's seen or heard that proves Zephyr is slipping (the public ceremony in scene 4? behaviour reported by someone in the underground? Zephyr's own body language right now?)
-  - Zephyr can't fully deny it. He knows Cassius is right.
-  - The Hector parallel becomes explicit — "You're becoming him"
-  - The alliance fractures but doesn't break. Cassius is scared, not angry. He's losing his friend to the same thing that took Hector.
-  - A mention of Erik's aid — something to pull Zephyr back to the mission
-  - Exit: The relationship is damaged. Zephyr is isolated — losing Cassius's trust and losing himself to the addiction. But there's still a thread.
+---
 
-  The promise from scene 3:
-  Cassius asked Zephyr to tell him "before it gets like Hector." Zephyr promised. He hasn't kept that promise. That's the betrayal here — not political, personal.
+NARRATION: Zephyr's quarters. A narrow room — bed, shelf, strip light. Nothing personal. The light flickers once. Twice. Then dies. Backup lighting kicks in — dim red, emergency power. The door lock clicks open.
+NARRATION: Cassius steps in. Attendant's uniform, facility ID clipped to his chest. He closes the door behind him. The red light catches the lines on his face.
+[Zephyr] (surprised) Cassius?
+[Cassius] We don't have long. Power will be back any minute. I cut the junction on sublevel two — bought us a window.
+[Zephyr] How did you—
+[Cassius] It doesn't matter. I'm resourceful. Remember?
+NARRATION: Zephyr stands. Pulls him into a hug. Cassius holds on for a moment, then pushes him back. Hands on his shoulders. Looking at him.
+[Cassius] We don't have time. This room is bugged. They see everything — when the power's on. I'm worried about you.
+NARRATION: Zephyr sits on the edge of his bed. Something in his posture closes off.
+[Zephyr] You need to leave.
+[Cassius] Excuse me?
+[Zephyr] I don't have anything. Nothing. He's too careful.
+[Cassius] I didn't come for the intel. I came because we have to get you out of here.
+[Zephyr] What are you talking about? There's no way out. You know that.
+[Cassius] You don't understand. Zephyr — you're breaking. I'm not going to let that happen.
+[Zephyr] I'm fine. Everything is fine. I'm in control. I'm doing exactly what I said I would.
+[Cassius] No. You're not. It's what I told you before. The pheromones — they're doing something to you.
+[Zephyr] There are no pheromones.
+NARRATION: Cassius stops.
+[Cassius] What?
+[Zephyr] The medical overseer checked my blood. It's clear. There are no pheromones.
+[Cassius] That's impossible. That's what they did to Hector. That's—
+[Zephyr] I'm telling you what the results said. My blood is clean. Whatever this is — it's not chemicals.
+NARRATION: Silence. The backup light hums. Cassius stares at him.
+[Cassius] Then what the hell is wrong with you?
+NARRATION: Zephyr doesn't answer. The question hangs in the red light between them.
+[Cassius] (quieter) You promised me. Back in the holding cell. You promised you'd tell me before it got like Hector.
+[Zephyr] It's not like Hector.
+[Cassius] You're going to him willingly. Willingly, Zephyr. No one's dragging you. No one's ordering you. You just go.
+[Zephyr] I'm trying to gain his trust. I can't stand it — is that what you want to hear? It's disgusting. But I do it because I believe in the cause. Just give me a chance.
+[Cassius] You're lying. I can see it. The Zephyr I knew would have some dignity.
+[Zephyr] (standing) Don't talk to me about dignity. You have no idea what I do in that room. What it costs me.
+[Cassius] This is crazy. I'm trying to save you and you can't see it.
+[Zephyr] Get out.
+NARRATION: Cassius doesn't move. His jaw works. The red light flickers — the main power is coming back.
+[Cassius] Three days from now. Be ready.
+[Zephyr] I'm staying.
+[Cassius] Three days. Just hang in there. We'll get you out. We'll get you treated.
+[Zephyr] Treated for what? My blood is clear. You heard me. There's nothing to treat.
+NARRATION: Cassius looks at him for a long moment. The strip light buzzes back on. Full power. The cameras are live again. Cassius straightens his attendant's uniform. Picks up a cleaning cloth from the shelf. Holds it like a prop.
+[Cassius] (loud, for the room) All done in here, sir. Apologies for the delay.
+NARRATION: He opens the door. Doesn't look back. The door closes. Zephyr sits on the edge of his bed. The strip light is bright and steady. The room feels smaller than before.
+INTERNAL: Treated for what. If it's not chemicals, then it's me. And if it's me — what did Hector have that I don't?
 
-  Questions to resolve:
-  - Does Zephyr admit anything? Or does he lie to Cassius's face?
-  - Does Cassius threaten to cut him off? Or is he more desperate than angry?
-  - Is there a physical moment — does Cassius grab Zephyr, check his eyes, smell Khalid on him?
-
---- LLM DRAFT BELOW (needs full rewrite — uses wrong names, wrong characters) ---
-
-
-
-NARRATION: The hygiene pod door slides shut behind Zephyr with a wet click. Steam curls from his shoulders. Cassius stands by the bunk, arms crossed. Tomas Ruiz slumps on the lower rack, picking at a frayed wrap on his ankle. {[Steam drifts toward the flickering neon strip above the bunks]}
-[YOON DOWAN] (measured_gravel) Zephyr. You return from the Pit with sand still in your hair. And that look. Like you've swallowed the wrong pill. {[Cassius's gravelly voice cuts through the pod's hiss. He steps forward, boot nudging the loose comm bead on the floor]}
-[RAFAEL ESPINOZA] (sarcastic_defensive) (with outer-rim lilt) Sand? That's the Colosseum's love bite, Cassius. Stings less than your stare. What's got you pacing my bunk like a debt collector? {[Zephyr wipes his neck with a towel, flicking droplets toward the metal floor. They splatter near Cassius's boot]}
-INTERNAL (hyper_focused): *His boot. Crushed that bead like it meant nothing. Mine rolled in the sand too. Focus on the plan, not the... residue.*
-[YOON DOWAN] (pessimistic_pressure) (trailing gravel) Pacing? No. Observing. You knelt longer than victory demands. Tongue out like a pup. Tomas saw the holo-feed. The senate alcove replayed it thrice. {[Cassius gestures at the cracked data slate on the bunk, paused on Zephyr's face in the Pit sand]}
-[TOMAS RUIZ] (uneasy) It wasn't clean, Raf. Crowd ate it up. But you... lingered. {[Tomas shifts on the bunk, his ankle wrap unraveling further into a pile]}
-[RAFAEL ESPINOZA] (quick_witted_deflect) (breathless run) Lingered? Tactical pause, boys. Khalid thinks he owns the moment—let him. We flip it in the next veto vote. Cassius, your senate play's still gold, right? Tell me we're synced. {[Zephyr leans in, clapping Cassius's shoulder too hard, then pulls back as the towel slips from his grip to the floor]}
-INTERNAL (secretive_twitch): *Shoulder solid. Not like his. No musk. No press. Why's the pod steam smell wrong now?*
-[YOON DOWAN] (fragmenting_doom) (muttering trail-off) Synced. Like a gladiator synced to the whip. You jest, but empires fall on such slips. One whiff of weakness, and Tomas here— {[Cassius cuts off, eyes flicking to Tomas. Silence stretches. The neon buzzes louder.]}
-[TOMAS RUIZ] (awkward_dodge) Me? I'm fine. Just... that wrap's tight. Pass the hydration tube? {[Tomas reaches for the tube, knocks it over instead. Clear liquid pools near the comm bead.]}
-[RAFAEL ESPINOZA] (nitpicking_press) (sarcastic overlap) Weakness? That's arena bait. I played the crowd, Cassius—you saw the senate grid light up. We're golden. Or... wait, your face says otherwise. Spill it straight—what'd I miss while I was 'lingering'? {[Zephyr snatches the data slate, thumbing past the Pit image too fast. It freezes on Cassius's shadowed senate face.]}
-INTERNAL (desperate_drift): *Pushing him. Wrong angle. The pool mixes with sand grains on my sole. Tastes like... no.*
-[YOON DOWAN] (controlled_urgency) Miss. Yes. Erik Lindqvist. From the Tower. He's moved. Bold. Encrypted drop—says he's overriding a veto. For us. Pulls you back in. Now. {[Cassius taps his wrist comm. A faint ping echoes over the pod steam.]}
-[RAFAEL ESPINOZA] (desperate_pull) (lilt spiking) Erik? That stickler? Overriding—shit, that's the fray we need. {[Zephyr straightens, towel forgotten on the wet floor. The neon reflects in the hydration pool.]}
-NARRATION: Cassius's eyes narrow. Tomas ties his wrap tighter. The pod steam thins. {[Zephyr's hand hovers over the bunk ladder, paused.]}
-
---- TRANSITION: cut to Erik's encrypted holo flickering on the slate ---
+--- TRANSITION: cut ---

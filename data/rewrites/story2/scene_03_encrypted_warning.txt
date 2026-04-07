@@ -29,7 +29,7 @@ NARRATION: Zephyr closes his eyes. A beat. The strip light buzzes.
 [Zephyr] It means nothing. I belong to Khalid now. And when I'm around him I can't...
 [Cassius] (sharp) Snap out of it.
 [Zephyr] You don't understand.
-[Cassius] No. You don't. You're closest to the second most powerful general in the empire. You know what that is?
+[Cassius] No. You don't. You're in the household of one of the most powerful men in the empire. A High Senator. You know what that is?
 [Zephyr] I'm his property.
 [Cassius] You have access. Fucking access to elites, intel, everything we were dying for. Everything Drake and Orion died for.
 [Zephyr] The revolution is dead.
@@ -41,7 +41,7 @@ INTERNAL: Tell him. Tell him about the smell, the way your body just stops liste
 [Zephyr] You're lying.
 [Cassius] You know me. I don't lie. The underground isn't dead. Not here.
 [Zephyr] Tell me.
-[Cassius] Not now. Just play along. Be Khalid's good boy. Get him to trust you.
+[Cassius] Not now. Just play along. Be Khalid's good boy. Get him to trust you. I'm working on getting placed in his household. Kitchen, maintenance — doesn't matter. I need to be close.
 NARRATION: Cassius glances at the collar around Zephyr's neck. His jaw tightens.
 [Cassius] (quieter) Nice jewellery.
 [Zephyr] He's a monster. And there's something else.
@@ -62,6 +62,11 @@ INTERNAL: Hector. Third cousin. First in Line. The broadcast — him on his knee
 NARRATION: Cassius grips Zephyr's shoulders. Looks him in the eye. But there's worry behind it — the kind he's trying not to show. He's seen what pheromone editing does. He watched the broadcasts like everyone else.
 [Cassius] We'll bring them all down. But Zephyr — if you start slipping, you tell me. Before it gets like Hector. Promise me.
 [Zephyr] I promise.
+NARRATION: Cassius glances down. His hand moves to Zephyr's side — presses two fingers against his ribs, just below the left arm. A small raised scar. Deliberate pattern. Not decorative.
+[Cassius] Good. You still have it.
+[Zephyr] Of course I still have it.
+[Cassius] If anyone in the network sees that, they'll know you're one of ours. Don't show it. Don't talk about it. But if someone says the words — "the blue bird will fly" — you trust them. Understand?
+[Zephyr] I understand.
 NARRATION: A buzzer sounds in the corridor. Shift change warning. Cassius lets go. Steps back.
 [Cassius] I'll find you again. Stay alive. Stay sharp.
 NARRATION: Cassius slips out. The door clicks shut. Zephyr sits back down. His hand goes to the collar. The gold is still warm.

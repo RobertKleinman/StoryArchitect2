@@ -1,0 +1,75 @@
+SCENE 10: "The Extraction"
+Setting: Khalid's chambers (opening), then the detention cell. The squalid is still attached to Cassius. Erik has been running the extraction for hours.
+Characters: Zephyr, Khalid, Erik Lindqvist, Cassius (unconscious/in bliss)
+POV: Zephyr
+
+NOTE: The squalid, in its death throes, stops extracting cleanly and begins generating — mixing memory fragments with desire. The bliss state bleeds into the output. The Titus intel (extracted earlier, when the squalid was healthy) is real. The final image is unreliable — memory, fantasy, or noise from whatever emotional core the squalid found in Cassius. Nobody in the room can know which.
+
+---
+
+NARRATION: Khalid's chambers. Early hours. Zephyr is on the floor beside the bed — a blanket pulled over him, his head near Khalid's hand which hangs off the edge. He's half-asleep. The comm chimes. Khalid stirs. Answers.
+[Erik] (over comm, clipped) My Lord. You need to see this. Both of you. Immediately.
+NARRATION: Khalid looks down at Zephyr. Pulls on his boots.
+[Khalid] Get up. Come.
+NARRATION: The detention cell. The squalid is wrapped around Cassius's head and torso — pulsing slowly, its translucent body flickering with faint light. Cassius hangs limp in the chains. His breathing is deep, rhythmic. The low moan from before is gone — he's past sound now. Just a body being read.
+NARRATION: Erik stands at a console. A holoscreen projects a murky image — shapes, voices, fragments. A memory being reconstructed.
+[Erik] The extraction hit a deep cluster. Something I thought you'd want to see. Immediately.
+[Khalid] Show me.
+NARRATION: Erik taps the console. The holoscreen sharpens slightly. A room — high-ceilinged, ornate. Figures seated at a long table. Across from them: two figures in unmarked military uniforms. No insignia. No name tags. One of the figures is partially visible — tall, broad-shouldered, a face that could be Titus.
+[Voice in memory] (fragmented, distorted) ...arrangement... shared... understanding... guarantee...
+[Khalid] (very still) What is this?
+[Erik] Buried memories. Deliberately suppressed — or possibly suppressed for him. I'm not aware of any technology that can do that, but that's what it would seem.
+[Khalid] Fix it. I want to know what else is there.
+[Erik] The cluster is fragmented. I can enhance the reconstruction, but the squalid is already showing signs of metabolic stress. It's been attached for over twenty hours.
+[Khalid] Yes. Do it.
+[Erik] (pause) There's a chance the squalid won't survive the strain. Once it dies, the extraction ends. Whatever hasn't been pulled is lost.
+[Khalid] Then we try again with another one.
+[Erik] It's a one-shot process. The subject's brain has already adapted to the squalid's neural pattern. A second creature won't take.
+[Khalid] Is there anything else in the extraction?
+[Erik] It's stuck on the cluster. We can bypass it, but the cluster will be lost for good.
+[Khalid] Enhance it.
+[Erik] Your Eminence. As you wish.
+NARRATION: Erik turns to the console. His fingers move across the controls — frequency adjustments, bioelectric stimulation, neural gain pushed past the safety threshold. The squalid's body ripples. Its tentacles tighten around Cassius. The pulsing accelerates.
+NARRATION: The holoscreen floods with images — faster now, fragmented. The room with the uniformed figures. Star charts. A face — closer now, unmistakably Titus. His mouth moving.
+[Voice in memory] (clearer, then breaking apart) ...Empire... Declion Four... trust... fools... foolish...
+[Khalid] Enhance it more. It's gibberish.
+NARRATION: Erik adjusts the panels. The squalid's body is rippling faster now — the translucent flesh darkening at the edges. A warning tone sounds from the console. Erik silences it.
+[Erik] The engrams are deteriorating. We need to stop this now.
+[Khalid] No. Go on.
+NARRATION: Erik pushes the gain higher. The holoscreen flickers violently — images stacking, bleeding into each other. Titus's face dissolves. The Ionion court dissolves. The fragments scatter.
+NARRATION: And then something else surfaces. Different. Not political. Not strategic. A bedroom. Warm light. Two figures in a bed — younger, unmarked by the things that would come later. Zephyr and Cassius. Zephyr's hair longer, his face softer. Cassius without the lines around his eyes. They're kissing. Slow, tender, unhurried. Like they have all the time in the world.
+NARRATION: Zephyr stops breathing. His body goes rigid. For one second — maybe two — he stares at the holoscreen. Then his face goes blank. Controlled. He doesn't look at Khalid.
+NARRATION: Khalid is already looking at him.
+NARRATION: The squalid convulses. Its body goes rigid. The translucent flesh turns opaque — white, then grey. The pulsing stops. A high-pitched sound fills the cell, then cuts to silence.
+NARRATION: The creature slides off Cassius and hits the floor. Dead. A puddle of slime spreads across the drain grate. The holoscreen freezes on the last frame — two boys in a bed, foreheads touching.
+NARRATION: Cassius hangs in the chains. His body sags. His eyes are half-open but there's nothing behind them. His mouth moves without sound. His fingers twitch in a slow, rhythmic pattern — reaching for something that isn't there anymore.
+[Khalid] What is this? WHAT IS THIS?
+[Erik] The dream.
+[Khalid] I DON'T BELIEVE YOU.
+[Erik] Sir. The squalid is completely detached and degraded. In the final stages of metabolic failure, the extraction becomes unreliable. The bliss state generates — it mixes memory fragments with desire. What you saw at the end may be a memory. It may be a fantasy the subject constructed during the bliss. Or it may be noise — the squalid's neural pattern collapsing and pulling fragments from whatever emotional core it found.
+[Khalid] So you're telling me this could be nothing.
+[Erik] I'm telling you I can't verify it. The political material was extracted earlier, when the squalid was stable. That's reliable. This — the final output — is not.
+NARRATION: Khalid stares at the frozen holoscreen. Two boys. A bed. A kiss that may or may not have happened.
+[Khalid] (to Zephyr, quiet, dangerous) What is this?
+[Zephyr] I don't know, Sir.
+[Khalid] Don't lie to me. Not now. Not after everything.
+[Zephyr] I'm not lying. I don't know what that is. He was from the Ionion court. I knew him. But that — I don't know.
+INTERNAL: Was it real? Did we — no. I would remember. I would remember something like that. Unless I buried it too. Unless the raid, the pit, everything after — unless I lost it the way you lose things when the world ends. I don't know. I don't know.
+[Khalid] (staring at the screen) Do I look like I care about the slave? What else did we get?
+[Erik] You saw it all. The political cluster was partially reconstructed before the squalid failed. Titus. Declion Four. Rim kingdom recruitment. Fragmentary but significant.
+[Khalid] (pointing at the frozen image) And this?
+[Erik] Is what he'll be dreaming of for the rest of his life.
+NARRATION: Silence. The dead squalid leaks fluid on the floor. Cassius breathes in shallow, empty waves. His fingers keep reaching. On the holoscreen, the two boys stay frozen — foreheads touching, eyes closed, a moment that belongs to no one now.
+NARRATION: Khalid turns away from the screen. Walks to the door. Doesn't look at Zephyr. Doesn't look at Cassius.
+[Khalid] (from the doorway) Clear this up.
+NARRATION: He's gone. The door stays open. Erik stands at the console. Zephyr stands in the middle of the room. Neither speaks.
+NARRATION: Zephyr looks at Cassius. The empty eyes. The twitching fingers. The mouth moving without sound. He steps closer. Cassius doesn't react. Doesn't recognise him. The man who hugged him in the holding cell, who slapped him awake, who said "we'll bring them all down" — gone. Dreaming of a kiss that may never have happened.
+[Zephyr] (whispered) I'm sorry.
+NARRATION: Cassius's fingers keep reaching.
+NARRATION: Erik turns off the holoscreen. The image disappears. The cell goes dim.
+[Erik] (without turning around, barely audible) The blue bird will fly.
+NARRATION: Zephyr looks at Erik's back. Erik doesn't turn. The moment passes.
+[Zephyr] (whispered) It will.
+NARRATION: Zephyr walks out. The corridor is empty. Behind him, the door seals.
+
+--- TRANSITION: cut ---

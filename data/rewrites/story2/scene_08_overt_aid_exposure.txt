@@ -1,50 +1,77 @@
-SCENE 8: "Overt Aid and Exposure"
-Setting: Erik's domain — the Overseer's Command Tower or wherever he operates from
-Characters: Zephyr, Erik Lindqvist (Khalid may appear or be referenced)
+SCENE 8: "Exposure"
+Setting: A detention cell deep in Khalid's estate. Clinical but wrong — reinforced walls, restraint mounts, a drain in the floor. Medical-grade monitoring equipment beside devices that aren't medical. A sealed tank on a trolley near the door.
+Characters: Zephyr, Khalid, Cassius, Erik Lindqvist
 POV: Zephyr
 
 CHARACTER REFERENCE:
-  Erik Lindqvist: Makes a bold move — does something overt that helps Zephyr/the underground but exposes himself to scrutiny. This is Erik crossing his own point of no return.
-  Zephyr: Caught between the mission and the addiction. Erik's aid is the lifeline pulling him back, but Khalid's suspicion is growing.
+  Cassius: Caught operating for the underground. Beaten. Chained to the wall. He does NOT know Erik is underground. He DOES know the resistance network, the code phrase, and Zephyr's real identity. All of this will be extracted.
+  Erik: Forced to administer the interrogation. Underground member operating the mind-extraction on his own ally. Cannot react. Professional mask is the only thing keeping him alive.
+  Zephyr: Watching his friend be destroyed. Cannot intervene. Must perform total submission to protect his cover.
+  Khalid: Furious. A spy in his household is a personal betrayal. Wants to know everything.
 
-REVISED DIRECTION:
-  Erik takes a risk. Something official — blocking a veto, altering records, passing classified information openly. Whatever it is, it advances the underground's cause but puts Erik in danger.
+NOTE: The squalid extracts memories and replays them. The subject experiences a state of pure bliss during extraction — like a sustained orgasm. Once the squalid is separated, the subject cannot function. This is the fast version of what pheromone addiction does slowly. The extraction takes approximately 32 hours. This creates a hard deadline for the climax — the underground must act before the memories are fully replayed.
 
-  Key beats:
-  - Erik does something concrete and visible that aids the rebellion
-  - It works — there's a moment of triumph
-  - But it attracts attention. Khalid's attention specifically.
-  - Khalid begins to suspect that Zephyr is connected to whatever Erik just did
-  - Exit: Khalid's suspicion sets up scene 9 — the loyalty test
+---
 
-  Questions to resolve:
-  - What specifically does Erik do? Block a senate vote? Release records? Sabotage arena systems?
-  - Does Zephyr witness it directly or learn about it after?
-  - Does Erik and Zephyr interact in this scene, or is it Erik acting alone with Zephyr seeing the consequences?
-  - How does Khalid's suspicion manifest? Does he confront Zephyr directly or just become colder/more controlling?
-  - Is there an addiction beat? (Zephyr might be experiencing withdrawal if he's been away from Khalid, or heightened craving if Khalid has been withholding as punishment)
+NARRATION: A detention cell. Reinforced walls, strip lighting, a drain set into the metal floor. Cassius is chained to the far wall — arms above his head, wrists raw. His face is swollen. One eye half-shut. Blood crusted at the corner of his mouth. He's been here for hours.
+NARRATION: The door opens. Khalid walks in first. Zephyr follows. Erik enters last, data pad in hand — summoned as the household's medical authority. The only one certified to operate bio-extraction.
+NARRATION: Zephyr sees Cassius and stops. Just for a second. His breath catches. Then he keeps walking.
+INTERNAL: No. No no no. Not him. Not Cassius.
+NARRATION: Cassius hangs from the chains. He doesn't look up. He doesn't look at Zephyr. His one good eye stays fixed on the floor.
+[Khalid] I've been told we have a spy in the household.
+[Cassius] (hoarse) I'm not a spy. They took me. Your guards. I wasn't doing anything. They beat me.
+NARRATION: Khalid walks over to him. Backhands him across the face. Cassius's head snaps sideways. Blood spatters the wall.
+[Khalid] Admit it.
+[Cassius] I'm not lying. I promise. Please. You have to believe me. I didn't do anything.
+[Khalid] Shut him up. I don't want to hear this.
+NARRATION: Erik steps forward. Pulls a gag from the restraint kit on the wall. Fastens it around Cassius's head. His hands are steady. His face gives nothing.
+[Khalid] (turning to Zephyr) Zephyr — do you know this attendant?
+[Zephyr] I don't—
+[Khalid] (shouting) Do you know this attendant?
+[Zephyr] He came to me. Last night. During the blackout. He said he recognised me. From Ionion. He wanted to see how I was doing. That's all.
+[Khalid] That's all? He's a fucking SPY!
+[Zephyr] I promise, Sir. That's all he said to me.
+[Khalid] You'd better not be lying. Bring in the squalid.
+NARRATION: Erik types something into his data pad. His thumb pauses for a fraction of a second over the confirmation key. Then presses it.
+[Erik] (flat) They're on their way.
+[Khalid] (to Zephyr) And you. You tell me whenever someone speaks to you. Anyone. You understand?
+[Zephyr] I didn't know, Sir. I'm sorry.
+[Khalid] Yes. You'd better be sorry. Get here.
+NARRATION: Zephyr walks to Khalid. Khalid grabs the back of his neck.
+[Khalid] On your knees.
+NARRATION: Zephyr drops to his knees. Khalid unzips and pisses on him. It runs down Zephyr's face, through his hair, soaking his shirt. Zephyr opens his mouth. Swallows. Doesn't flinch.
+NARRATION: Cassius hangs from the wall. His one good eye is open. He's not looking at Zephyr. He's staring at the ceiling. Refusing to watch.
+[Zephyr] Thank you, Sir. May I please kiss your boots?
+[Khalid] No.
+NARRATION: Khalid pulls Zephyr to his feet by the collar. The door opens. An attendant rolls in a sealed tank on a trolley. The tank is filled with dark liquid. Something moves inside — slow, coiling shapes pressing against the glass.
+[Khalid] (to Cassius) Now you see how your prince is doing. And what do you say?
+NARRATION: Cassius says nothing behind the gag. His eye stays on the ceiling.
+[Khalid] I want to know everything.
+[Erik] Of course.
+NARRATION: Khalid grabs Zephyr's head. Turns it toward Cassius. Forces him to face the wall.
+[Khalid] Now. I want you to watch. See what happens to those from the world you once knew.
+[Zephyr] He isn't anyone. I don't know him. He's just an attendant.
+[Khalid] We'll soon find out. Last chance — tell me what he told you. And I'll stop it.
+[Zephyr] Nothing. I told you everything. I swear.
+[Khalid] Very well. Get on with it.
+NARRATION: Erik approaches the tank. Unseals the lid. The smell hits first — salt and something organic, deep-sea rot. He takes an electric prod from the trolley and touches the surface of the liquid.
+NARRATION: The creature rises. Pale, translucent, the size of a large dog. Tentacles — dozens of them — unfurl from a central mass, each one tipped with something that pulses faintly. It pulls itself over the rim of the tank, leaving a trail of thick slime on the metal floor.
+NARRATION: It moves toward Cassius. Slow. Deliberate. Tentacles testing the air ahead of it. The slime hisses faintly where it touches the drain grate.
+NARRATION: The creature reaches Cassius's feet. Begins to climb. Tentacles wrap around his legs, his torso, sliding under his clothes, finding skin. Cassius's body goes rigid against the chains.
+NARRATION: It pulls the gag away with one tentacle. Cassius's mouth opens.
+[Cassius] (screaming) Fucking imperial! We'll—
+NARRATION: A tentacle slides into his mouth. Another into each ear. The central mass rises and envelops his head. Cassius's body convulses against the chains — violent, thrashing. Then stops. Goes completely limp.
+NARRATION: His body changes. The tension drains out of him. His hands unclench. His breathing deepens. A sound comes from behind the mass covering his face — not pain. Something else. A low moan. His back arches. His fingers spread wide.
+INTERNAL: He's not screaming anymore. He's — no. No, that's not — that sound. What is it doing to him?
+NARRATION: Erik walks over. Scans the creature and Cassius with a handheld device. His face is stone.
+[Khalid] How long?
+[Erik] At least thirty-two hours for full extraction.
+[Khalid] Good.
+NARRATION: Khalid lets go of Zephyr's head. Zephyr doesn't look away. Cassius's body hangs slack in the chains, the creature pulsing slowly around his head. His chest rises and falls in deep, rhythmic waves. Another low sound — bliss where there should be agony.
+INTERNAL: That's what they'll do to me. Not the pain. The pleasure. They don't need to hurt you. They just need to make you want it. And then you can never want anything else.
+NARRATION: Khalid walks to the door. Doesn't look back.
+[Khalid] (from the doorway) Come, Zephyr. Leave the overseer to his work.
+NARRATION: Zephyr follows. In the doorway, he stops. Cassius's one visible hand — the left, hanging loose from the chain — twitches once. The fingers curl into a fist. Then relax. Zephyr doesn't know if it was deliberate.
+NARRATION: Erik stands over Cassius with his scanner. He doesn't look up as they leave. The door seals behind them.
 
---- LLM DRAFT BELOW (needs full rewrite — uses wrong names, wrong world) ---
-
-
-
-NARRATION: Erik's fingers hover over the veto console. The screen flashes Khalid's champion override code. Towering viewports frame the pit's distant roar. {[Erik's console beeps insistently]}
-[ERIK LINDQUIST] (clipped_reluctance) (flat, official) Protocol 47-B. Champion veto denied. Fighter vitals stable—no incapacitation flagged. {[He taps override, screen locks green]}
-[RAFAEL ESPINOZA] (hopeful_sarcasm) (quick lilt) Wait— you're blocking him? Just like that? Erik, that's... {[Zephyr leans forward, collar comm bead dangling loose from earlier slip]}
-[OBIORA ACHEBE] (controlled_fury) (deep rumble) Denied? On what grounds, overseer? That twink's tongue was on my boot five minutes ago. {[Khalid steps closer, boot sole grinding arena sand across the console floor]}
-INTERNAL (hazy_pull): *Sand from his boot. Still damp. The smell hits—hits harder than it should.*
-[ERIK LINDQUIST] (rigid_defense) (clipped, gesturing at pad) Grounds? Vitals log. No yield signal. Check the drone feed yourself. {[Erik slides a holopad across, not meeting Khalid's eyes]}
-[RAFAEL ESPINOZA] (wicked_quip) (sarcastic lilt) See? Rules are rules, champ. Can't veto what didn't happen. Or... did it? {[Zephyr smirks, but fingers twitch toward the loose comm bead on the floor]}
-[OBIORA ACHEBE] (stoic_doubt) (dry, short) Rules. Always rules when it's convenient. {[Khalid pauses, boot nudging the comm bead closer to Zephyr's foot—stops short]}
-NARRATION: Silence stretches. Drones whir outside. Erik's hand rests on the console edge, knuckles pale. {[No one moves for the bead]}
-[ERIK LINDQUIST] (overcompensating_bureaucracy) (too quick, official) It's logged. Senate will see it.
-[RAFAEL ESPINOZA] (breathless_hope) (speeding up, overlapping) Senate. Yeah, Cassius's probably grinning down there already. This changes— {[Zephyr reaches for the bead—fumbles it under the console]}
-[OBIORA ACHEBE] (probing_wit) (rumbling counter-question) Changes what? Your little rebellion? Or just your addiction? {[Khalid crouches slow, massive frame blocking the viewport light, eyes on Zephyr]}
-INTERNAL (anxious_triumph): *His shadow covers me. Bead's gone—signal's live. Cassius hears this?*
-[RAFAEL ESPINOZA] (deflecting_humor) (forced quip, trailing) Addiction? Nah, that's your kink talking. I'm just here for the show. {[Zephyr laughs sharp—voice cracks halfway]}
-[ERIK LINDQUIST] (rigid_overreach) (silent pause first, then burst) Enough. Decision stands. Clear the tower. {[Erik turns to a side panel, back to them—too rigid]}
-[OBIORA ACHEBE] (rising_command) (volume up, curt) You first, overseer. Explain this to the pit cams. {[Khalid straightens, hand clamps Zephyr's shoulder—pulls him half off balance]}
-NARRATION: Zephyr stumbles into Khalid's grip. The console blinks: veto blocked, logged. {[Khalid's boot hovers over the console's exposed wire]}
-[OBIORA ACHEBE] (suspicious_peak) (booming demand) Loyalty, pet. Whose is it? Mine—or his? {[Grip tightens; pit roar swells through viewport]}
-
---- TRANSITION: Cut to Khalid's shadowed glare over Zephyr's shoulder, pit lights flaring. ---
+--- TRANSITION: cut ---
