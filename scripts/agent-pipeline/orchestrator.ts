@@ -515,7 +515,11 @@ function ingestBibleWorld(project: AgentProject, ctx: IngestContext): void {
 
 // ── Phantom name scrubber (copied from bibleService.scrubPhantomNames) ──
 
-function scrubPhantomNames(beatText: string, knownNames: Set<string>): string {
+function scrubPhantomNames(
+  beatText: string,
+  knownNames: Set<string>,
+  worldData?: any,
+): string {
   const knownFirstNames = new Set<string>();
   const knownFullNormalized = new Set<string>();
   for (const name of knownNames) {
@@ -523,6 +527,17 @@ function scrubPhantomNames(beatText: string, knownNames: Set<string>): string {
     const first = name.split(/\s+/)[0];
     if (first) knownFirstNames.add(first.toLowerCase());
   }
+
+  // Extract every capitalised word from the world's location names so the
+  // scrubber treats them as known vocabulary rather than phantom characters.
+  const locationWords = new Set<string>();
+  for (const loc of worldData?.arena?.locations ?? []) {
+    for (const word of (loc.name ?? "").split(/[\s\-–—]+/)) {
+      const clean = word.replace(/[^a-zA-Z]/g, "");
+      if (clean.length >= 2) locationWords.add(clean.toLowerCase());
+    }
+  }
+
   const NOT_NAMES = new Set([
     "but", "and", "or", "the", "a", "an", "in", "on", "at", "for", "so",
     "yet", "nor", "as", "if", "when", "while", "after", "before", "during",
@@ -533,7 +548,16 @@ function scrubPhantomNames(beatText: string, knownNames: Set<string>): string {
     "command", "bridge", "deck", "bay", "hold", "pod", "pods", "chamber",
     "corridor", "tunnel", "tunnels", "hall", "room", "vault", "lair",
     "corporate", "imperial", "royal", "galactic", "interstellar",
+    "french", "consulate", "coat", "check", "velvet", "wound",
+    "inscription", "nexus", "threshold", "seal", "sanctum", "gear",
+    "inner", "outer", "first", "deputy", "governor", "administrative",
+    "quarter", "annex", "arcade", "district", "territory", "market",
+    "palace", "garden", "gate", "plaza", "tower", "temple",
+    "scriptorium", "atrium", "nave", "shrine", "club",
+    // Merge dynamic location words from this story's world data
+    ...locationWords,
   ]);
+
   return beatText.replace(
     /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b/g,
     (match) => {
@@ -569,13 +593,33 @@ async function runCharacterPostProcessing(
         ? "feminine"
         : undefined;
 
+  // User-provided name preservation: the premise name map substituted real
+  // names (e.g. "LaLa") with placeholders (__CHAR_B__) before the character
+  // writer saw the premise. Walk character writer output and, for any
+  // character whose placeholder corresponds to a position in the original
+  // characters_sketch, restore the intended name so resolveAllNames honors it.
+  const userProvidedNames = new Set<string>();
+  const sketches = s4.premise.characters_sketch ?? [];
+  for (const char of charData.characters ?? []) {
+    const placeholder: string | undefined = char.name_spec?.placeholder;
+    if (!placeholder) continue;
+    const match = placeholder.match(/^__CHAR_([A-Z])__$/);
+    if (!match) continue;
+    const idx = match[1].charCodeAt(0) - 65;
+    const intended = sketches[idx]?.name;
+    if (intended) {
+      char.name = intended;
+      userProvidedNames.add(intended);
+    }
+  }
+
   const resolved = resolveAllNames(
     charData.characters ?? [],
     fingerprints,
     worldData,
     s4.premise.tone_chips,
     s4.premise.setting_anchor,
-    undefined,
+    userProvidedNames.size > 0 ? userProvidedNames : undefined,
     genderLock,
   );
 
@@ -617,6 +661,7 @@ async function runCharacterPostProcessing(
     return obj;
   }
   charData = deepReplace(charData);
+  s4.checkpoint.worldData = deepReplace(s4.checkpoint.worldData);
 
   // Gender lock enforcement
   if (genderLock) {
@@ -711,7 +756,7 @@ function ingestBiblePlot(project: AgentProject, ctx: IngestContext): void {
   const knownNames = new Set<string>((charData?.characters ?? []).map((c: any) => c.name));
   if (plotData?.tension_chain) {
     for (const beat of plotData.tension_chain) {
-      beat.beat = scrubPhantomNames(beat.beat ?? "", knownNames);
+      beat.beat = scrubPhantomNames(beat.beat ?? "", knownNames, s4.checkpoint.worldData);
       if (beat.characters_involved) {
         beat.characters_involved = beat.characters_involved.filter((n: string) => knownNames.has(n));
       }
