@@ -61,6 +61,31 @@ The CLI imports the real backend functions directly:
 Mode is hard-coded to `default`, so the forcing-function + model
 selection logic matches the real default-mode configuration.
 
+### Improvements over the backend
+
+1. **User-provided name preservation.** When the seed names characters
+   explicitly, the character post-processing maps `__CHAR_X__`
+   placeholders back to the intended names from `characters_sketch`
+   and passes them as `userProvidedNames` to `resolveAllNames`. The
+   real backend does not do this — it lets the name pool override
+   user-provided names. Validated across 3 stories: all user-named
+   characters (LaLa, Muscles, Adamas, Aletheia, etc.) were preserved.
+
+2. **Dynamic phantom-name scrubber.** The scrubber that removes
+   hallucinated character names from plot beats now extracts every
+   word from the story's own location names (from
+   `worldData.arena.locations`) and adds them to the exclusion set.
+   The real backend uses a static word list that misses story-specific
+   locations, corrupting 2-word location names like "French Consulate"
+   or "Inscription Nexus" into "an outsider". The agent-pipeline fix
+   is dynamic — works for any story regardless of setting.
+
+3. **WorldData placeholder resolution.** The deep placeholder sweep
+   (`__CHAR_X__` → resolved names) runs on both `charData` AND
+   `worldData`. The real backend only sweeps charData, leaving raw
+   placeholders in world descriptions that propagate into downstream
+   prompts.
+
 ### Known divergences from the backend
 
 1. **No prompt caching.** The real scene writer uses Anthropic's
