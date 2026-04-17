@@ -1,8 +1,19 @@
 # Generation Modes
 
 The pipeline supports different generation modes for testing, cost control,
-and content specialization. Modes are available via CLI scripts only (not
-the web GUI yet).
+and content specialization. Three entry points:
+
+- **Web UI** (`frontend/components/PipelineWorkshop.tsx`): a mode dropdown on
+  project creation lets you pick `default` / `fast` / `erotica` / `erotica-fast`
+  / `erotica-hybrid` / `haiku`. Requires the Express backend running with the
+  relevant provider API keys.
+- **CLI scripts** (`scripts/mode-test.ts`, `scripts/ab-test-scenes.ts`, etc.):
+  same modes via flags like `--fast`, `--erotica`, `--haiku`.
+- **Agent pipeline** (`scripts/agent-pipeline/run.ts init --mode <mode>`):
+  runs the same pipeline via Claude subagents in a chat session. Supports
+  every mode after the 2026-04-16 `--mode` flag was added. Falls back to
+  `default` when the flag is omitted — see
+  `scripts/agent-pipeline/README.md` for the full workflow.
 
 ## Available Modes
 
@@ -22,12 +33,17 @@ npx tsx scripts/mode-test.ts
 ```bash
 npx tsx scripts/mode-test.ts --fast
 ```
-- **Writer:** Gemini 2.5 Flash (all scenes in parallel)
+- **Writer:** Gemini 2.5 Flash
 - **Judge:** Skipped entirely
-- **Tension:** Skipped (enables parallel generation)
+- **Tension:** Skipped
+- **Parallelism:** Sequential (batchSize=1). Fast mode previously ran four
+  scenes in parallel but `previousSceneDigest` was computed once per batch,
+  so parallel scenes couldn't see each other — forced back to sequential on
+  2026-04-16.
 - **Postproduction:** Skipped
-- **Cost:** ~$0.10-0.15 for 8 scenes
-- **Time:** ~2-3 minutes
+- **Cost:** ~$0.10-0.20 for 8 scenes (slightly higher than the old parallel cost
+  but with intra-batch continuity preserved)
+- **Time:** ~3-5 minutes
 - **Use when:** Testing prompt changes, iterating on scene quality, A/B comparisons
 - **Tradeoff:** No cross-scene tension tracking, no vitality checking, cheaper model may miss nuance
 
@@ -55,12 +71,13 @@ Then use the normal web UI or pipeline runner. All roles will use Grok.
 ```bash
 npx tsx scripts/mode-test.ts --haiku
 ```
-- **Writer:** Claude Haiku 4.5 (all scenes in parallel)
+- **Writer:** Claude Haiku 4.5
 - **Judge:** Skipped
 - **Tension:** Skipped
+- **Parallelism:** Sequential (batchSize=1) since the same 2026-04-16 fix
 - **Postproduction:** Skipped
-- **Cost:** ~$0.05-0.08 for 8 scenes
-- **Time:** ~1-2 minutes
+- **Cost:** ~$0.05-0.10 for 8 scenes
+- **Time:** ~2-3 minutes
 - **Use when:** Quick smoke tests, checking if prompts parse correctly, cheapest possible
 - **Tradeoff:** Noticeably lower creative quality than Sonnet
 

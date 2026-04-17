@@ -16,6 +16,7 @@ import type {
   ProjectState,
   Step1_IdeaGathering,
   ProjectId,
+  GenerationMode,
 } from "../../shared/types/project";
 import { createProjectId, isValidTransition } from "../../shared/types/project";
 import { createEmptyLedger } from "../../shared/types/userPsychology";
@@ -126,7 +127,15 @@ export interface AgentProject {
 
 // ── Init ─────────────────────────────────────────────────────────────
 
-export function newProject(seedInput: string, projectId?: string): AgentProject {
+const VALID_MODES: readonly GenerationMode[] = [
+  "default", "fast", "erotica", "erotica-fast", "erotica-hybrid", "haiku",
+] as const;
+
+export function isValidMode(m: string): m is GenerationMode {
+  return (VALID_MODES as readonly string[]).includes(m);
+}
+
+export function newProject(seedInput: string, projectId?: string, mode?: GenerationMode): AgentProject {
   const id = projectId ?? `agt_${randomUUID()}`;
   const now = new Date().toISOString();
   const step1: Step1_IdeaGathering = {
@@ -138,7 +147,7 @@ export function newProject(seedInput: string, projectId?: string): AgentProject 
     psychologyLedger: createEmptyLedger(),
     constraintLedger: [],
     culturalInsights: [],
-    mode: "default",
+    mode: mode ?? "default",
     seedInput,
     conversationTurns: [],
   };

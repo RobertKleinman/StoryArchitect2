@@ -58,8 +58,19 @@ The CLI imports the real backend functions directly:
 - `compressForScene`, `previousSceneDigest`, `buildCanonicalNames`
 - `formatScenePlanForWriter` (full SITUATION vs BACKGROUND PRESSURE split)
 
-Mode is hard-coded to `default`, so the forcing-function + model
-selection logic matches the real default-mode configuration.
+### Mode selection
+
+Pass `--mode <mode>` at init to pick the generation mode. Valid values:
+`default` | `fast` | `erotica` | `erotica-fast` | `erotica-hybrid` | `haiku`.
+Falls back to `default` when omitted. The mode is persisted on the project
+and threaded through `getForcingFunctions(mode, stage)` + erotica-specific
+post-processing (gender lock, voice tone) exactly as the real backend does.
+
+> **Note for the chat orchestrator:** the user will often forget the flag.
+> When starting a new agent-pipeline run, ask which mode they want before
+> running `init`. If they already created the project, change the mode by
+> editing `data/v2-agent/<projectId>.json` → `state.mode` before the next
+> `prompt` call.
 
 ### Improvements over the backend
 
@@ -143,7 +154,7 @@ npx tsx scripts/agent-pipeline/run.ts <command> [flags]
 
 | Command | Purpose |
 |---|---|
-| `init --seed "..." [--project-id ID] [--skip-intake]` | Create a new project. `--skip-intake` injects a synthetic turn-1 ready-for-premise. |
+| `init --seed "..." [--mode MODE] [--project-id ID] [--skip-intake]` | Create a new project. `--mode` defaults to `default`; see Mode selection above. `--skip-intake` injects a synthetic turn-1 ready-for-premise. |
 | `status --project-id ID` | Print current step + next action + extension summary. |
 | `prompt --project-id ID [--user-input "..."]` | Emit the next prompt spec as JSON (stdout). `--user-input` is required for intake turns ≥ 2 (the user's answer to the previous question). |
 | `ingest --project-id ID --input FILE [--user-input "..."] [--duration MS]` | Validate subagent output, apply to state, advance the state machine. `FILE` contains the raw subagent response. |
@@ -242,10 +253,9 @@ Typical story cost: ~25 subagent calls across all three phases for a
 
 ## When to use this vs the real pipeline
 
-- Use the **real v2 pipeline** for production runs, the GUI, any mode
-  other than default, and anything that needs parallel scenes or
-  prompt caching performance.
-- Use the **agent pipeline** when you want to run a default-mode story
+- Use the **real v2 pipeline** for production runs, the GUI, and anything
+  that needs parallel scenes or prompt-caching performance.
+- Use the **agent pipeline** when you want to run a story (any mode)
   entirely inside a Claude Code session without touching visnovgen's
-  provider API keys, or when you want to inspect exact prompts and
-  state transitions without a backend server in the loop.
+  provider API keys, or when you want to inspect exact prompts and state
+  transitions without a backend server in the loop.

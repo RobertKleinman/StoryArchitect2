@@ -489,8 +489,13 @@ After judge passes, extract scene plan from plot beats:
 ### **6.1 Architecture**
 
 **Batch processing:**
-- Default: sequential generation (batchSize=1) with tension tracking
-- Optional: parallel (batchSize=4+) for speed (skips tension updates)
+- Sequential generation (batchSize=1) in all modes, including fast modes
+- Historical note: fast modes previously used batchSize=4 for parallelism; this was
+  forced back to 1 because `previousSceneDigest` was computed once per batch, so
+  parallel scenes couldn't see each other's output and intra-batch continuity broke.
+  See the 2026-04-16 adversarial-review fixes for details.
+- Optional parallel generation is still possible by explicitly setting `batchSize>1`
+  on the service call, but callers must accept the staleness trade-off.
 - Checkpointed per scene (resume from scene 3 of 8)
 
 **Cumulative state:**
@@ -605,9 +610,11 @@ After judge passes, extract scene plan from plot beats:
 - `traces: StepTrace[]` (writer + judge + tension updates)
 
 ### **6.5 Key Options**
-- `batchSize: number` — 1 (sequential) or 4+ (parallel, no tension tracking)
+- `batchSize: number` — 1 (sequential, default for all modes). Values >1 enable
+  parallel generation but make scenes within a batch unaware of each other
+  (`prevDigest` is computed once per batch) so continuity suffers.
 - `skipJudge: boolean` — accept writer output as-is (fast mode)
-- `skipTension: boolean` — don't evolve tension (enables parallel)
+- `skipTension: boolean` — don't evolve tension
 - `writerModel: string` — override writer LLM (e.g., "grok-4" for erotica even in default mode)
 
 ### **6.6 Caching Strategy**
@@ -1357,10 +1364,14 @@ const {lastEvent, connected} = useSSE(projectId)
 
 ### **14.4 Performance**
 
-- **Parallel scene generation:** configurable batchSize for speed (trade tension tracking for throughput)
-- **Caching:** Anthropic API cache for static context
+- **Sequential scene generation (batchSize=1) everywhere:** parallel batches were
+  removed after empirical evidence that a single `prevDigest` shared across a batch
+  broke intra-batch continuity. Callers can still pass `batchSize>1` explicitly if
+  continuity isn't required.
+- **Caching:** Anthropic API cache for static context (scene-independent prefix)
 - **Compression:** context compressor fits story bible into token budget
-- **Mode selection:** fast modes (Gemini Flash, Grok 4.1 Fast) for budget-conscious users
+- **Mode selection:** fast modes (Gemini Flash, Grok 4.1 Fast) still available
+  for cost; they just no longer parallelise scene writes
 
 ### **14.5 User Agency**
 
@@ -1386,9 +1397,16 @@ const {lastEvent, connected} = useSSE(projectId)
 ### **15.2 Recovery Flow**
 
 1. **Transient failure** → automatic retry (up to 3x)
-2. **Persistent failure** → mark project as `failed`, save recovery snapshot
-3. **User retries** → call `/retry` endpoint → restore from snapshot → resume at failed step
-4. **Manual abort** → mark `aborted`, clean up emitter
+2. **Persistent failure** → `Orchestrator.transitionToFailed` captures `failedAt`
+   (the original step) and serialises the full project as `recoverySnapshot`
+3. **Startup recovery** (`backend/index.ts`) — same path: projects stuck in any
+   `*_generating` state on boot go through `transitionToFailed` rather than a
+   manual mutation, so retries have a valid snapshot to restore
+4. **User retries** → call `/retry` endpoint → `JSON.parse(recoverySnapshot)`
+   → resume at the step the project was in when it failed
+5. **Manual abort** → mark `aborted`, `cleanupEmitter`
+6. **Successful completion** → `cleanupEmitter` scheduled after a 30s grace
+   period so in-flight SSE clients receive the final `step_complete` event
 
 ---
 

@@ -31,8 +31,10 @@ import {
   saveProject,
   saveRawOutput,
   projectPath,
+  isValidMode,
   type AgentProject,
 } from "./state";
+import type { GenerationMode } from "../../shared/types/project";
 import {
   nextAction,
   ingest,
@@ -104,8 +106,13 @@ async function cmdInit(flags: Record<string, any>) {
   const seed = requireFlag(flags, "seed");
   const projectId = (flags["project-id"] as string) || undefined;
   const skipIntake = Boolean(flags["skip-intake"]);
+  const modeFlag = flags["mode"] as string | undefined;
+  if (modeFlag && !isValidMode(modeFlag)) {
+    fail(`Invalid --mode: ${modeFlag}. Valid: default | fast | erotica | erotica-fast | erotica-hybrid | haiku`);
+  }
+  const mode = modeFlag as GenerationMode | undefined;
 
-  const project = newProject(seed, projectId);
+  const project = newProject(seed, projectId, mode);
 
   if (skipIntake) {
     // Skip intake: push a synthetic turn 1 marking ready, then transition
