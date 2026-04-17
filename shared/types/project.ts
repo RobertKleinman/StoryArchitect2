@@ -103,6 +103,8 @@ export interface BibleCheckpoint {
   worldData?: any;
   charData?: any;
   plotData?: any;
+  /** Plot regenerations performed in response to judge rejection (0-2). Persisted so retries don't reset across resumes. */
+  judgeAttempts?: number;
 }
 
 // ── Scene generation checkpoint ─────────────────────────────────────

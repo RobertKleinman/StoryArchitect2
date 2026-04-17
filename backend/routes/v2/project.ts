@@ -482,17 +482,22 @@ router.post("/:projectId/generate-scenes", async (req: Request, res: Response) =
     const controller = registerAbort(req.params.projectId);
     try {
       const sceneGen = new SceneGenerationService(getLLMForMode(generating.mode));
-      // Fast/erotica-fast/erotica-hybrid modes: parallel generation, skip judge & tension tracking for scene writing
+      // Fast/erotica-fast/erotica-hybrid modes: skip judge & tension tracking for speed.
+      // batchSize=1 is required: the scene writer uses a previousSceneDigest computed
+      // once per batch, so batchSize>1 would let parallel scenes miss each other's content.
       const isFastMode = generating.mode === "fast" || generating.mode === "erotica-fast" || generating.mode === "erotica-hybrid" || generating.mode === "haiku";
       const result = await sceneGen.generate(
         generating,
         async (updated) => { await store.save(updated); },
-        isFastMode ? { batchSize: 4, skipJudge: true, skipTension: true } : undefined,
+        isFastMode ? { batchSize: 1, skipJudge: true, skipTension: true } : undefined,
       );
       generating.traces.push(...result.traces);
 
       await orchestrator.transitionToCompleted(projectId, generating, result.scenes);
       emitStepComplete(req.params.projectId, "completed");
+      // Give any in-flight SSE clients a moment to receive the final event,
+      // then free the emitter so the Map doesn't grow unbounded over the server's lifetime.
+      setTimeout(() => cleanupEmitter(req.params.projectId), 30_000);
     } catch (err: any) {
       if (err.name === "AbortError") {
         await orchestrator.transitionToAborted(projectId, generating);

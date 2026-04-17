@@ -9,7 +9,7 @@
  */
 
 import { promises as fs } from "fs";
-import { join, dirname } from "path";
+import { join, dirname, normalize, resolve } from "path";
 import { randomUUID } from "crypto";
 
 import type {
@@ -23,13 +23,31 @@ import { createEmptyLedger } from "../../shared/types/userPsychology";
 // ── Paths ────────────────────────────────────────────────────────────
 
 const DATA_DIR = join(process.cwd(), "data", "v2-agent");
+const AGENT_ID_RE = /^agt_[0-9a-f-]{36}$/i;
+
+function assertSafeProjectId(projectId: string): void {
+  if (!AGENT_ID_RE.test(projectId)) {
+    throw new Error(`Invalid agent project ID: ${projectId}`);
+  }
+}
+
+function safeJoin(...segments: string[]): string {
+  const resolved = resolve(normalize(join(...segments)));
+  const dataDirResolved = resolve(DATA_DIR);
+  if (!resolved.startsWith(dataDirResolved)) {
+    throw new Error(`Path traversal detected: ${resolved} escapes ${dataDirResolved}`);
+  }
+  return resolved;
+}
 
 export function projectPath(projectId: string): string {
-  return join(DATA_DIR, `${projectId}.json`);
+  assertSafeProjectId(projectId);
+  return safeJoin(DATA_DIR, `${projectId}.json`);
 }
 
 export function rawDir(projectId: string): string {
-  return join(DATA_DIR, projectId, "raw");
+  assertSafeProjectId(projectId);
+  return safeJoin(DATA_DIR, projectId, "raw");
 }
 
 // ── Orchestrator extension (transient drafts) ───────────────────────
@@ -51,7 +69,8 @@ export interface AgentExtension {
     quality_issues: Array<{ dimension: string; issue: string; severity: string; fix_instruction: string }>;
     constraint_violations: string[];
   };
-  bibleJudgeAttempts?: number;        // plot regenerations performed (0-2)
+  // NOTE: bibleJudgeAttempts moved to checkpoint.judgeAttempts so resumed projects
+  // preserve the retry counter. Do not add it back to this extension.
   sensoryPaletteData?: unknown;
   sensoryPaletteDone?: boolean;
   stepBackContext?: string;
@@ -82,6 +101,8 @@ export interface AgentExtension {
     | "judge_b"
     | "tension_update"
     | "done";
+  /** Scene-writer retries performed in response to judge rejection (0-2). Per-scene, resets on commit. */
+  sceneJudgeRetries?: number;
   /** Candidate A: first writer+judge pass on current scene */
   candidateA?: {
     vnScene: any;

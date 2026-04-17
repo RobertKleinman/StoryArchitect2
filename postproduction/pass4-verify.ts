@@ -80,7 +80,7 @@ export async function runVerification(
     }
 
     const neighbors = getNeighborScenes(editedScenes, scene.scene_id);
-    const contradictions = await verifyContinuity(scene.scene_id, diffSummary, neighbors, ledger);
+    const contradictions = await verifyContinuity(scene.scene_id, diffSummary, neighbors, ledger, llm);
 
     results.push({
       scene_id: scene.scene_id,
@@ -136,8 +136,9 @@ async function verifyContinuity(
   diffs: LineDiffEntry[],
   neighbors: IdentifiedScene[],
   ledger: ContinuityLedger,
+  llm: PostproductionConfig["llm"],
 ): Promise<string[]> {
-  if (!ANTHROPIC_API_KEY) return [];
+  if (!llm.apiKey) return [];
 
   const diffText = diffs.map(d => {
     if (d.type === "changed") return `CHANGED [${d.line_id}] ${d.speaker}: "${d.old_text}" → "${d.new_text}"`;
@@ -220,32 +221,3 @@ function formatLedger(ledger: ContinuityLedger): string {
   return parts.join("\n") || "(no ledger data)";
 }
 
-// ── LLM Call ──
-
-async function callAnthropic(
-  system: string,
-  user: string,
-  model: string,
-  temperature: number,
-  maxTokens: number,
-): Promise<string> {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": ANTHROPIC_API_KEY!,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: maxTokens,
-      temperature,
-      system,
-      messages: [{ role: "user", content: user }],
-    }),
-  });
-
-  const data = await res.json() as any;
-  if (data.error) throw new Error(`Anthropic API error: ${JSON.stringify(data.error)}`);
-  return data.content?.[0]?.text ?? "";
-}

@@ -5,18 +5,26 @@
 
 import type { BatchProgress } from "../../../shared/types/project";
 
+interface ScenePlanEntry {
+  scene_id: string;
+  title: string;
+}
+
 interface ProgressStepProps {
   label: string;
   progress: BatchProgress | null;
   completedScenes?: string[];
-  totalScenes?: number;
+  /** Scene plan entries — renders one row per planned scene, matching by real scene_id. */
+  scenePlanScenes?: ScenePlanEntry[];
   onAbort: () => void;
 }
 
-export function ProgressStep({ label, progress, completedScenes, totalScenes, onAbort }: ProgressStepProps) {
+export function ProgressStep({ label, progress, completedScenes, scenePlanScenes, onAbort }: ProgressStepProps) {
   const pct = progress
     ? Math.round((progress.completedSteps / Math.max(progress.totalSteps, 1)) * 100)
     : 0;
+
+  const showSceneList = completedScenes && scenePlanScenes && scenePlanScenes.length > 0;
 
   return (
     <div className="progress-step">
@@ -30,16 +38,15 @@ export function ProgressStep({ label, progress, completedScenes, totalScenes, on
         <p className="progress-current-step">{progress.currentStep}</p>
       )}
 
-      {completedScenes && totalScenes && totalScenes > 0 && (
+      {showSceneList && (
         <div className="progress-scene-list">
-          <h3>Scenes ({completedScenes.length} / {totalScenes})</h3>
+          <h3>Scenes ({completedScenes!.length} / {scenePlanScenes!.length})</h3>
           <ul>
-            {Array.from({ length: totalScenes }, (_, i) => {
-              const sceneId = `scene_${String(i + 1).padStart(2, "0")}`;
-              const done = completedScenes.includes(sceneId);
+            {scenePlanScenes!.map((scene, i) => {
+              const done = completedScenes!.includes(scene.scene_id);
               return (
-                <li key={i} className={done ? "scene-done" : "scene-pending"}>
-                  {done ? "\u2713" : "\u00B7"} Scene {i + 1}
+                <li key={scene.scene_id} className={done ? "scene-done" : "scene-pending"}>
+                  {done ? "\u2713" : "\u00B7"} Scene {i + 1}{scene.title ? ` — ${scene.title}` : ""}
                 </li>
               );
             })}

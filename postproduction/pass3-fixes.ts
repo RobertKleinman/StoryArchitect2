@@ -229,11 +229,16 @@ function applyDiffs(
   let applied = 0;
   let rejected = 0;
   const newLines: IdentifiedLine[] = [];
-  const deletedIds = new Set(diffs.filter(d => d.action === "delete").map(d => d.line_id));
+  // Counter for unique insertion IDs so multiple inserts on the same line don't collide
+  let insCounter = 0;
 
   for (const line of scene.lines) {
-    // Check if this line should be deleted
-    if (deletedIds.has(line._lid)) {
+    // Collect ALL diffs targeting this line (multiple edits to the same line are allowed)
+    const lineDiffs = diffs.filter(d => d.line_id === line._lid);
+
+    // Handle delete (first delete wins; replace/insert on deleted line is a no-op)
+    const deleteDiff = lineDiffs.find(d => d.action === "delete");
+    if (deleteDiff) {
       if (!flaggedLineIds.has(line._lid)) {
         rejected++;
         newLines.push(line); // Keep unflagged line
@@ -243,9 +248,13 @@ function applyDiffs(
       continue;
     }
 
-    // Check if this line should be replaced
-    const replaceDiff = diffs.find(d => d.line_id === line._lid && d.action === "replace");
-    if (replaceDiff) {
+    // Handle replace (at most one replace per line — extra replaces rejected)
+    const replaces = lineDiffs.filter(d => d.action === "replace");
+    if (replaces.length > 0) {
+      const replaceDiff = replaces[0];
+      // Count any duplicate replaces as rejected
+      rejected += replaces.length - 1;
+
       if (!flaggedLineIds.has(line._lid)) {
         rejected++;
         newLines.push(line);
@@ -259,19 +268,30 @@ function applyDiffs(
           _lid: line._lid,
         } as IdentifiedLine);
         applied++;
+      } else {
+        newLines.push(line);
       }
     } else {
       newLines.push(line);
     }
 
-    // Check for insert_after
-    const insertDiff = diffs.find(d => d.line_id === line._lid && d.action === "insert_after");
-    if (insertDiff && insertDiff.new_line) {
-      // Generate a new line ID for inserted lines
-      const newLid = `${line._lid}_ins`;
+    // Handle insert_after (multiple allowed, applied in order they appear in diffs)
+    const inserts = lineDiffs.filter(d => d.action === "insert_after");
+    for (const insertDiff of inserts) {
+      if (!insertDiff.new_line) continue;
+      // Same flagged-line guard as replace/delete — don't let inserts add material after unflagged context
+      if (!flaggedLineIds.has(line._lid)) {
+        rejected++;
+        continue;
+      }
+      // Stale-reference check if expected_old_text was provided for the anchor
+      if (insertDiff.expected_old_text && insertDiff.expected_old_text !== line.text) {
+        rejected++;
+        continue;
+      }
       newLines.push({
         ...insertDiff.new_line,
-        _lid: newLid,
+        _lid: `${line._lid}_ins_${insCounter++}`,
       } as IdentifiedLine);
       applied++;
     }
@@ -305,32 +325,3 @@ function formatLedger(ledger: ContinuityLedger): string {
   return parts.join("\n") || "(no ledger data)";
 }
 
-// ── LLM Call ──
-
-async function callAnthropic(
-  system: string,
-  user: string,
-  model: string,
-  temperature: number,
-  maxTokens: number,
-): Promise<string> {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": ANTHROPIC_API_KEY!,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: maxTokens,
-      temperature,
-      system,
-      messages: [{ role: "user", content: user }],
-    }),
-  });
-
-  const data = await res.json() as any;
-  if (data.error) throw new Error(`Anthropic API error: ${JSON.stringify(data.error)}`);
-  return data.content?.[0]?.text ?? "";
-}

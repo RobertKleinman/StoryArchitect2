@@ -49,17 +49,36 @@ export class IntakeService {
   ): Promise<{ response: IntakeResponse; updatedProject: Step1_IdeaGathering }> {
     const turnNumber = project.conversationTurns.length + 1;
 
-    // Update constraint ledger from assumption responses
+    // Update constraint ledger from assumption responses.
+    // For "keep", look up the assumption text from the most recent turn's assumptions list
+    // so downstream prompts see real content (e.g. "TONE: noir") rather than "A1: A1".
     if (assumptionResponses) {
+      const latestTurn = project.conversationTurns[project.conversationTurns.length - 1];
+      const priorAssumptions = latestTurn?.systemResponse?.assumptions ?? [];
       for (const ar of assumptionResponses) {
-        const entry: ConstraintLedgerEntry = {
-          key: ar.assumptionId,
-          value: ar.action === "change" ? (ar.newValue ?? "") : ar.assumptionId,
-          source: ar.action === "change" ? "user_changed_assumption" : "user_kept_assumption",
+        if (ar.action === "change") {
+          project.constraintLedger.push({
+            key: ar.assumptionId,
+            value: ar.newValue ?? "",
+            source: "user_changed_assumption",
+            confidence: "confirmed",
+            turnNumber,
+          });
+          continue;
+        }
+        // "keep" — find the actual assumption text
+        const priorAssumption = priorAssumptions.find((a: any) => a.id === ar.assumptionId);
+        if (!priorAssumption) {
+          // Defensive: skip rather than corrupting the ledger with an ID-as-value
+          continue;
+        }
+        project.constraintLedger.push({
+          key: priorAssumption.category || ar.assumptionId,
+          value: priorAssumption.assumption,
+          source: "user_kept_assumption",
           confidence: "confirmed",
           turnNumber,
-        };
-        project.constraintLedger.push(entry);
+        });
       }
     }
 

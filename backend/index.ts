@@ -65,9 +65,11 @@ if (existsSync(distDir)) {
 
 // ── v2 startup recovery: unstick projects left in 'generating' states ──
 import { ProjectStoreV2 } from "./storage/v2/projectStoreV2";
+import { Orchestrator } from "./services/v2/orchestrator";
 
 async function recoverStuckProjects() {
   const store = new ProjectStoreV2();
+  const orchestrator = new Orchestrator(store);
   try {
     const ids = await store.list();
     for (const id of ids) {
@@ -75,12 +77,11 @@ async function recoverStuckProjects() {
       if (!project) continue;
       if (project.step === "premise_generating" || project.step === "bible_generating" || project.step === "scene_generating") {
         console.warn(`[v2] Recovering stuck project ${id} (was ${project.step}) → failed`);
-        (project as any).step = "failed";
-        (project as any).failedAt = project.step;
-        (project as any).error = "Server restarted during generation. Retry to continue.";
-        (project as any).recoverySnapshot = JSON.stringify({ step: project.step });
-        project.updatedAt = new Date().toISOString();
-        await store.save(project);
+        await orchestrator.transitionToFailed(
+          project.projectId,
+          project,
+          "Server restarted during generation. Retry to continue.",
+        );
       }
     }
   } catch (err) {

@@ -25,7 +25,7 @@ export function useSSE(projectId: string | null): UseSSEResult {
     }
 
     function connect() {
-      const es = new EventSource(`/api/v2/sse/${projectId}/events`);
+      const es = new EventSource(`/api/v2/project/${projectId}/events`);
       esRef.current = es;
 
       es.onopen = () => setConnected(true);

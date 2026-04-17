@@ -160,7 +160,7 @@ function summarizeExtension(project: AgentProject) {
     premiseJudgePass: ext.premiseJudge?.pass,
     premiseRepairAttempted: Boolean(ext.premiseRepairAttempted),
     bibleCompleted: completed,
-    bibleJudgeAttempts: ext.bibleJudgeAttempts,
+    bibleJudgeAttempts: s.checkpoint?.judgeAttempts,
     bibleJudgePending: ext.bibleJudgeResult ? !ext.bibleJudgeResult.pass : false,
     stepBackDone: Boolean(ext.stepBackDone),
     sensoryPaletteDone: Boolean(ext.sensoryPaletteDone),

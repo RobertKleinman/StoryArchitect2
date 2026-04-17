@@ -492,7 +492,7 @@ export function buildPlotWriterSpec(project: AgentProject): AgentPromptSpec {
 
   // Repair mode: append judge feedback as "PREVIOUS ATTEMPT FAILED" appendix
   const judgeResult = project.extension.bibleJudgeResult;
-  const isRepair = Boolean(judgeResult) && (project.extension.bibleJudgeAttempts ?? 0) > 0;
+  const isRepair = Boolean(judgeResult) && (s4.checkpoint.judgeAttempts ?? 0) > 0;
   if (isRepair && judgeResult) {
     const criticalIssues = [
       ...(judgeResult.consistency_issues ?? []).filter((i) => i.severity === "critical"),
@@ -664,6 +664,15 @@ function formatTensionStateBlock(state: any): string {
       "A deliberate callback to an earlier scene is fine if it's spaced 4+ scenes apart and used once. But do NOT reuse the same short phrases or motifs scene after scene.",
     );
   }
+  // Cross-scene register tracking for temperature variation
+  if ((state.register_history ?? []).length > 0) {
+    lines.push("\nREGISTER HISTORY (emotional registers of recent scenes — DO NOT repeat the last one):");
+    const recent = state.register_history.slice(-3);
+    for (let i = 0; i < recent.length; i++) {
+      lines.push(`- Scene ${state.scene_count - recent.length + i + 1}: ${recent[i]}`);
+    }
+    lines.push("The next scene MUST open in a different emotional register from the most recent scene listed above.");
+  }
   return lines.join("\n");
 }
 
@@ -706,13 +715,37 @@ export function buildSceneWriterSpec(project: AgentProject): AgentPromptSpec {
   const substep = project.extension.sceneSubstep;
   const isCandidateB = substep === "writer_b";
 
+  // ── Agent-pipeline supplements ──────────────────────────────────
+  // These address gaps identified in comparative review (2026-04-12):
+  // the real v2 prompt builder covers instability, transmutation, and
+  // friction, but misses two things that produce "engineered" feeling.
+  const agentSupplements = `
+
+UNCHARGED SPECIFICITY — NOT EVERY DETAIL SHOULD MEAN SOMETHING:
+The existing rules ask for "concrete charged details." That is necessary but insufficient.
+You must ALSO include at least 2 details per scene that are specific, concrete, and carry NO thematic weight:
+- A physical habit that is never explained (adjusting a sleeve, a particular way of holding a cup)
+- An object in the room that is described specifically but serves no plot purpose
+- A bodily sensation that is not metaphorical (a stiff neck, dry lips, an itch)
+- An overheard fragment from another conversation that has nothing to do with the scene
+These details exist because THE WORLD HAS TEXTURE, not because every texture means something.
+The "charged" details carry the scene. The "uncharged" details make it feel REAL.
+If every object in a scene is symbolic, the scene reads as engineered. Real rooms have irrelevant things in them.
+
+CROSS-SCENE TEMPERATURE — DO NOT REPEAT THE PREVIOUS SCENE'S REGISTER:
+Check the register history in the tension state below. If the previous scene ended in controlled calm,
+this scene must NOT open in controlled calm. If the previous two scenes were both tense-procedural,
+this scene needs a sharply different emotional texture — darker humor, rawer vulnerability, physical
+discomfort, or abrupt mundanity. The story's biggest risk is elegant sameness. Fight it.
+`;
+
   return {
     role: isCandidateB ? "scene_writer_b" : "scene_writer",
     model: DEFAULT_V2_MODEL_CONFIG.scene_writer,
     subagentTier: tierFor("scene_writer"),
     temperature: 0.85,
     maxTokens: 8000,
-    systemPrompt: SCENE_WRITER_SYSTEM,
+    systemPrompt: SCENE_WRITER_SYSTEM + agentSupplements,
     userPrompt: combinedUserPrompt,
     schema: SCENE_WRITER_SCHEMA,
     stage: `scene-${plan.scene_id}-${isCandidateB ? "writer-b" : "writer"}`,

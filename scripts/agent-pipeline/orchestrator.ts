@@ -429,8 +429,9 @@ export function approvePremiseGate(project: AgentProject): void {
   delete project.extension.draftPremise;
   delete project.extension.premiseJudge;
   delete project.extension.premiseRepairAttempted;
-  // Initialise Phase 2 bookkeeping
-  project.extension.bibleJudgeAttempts = 0;
+  // Initialise Phase 2 bookkeeping — judgeAttempts lives on the checkpoint
+  // (not extension) so it survives resume across crashes.
+  s4.checkpoint.judgeAttempts = 0;
 }
 
 /**
@@ -767,7 +768,7 @@ function ingestBiblePlot(project: AgentProject, ctx: IngestContext): void {
   if (!s4.checkpoint.completedSubSteps.includes("plot")) {
     s4.checkpoint.completedSubSteps.push("plot");
   }
-  const isRepair = (project.extension.bibleJudgeAttempts ?? 0) > 0;
+  const isRepair = (s4.checkpoint.judgeAttempts ?? 0) > 0;
   s4.traces.push(
     makeTrace({
       role: "bible_writer:plot",
@@ -795,7 +796,7 @@ function ingestBibleJudge(project: AgentProject, ctx: IngestContext): void {
       (i: any) => i.severity === "critical" || i.severity === "major",
     ),
   ];
-  const attempts = project.extension.bibleJudgeAttempts ?? 0;
+  const attempts = s4.checkpoint.judgeAttempts ?? 0;
   const MAX = 2;
 
   const pass = parsed.pass || criticalIssues.length === 0 || attempts >= MAX;
@@ -822,7 +823,7 @@ function ingestBibleJudge(project: AgentProject, ctx: IngestContext): void {
     const idx = s4.checkpoint.completedSubSteps.indexOf("plot");
     if (idx !== -1) s4.checkpoint.completedSubSteps.splice(idx, 1);
     s4.checkpoint.plotData = undefined;
-    project.extension.bibleJudgeAttempts = attempts + 1;
+    s4.checkpoint.judgeAttempts = attempts + 1;
     // Keep bibleJudgeResult so buildPlotWriterSpec can append its feedback
   }
 }
@@ -963,9 +964,8 @@ function ingestBibleScenePlan(project: AgentProject, ctx: IngestContext): void {
   };
   project.state = s5;
 
-  // Clear bible drafts from extension
+  // Clear bible drafts from extension (judgeAttempts lives on the checkpoint)
   delete project.extension.bibleJudgeResult;
-  delete project.extension.bibleJudgeAttempts;
   delete project.extension.sensoryPaletteData;
   delete project.extension.sensoryPaletteDone;
   delete project.extension.stepBackContext;
@@ -1126,20 +1126,33 @@ function ingestSceneJudge(project: AgentProject, ctx: IngestContext): void {
     const winner = (b.vitalityScore ?? 0) > (a.vitalityScore ?? 0) ? b : a;
     commitWinningScene(project, winner);
     project.extension.sceneSubstep = "tension_update";
+    project.extension.sceneJudgeRetries = 0;  // reset for next scene
     delete project.extension.candidateA;
     delete project.extension.candidateB;
     return;
   }
 
-  // After candidate A judge: decide whether to reroll or commit
+  // After candidate A judge: retry on judge fail, reroll on low vitality, or commit
   const ca = project.extension.candidateA!;
+  const MAX_SCENE_RETRIES = 2;
+  const retries = project.extension.sceneJudgeRetries ?? 0;
+
+  if (!judgeOutput.pass && retries < MAX_SCENE_RETRIES) {
+    // Judge rejected — retry the writer for this scene (mirror v2 sceneGenerationService)
+    project.extension.sceneJudgeRetries = retries + 1;
+    project.extension.sceneSubstep = "writer_a";
+    delete project.extension.candidateA;
+    return;
+  }
+
   if (judgeOutput.pass && (ca.vitalityScore ?? 0) < VITALITY_REROLL_THRESHOLD) {
-    // Marginal vitality — roll candidate B
+    // Passed judge but vitality is marginal — roll candidate B
     project.extension.sceneSubstep = "writer_b";
   } else {
-    // Either passed with good vitality, or failed — commit A and move on
+    // Either passed with good vitality, or failed after retries exhausted — commit A and move on
     commitWinningScene(project, ca);
     project.extension.sceneSubstep = "tension_update";
+    project.extension.sceneJudgeRetries = 0;  // reset for next scene
     delete project.extension.candidateA;
   }
 }

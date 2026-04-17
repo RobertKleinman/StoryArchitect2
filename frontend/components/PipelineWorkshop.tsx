@@ -432,7 +432,7 @@ export function PipelineWorkshop() {
             label="Writing scenes..."
             progress={progress}
             completedScenes={completedScenes}
-            totalScenes={(project as any).scenePlan?.total_scenes}
+            scenePlanScenes={(project as any).scenePlan?.scenes}
             onAbort={handleAbort}
           />
         )}
